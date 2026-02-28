@@ -3,6 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
+from typing import Optional
 from supabase import create_client
 from datetime import date, timedelta
 from isoweek import Week
@@ -34,8 +35,8 @@ async def process_receipt(
     file: UploadFile = File(...),
     whatsapp_message_id: str = Form(...),
     user_id: str = Form(...),
-    sender_name: str = Form(default=None),
-    sender_phone: str = Form(default=None),
+    sender_name: Optional[str] = Form(default=None),
+    sender_phone: Optional[str] = Form(default=None),
 ):
     existing = _db().table("receipts")\
         .select("id")\

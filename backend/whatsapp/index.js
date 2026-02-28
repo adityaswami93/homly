@@ -133,11 +133,11 @@ async function processReceiptImage(msg, sock) {
   if (!IMAGE_MIME_TYPES.has(mimeType.toLowerCase())) return;
 
   // Extract sender info
-  const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const senderPhone = senderJid.split("@")[0];
+  const senderJid   = msg.key.participant || msg.key.remoteJid || "";
+  const senderPhone = senderJid.includes("@") ? senderJid.split("@")[0] : senderJid || null;
   const pushName    = msg.pushName || null;
 
-  console.log(`Receipt detected from ${pushName || senderPhone} — message ID: ${msgId}`);
+  console.log(`Receipt from jid=${senderJid} phone=${senderPhone} name=${pushName} — msg=${msgId}`);
 
   try {
     const buffer = await downloadMediaMessage(
@@ -149,8 +149,8 @@ async function processReceiptImage(msg, sock) {
     form.append("file", buffer, { filename: "receipt.jpg", contentType: mimeType });
     form.append("whatsapp_message_id", msgId);
     form.append("user_id", HOMLY_USER_ID);
-    form.append("sender_name", pushName || "");
-    form.append("sender_phone", senderPhone || "");
+    if (pushName)    form.append("sender_name",  pushName);
+    if (senderPhone) form.append("sender_phone", senderPhone);
 
     const res = await axios.post(`${FASTAPI_URL}/process-receipt`, form, {
       headers: { ...form.getHeaders(), Authorization: `Bearer ${HOMLY_TOKEN}` },

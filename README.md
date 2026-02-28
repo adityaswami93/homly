@@ -1,133 +1,256 @@
-# Finclaro — AI Financial Research Assistant
+# Homly
 
-A production-grade RAG-powered financial research assistant built with FastAPI, Next.js, and Supabase.
+WhatsApp-based household expense tracker. Your helper sends receipt photos to a WhatsApp group → automatic OCR → weekly dashboard with category breakdown and reimbursement total.
 
-## Stack
+## How it works
 
-- **Frontend** — Next.js 16, TypeScript, Tailwind CSS, deployed on Vercel
-- **Backend** — Python FastAPI, deployed on Railway
-- **Database** — PostgreSQL + pgvector via Supabase
-- **Auth** — Supabase Auth
-- **LLMs** — OpenRouter (completions) + OpenAI (embeddings)
-- **Email** — Resend
-- **News** — NewsAPI
+1. Helper posts a receipt photo to the WhatsApp group
+2. Homly detects the image, runs OCR via Gemini Flash
+3. Receipt is saved to the database (vendor, total, line items, category)
+4. Dashboard shows this week's spending by category
+5. Every Friday at 6pm SGT, a summary is sent back to the WhatsApp group
 
-## Architecture
-```
-User → Next.js Frontend → FastAPI Backend → Supabase (pgvector)
-                                          → OpenRouter (LLM)
-                                          → OpenAI (embeddings)
-                                          → Resend (email)
-                                          → NewsAPI (news)
-```
+---
 
-## Setup
+## Project structure
+homly/
+├── backend/
+│   ├── agents/
+│   │   └── receipt_agent.py       # Gemini Flash OCR logic
+│   ├── api/
+│   │   ├── middleware/
+│   │   │   └── auth.py            # Supabase JWT verification
+│   │   ├── dependencies/
+│   │   │   └── limiter.py         # Rate limiting
+│   │   └── routers/
+│   │       └── expenses.py        # All API endpoints
+│   ├── migrations/
+│   │   └── 001_homly.sql          # DB schema
+│   ├── services/
+│   │   └── llm_client.py          # OpenRouter facade
+│   ├── whatsapp/
+│   │   ├── index.js               # Baileys listener + cron summary
+│   │   ├── package.json
+│   │   └── .env.example
+│   ├── main.py                    # FastAPI entrypoint
+│   ├── requirements.txt
+│   └── .env.example
+└── frontend/
+    ├── app/
+    │   ├── dashboard/page.tsx     # This week view
+    │   ├── history/page.tsx       # Past weeks
+    │   ├── login/page.tsx         # Auth
+    │   └── components/
+    │       └── Navbar.tsx
+    ├── lib/
+    │   ├── supabase.ts            # Supabase client
+    │   └── axios.ts               # Axios with JWT interceptor
+    └── .env.example
 
-### 1. Clone the repo
-```bash
-git clone https://github.com/yourusername/finclaro.git
-cd finclaro
-```
+---
 
-### 2. Set up Supabase
+## Prerequisites
 
-1. Create a new project at supabase.com
-2. Go to SQL Editor and run `backend/migrations/001_initial.sql`
-3. Enable the pgvector extension: Extensions → search "vector" → enable
-4. Copy your project URL and anon key
+- Node.js 18+
+- Python 3.11+
+- A [Supabase](https://supabase.com) project (free tier)
+- An [OpenRouter](https://openrouter.ai) account with Gemini Flash enabled (~$5 credit lasts months)
+- A [Railway](https://railway.app) account (for backend + WhatsApp bot)
+- A [Vercel](https://vercel.com) account (for frontend)
 
-### 3. Set up backend
+---
+
+## 1. Supabase setup
+
+1. Create a new Supabase project at [supabase.com](https://supabase.com)
+2. Go to **SQL Editor** and run the contents of `backend/migrations/001_homly.sql`
+3. Go to **Authentication → Users** and create a user (your login for the dashboard)
+4. Note down from **Project Settings → API**:
+   - Project URL
+   - `anon` key (public)
+   - `service_role` key (secret — used by backend only)
+   - JWT secret (under **Data API** → **JWT Settings**)
+5. Note the user's UUID from Authentication → Users (you'll need it as `HOMLY_USER_ID`)
+
+---
+
+## 2. OpenRouter setup
+
+1. Sign up at [openrouter.ai](https://openrouter.ai)
+2. Add $5 credit (lasts ~6 months at typical usage)
+3. Create an API key under **Keys**
+
+---
+
+## 3. Run locally
+
+### Backend (FastAPI)
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+
 cp .env.example .env
-# Fill in your .env values
-uvicorn api.main:app --reload
+# Fill in .env (see variables below)
+
+uvicorn api.main:app --reload --port 8000
 ```
 
-### 4. Set up frontend
+Backend env variables (`backend/.env`):
+```
+SUPABASE_URL=https://yourproject.supabase.co
+SUPABASE_KEY=your_service_role_key
+SUPABASE_JWT_SECRET=your_jwt_secret
+OPENROUTER_API_KEY=your_openrouter_key
+HOMLY_USER_ID=your_supabase_user_uuid
+```
+
+### WhatsApp bot
+```bash
+cd backend/whatsapp
+npm install
+
+cp .env.example .env
+# Fill in .env (see variables below)
+
+npm start
+# Scan the QR code with WhatsApp → Linked Devices → Link a Device
+```
+
+WhatsApp bot env variables (`backend/whatsapp/.env`):
+```
+GROUP_NAME=Household Expenses          # exact WhatsApp group name, case-sensitive
+FASTAPI_URL=http://localhost:8000
+HOMLY_USER_ID=your_supabase_user_uuid
+HOMLY_TOKEN=your_supabase_jwt_token    # see note below
+SUPABASE_URL=https://yourproject.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_REFRESH_TOKEN=your_refresh_token
+```
+
+**Getting your JWT token and refresh token:**
+After logging into the dashboard, open browser console and run:
+```js
+const s = (await supabase.auth.getSession()).data.session
+console.log("access:", s.access_token)
+console.log("refresh:", s.refresh_token)
+```
+The bot auto-refreshes the JWT every 45 minutes so it never expires.
+
+### Frontend (Next.js)
 ```bash
 cd frontend
 npm install
+
 cp .env.example .env.local
-# Fill in your .env.local values
+# Fill in .env.local (see variables below)
+
 npm run dev
+# Open http://localhost:3000
 ```
 
-### 5. Seed initial data
+Frontend env variables (`frontend/.env.local`):
+```
+NEXT_PUBLIC_SUPABASE_URL=https://yourproject.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+---
+
+## 4. Deploy to production
+
+### Backend → Railway
+
+1. Push repo to GitHub
+2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
+3. Create **Service 1** (FastAPI):
+   - Root directory: `backend`
+   - Start command: `uvicorn api.main:app --host 0.0.0.0 --port $PORT`
+   - Add all backend env variables
+4. Create **Service 2** (WhatsApp bot):
+   - Root directory: `backend/whatsapp`
+   - Start command: `npm start`
+   - Add all WhatsApp env variables
+   - Set `FASTAPI_URL` to your Railway FastAPI service URL
+   - Open logs → scan QR code with WhatsApp
+
+### Frontend → Vercel
+
+1. Go to [vercel.com](https://vercel.com) → New Project → Import repo
+2. Root directory: `frontend`
+3. Add env variables:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=...
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+   NEXT_PUBLIC_API_URL=https://your-railway-fastapi-url.up.railway.app
+   ```
+4. Deploy
+
+Update CORS in `backend/api/main.py` to include your Vercel URL:
+```python
+allow_origins=[
+    "https://your-app.vercel.app",
+    "http://localhost:3000",
+],
+```
+
+---
+
+## 5. Test the OCR manually
 ```bash
-# Fetch and embed initial news articles
-curl -X POST http://localhost:8000/ingest
+cd backend
+python -m agents.receipt_agent path/to/receipt.jpg
 ```
 
-## Key Features
+This prints the full JSON output — useful for verifying Gemini Flash is working before connecting WhatsApp.
 
-- **RAG Pipeline** — semantic search over financial news with recency reranking
-- **Morning Digest** — personalised daily email based on user topic preferences
-- **Watchlist Digest** — weekly email summarising news for tracked stocks and topics
-- **Chat History** — all questions and answers saved per user
-- **Waitlist** — invite-only access with waitlist signup
+---
 
-## Project Structure
-```
-finclaro/
-├── backend/
-│   ├── api/
-│   │   └── main.py              # FastAPI app, routes, scheduler
-│   ├── ingestion/
-│   │   └── news_fetcher.py      # NewsAPI ingestion
-│   ├── pipelines/
-│   │   ├── embedding_pipeline.py # OpenAI embeddings
-│   │   └── rag_pipeline.py       # Retrieval and generation
-│   ├── agents/
-│   │   ├── digest_agent.py       # Morning digest
-│   │   └── watchlist_digest_agent.py # Weekly watchlist digest
-│   ├── services/
-│   │   └── llm_client.py         # LLM facade (OpenRouter + OpenAI)
-│   ├── migrations/
-│   │   └── 001_initial.sql       # Database schema
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── .env.example
-├── frontend/
-│   ├── app/
-│   │   ├── page.tsx              # Landing page
-│   │   ├── login/page.tsx        # Login + waitlist
-│   │   ├── dashboard/page.tsx    # Chat interface
-│   │   ├── watchlist/page.tsx    # Watchlist management
-│   │   └── settings/page.tsx     # Digest preferences
-│   ├── lib/
-│   │   └── supabase.ts           # Supabase client
-│   ├── Dockerfile
-│   └── .env.example
-└── README.md
-```
+## API endpoints
 
-## Deployment
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/process-receipt` | Upload receipt image (called by WhatsApp bot) |
+| GET | `/this-week` | Current week summary |
+| GET | `/weeks` | List all weeks with receipts |
+| GET | `/weeks/{year}/{week}` | Full detail for a specific week |
+| GET | `/receipts/{id}` | Single receipt with line items |
+| PATCH | `/receipts/{id}/flag` | Toggle flagged status |
 
-### Backend — Railway
+All endpoints except `/process-receipt` require a Supabase JWT in the `Authorization: Bearer` header.
 
-1. Connect GitHub repo to Railway
-2. Set root directory to `backend`
-3. Add environment variables from `.env.example`
-4. Railway auto-deploys on push
+---
 
-### Frontend — Vercel
+## Estimated costs
 
-1. Connect GitHub repo to Vercel
-2. Set root directory to `frontend`
-3. Add environment variables from `.env.example`
-4. Vercel auto-deploys on push
+| Service | Cost |
+|---------|------|
+| Railway (backend + WhatsApp) | ~$5/month |
+| Supabase | Free tier |
+| Vercel | Free tier |
+| OpenRouter (Gemini Flash) | ~$0.10/month (20 receipts/week) |
+| **Total** | **~$5/month** |
 
-## Extending This Template
+---
 
-This repo is designed as a reusable RAG template. To adapt for a new domain:
+## Troubleshooting
 
-1. Update `ingestion/news_fetcher.py` — change data sources and queries
-2. Update `pipelines/rag_pipeline.py` — adjust the prompt for your domain
-3. Update `agents/digest_agent.py` — customise digest format and topics
-4. Update frontend pages — change copy and UI for your use case
+**WhatsApp bot not detecting images**
+- Check `GROUP_NAME` matches exactly (case-sensitive, including spaces)
+- Make sure the bot account is a member of the group
+- Check Railway logs for connection errors
 
-The core RAG pipeline, auth, scheduling, and email infrastructure stays the same.
+**OCR returning low confidence**
+- Receipt image too blurry or dark → ask helper to retake
+- Partially cut off → ensure full receipt is in frame
+- Handwritten receipts → limited support, flag manually
+
+**JWT expired errors**
+- The bot auto-refreshes but needs `SUPABASE_REFRESH_TOKEN` set
+- If missing, re-extract the token from browser console and update Railway env vars
+
+**Receipt flagged for review**
+- Open dashboard → click the receipt → toggle flag after manual verification
+- Flagged receipts are still included in weekly totals

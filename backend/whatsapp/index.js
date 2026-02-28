@@ -14,11 +14,12 @@ const QRCode = require("qrcode");
 const fs = require("fs");
 require("dotenv").config();
 
-const FASTAPI_URL   = process.env.FASTAPI_URL  || "http://localhost:8000";
+const FASTAPI_URL   = process.env.FASTAPI_URL || "http://localhost:8000";
 const HOMLY_USER_ID = process.env.HOMLY_USER_ID;
-let   HOMLY_TOKEN   = process.env.HOMLY_TOKEN;
+const HOMLY_TOKEN   = process.env.SUPABASE_SERVICE_KEY;
 let   GROUP_NAME    = process.env.GROUP_NAME;
 
+// To this:
 if (!HOMLY_USER_ID || !HOMLY_TOKEN) {
   console.error("Missing required env vars: HOMLY_USER_ID, HOMLY_TOKEN");
   process.exit(1);
@@ -233,20 +234,6 @@ async function startSock() {
         if (groupJid) await sendWeeklySummary(sock, groupJid);
       }, { timezone: "UTC" });
 
-      // Refresh JWT every 45 min
-      setInterval(async () => {
-        try {
-          const { createClient } = require("@supabase/supabase-js");
-          const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
-          const { data } = await sb.auth.refreshSession({ refresh_token: process.env.SUPABASE_REFRESH_TOKEN });
-          if (data?.session) {
-            HOMLY_TOKEN = data.session.access_token;
-            console.log("JWT refreshed");
-          }
-        } catch (e) {
-          console.error("JWT refresh failed:", e.message);
-        }
-      }, 45 * 60 * 1000);
     }
 
     if (connection === "close") {

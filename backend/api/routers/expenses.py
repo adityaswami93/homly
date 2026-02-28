@@ -153,13 +153,18 @@ def get_week(year: int, week_number: int, request: Request):
         .order("date",     desc=False)\
         .execute()
 
-    items_res = _db().table("items")\
-        .select("category, line_total, receipt_id")\
-        .in_("receipt_id", [r["id"] for r in receipts_res.data] or ["none"])\
-        .execute()
+    receipt_ids = [r["id"] for r in receipts_res.data]
+    if receipt_ids:
+        items_res = _db().table("items")\
+            .select("category, line_total, receipt_id")\
+            .in_("receipt_id", receipt_ids)\
+            .execute()
+        items_data = items_res.data
+    else:
+        items_data = []
 
     category_totals: dict[str, float] = {}
-    for item in items_res.data:
+    for item in items_data:
         cat = item["category"] or "other"
         category_totals[cat] = round(
             category_totals.get(cat, 0) + (item["line_total"] or 0), 2

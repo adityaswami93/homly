@@ -218,10 +218,18 @@ sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
+    // Add these debug lines at the top:
+    console.log("Message received, type:", type);
+    console.log("Message keys:", messages.map(m => ({
+      jid: m.key.remoteJid,
+      fromMe: m.key.fromMe,
+      messageType: Object.keys(m.message || {}).join(", ")
+    })));
+    
     if (type !== "notify") return;
     for (const msg of messages) {
       if (!groupJid || msg.key.remoteJid !== groupJid) continue;
-      if (msg.key.fromMe) continue;
+      //if (msg.key.fromMe) continue;
       if (!msg.message?.imageMessage &&
           !msg.message?.viewOnceMessage?.message?.imageMessage &&
           !msg.message?.viewOnceMessageV2?.message?.imageMessage) continue;

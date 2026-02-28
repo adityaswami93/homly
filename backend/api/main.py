@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 from api.middleware.auth import AuthMiddleware
 from api.dependencies.limiter import limiter
-from api.routers import expenses
+from api.routers import expenses, setup, internal
 
 app = FastAPI(title="Homly API")
 
@@ -46,6 +46,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 app.include_router(expenses.router)
+app.include_router(setup.router)
+app.include_router(internal.router)
 
 
 @app.get("/")

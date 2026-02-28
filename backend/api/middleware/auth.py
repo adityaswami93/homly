@@ -8,11 +8,21 @@ from starlette.requests import Request
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 jwks_client = jwt.PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json")
 
-EXEMPT_PATHS = {"/"}
+SKIP_AUTH_PATHS = [
+    "/",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/internal/qr",
+    "/internal/connected",
+    "/setup/state",
+    "/setup/group",
+    "/setup/qr-stream",
+]
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in EXEMPT_PATHS:
+        if request.url.path in SKIP_AUTH_PATHS:
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")

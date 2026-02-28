@@ -115,6 +115,10 @@ function getGroupNameFromFile() {
 
 // ── Receipt processing ──────────────────────────────────────
 async function processReceiptImage(msg, sock) {
+    // Add this at the very top:
+  console.log("MSG KEY:", JSON.stringify(msg.key, null, 2));
+  console.log("PUSH NAME:", msg.pushName);
+  console.log("MSG PARTICIPANT:", msg.key.participant);
   const msgId   = msg.key.id;
   const msgInfo = msg.message;
 

@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/history",   label: "History" },
   { href: "/setup",     label: "Setup" },
+  { href: "/settings",  label: "Settings" },
 ];
 
 interface NavbarProps {

@@ -4,7 +4,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
 from supabase import create_client
-from datetime import date
+from datetime import date, timedelta
 from isoweek import Week
 import logging
 
@@ -244,3 +244,46 @@ def this_week(request: Request):
     today = date.today()
     week_num, year = _week_for_date(today)
     return get_week(year, week_num, request)
+
+
+@router.get("/summary/last7days")
+def last_7_days(request: Request):
+    user_id = request.state.user["sub"]
+    today = date.today()
+    date_from = today - timedelta(days=6)  # last 7 days inclusive
+
+    receipts_res = _db().table("receipts")\
+        .select("*")\
+        .eq("user_id", user_id)\
+        .eq("deleted", False)\
+        .gte("date", date_from.isoformat())\
+        .lte("date", today.isoformat())\
+        .order("date", desc=False)\
+        .execute()
+
+    receipt_ids = [r["id"] for r in receipts_res.data]
+    category_totals: dict[str, float] = {}
+
+    if receipt_ids:
+        items_res = _db().table("items")\
+            .select("category, line_total")\
+            .in_("receipt_id", receipt_ids)\
+            .execute()
+        for item in items_res.data:
+            cat = item["category"] or "other"
+            category_totals[cat] = round(
+                category_totals.get(cat, 0) + (item["line_total"] or 0), 2
+            )
+
+    total = sum(r["total"] or 0 for r in receipts_res.data)
+    flagged_count = sum(1 for r in receipts_res.data if r.get("flagged"))
+
+    return {
+        "date_from":       date_from.isoformat(),
+        "date_to":         today.isoformat(),
+        "total":           round(total, 2),
+        "receipt_count":   len(receipts_res.data),
+        "flagged_count":   flagged_count,
+        "receipts":        receipts_res.data,
+        "category_totals": category_totals,
+    }

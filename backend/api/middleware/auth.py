@@ -17,6 +17,7 @@ SKIP_AUTH_PATHS = [
     "/redoc",
     "/internal/qr",
     "/internal/connected",
+    "/internal/settings",
     "/setup/state",
     "/setup/group",
     "/setup/qr-stream",

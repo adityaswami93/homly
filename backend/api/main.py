@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 from api.middleware.auth import AuthMiddleware
 from api.dependencies.limiter import limiter
-from api.routers import expenses, setup, internal
+from api.routers import expenses, setup, internal, settings
 
 app = FastAPI(title="Homly API")
 
@@ -25,7 +25,7 @@ app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://homly-six.vercel.app",
+        "https://homly.vercel.app",
         "http://localhost:3000",
     ],
     allow_credentials=True,
@@ -48,6 +48,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(expenses.router)
 app.include_router(setup.router)
 app.include_router(internal.router)
+app.include_router(settings.router)
 
 
 @app.get("/")

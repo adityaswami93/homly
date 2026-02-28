@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import Navbar from "@/app/components/Navbar";
-import { isoWeek, isoWeekYear } from "@/lib/weekUtils";
 
 interface Item {
   id: string;
@@ -419,7 +418,7 @@ export default function Dashboard() {
                   {Object.entries(week.category_totals)
                     .sort(([, a], [, b]) => b - a)
                     .map(([cat, amount]) => {
-                      const pct = week.total > 0 ? Math.round((amount / week.total) * 100) : 0;
+                      const pct = week.total > 0 ? Math.min(100, Math.round((amount / week.total) * 100)) : 0;
                       return (
                         <div key={cat}>
                           <div className="flex items-center justify-between mb-1.5">

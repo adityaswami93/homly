@@ -13,7 +13,13 @@ from agents.receipt_agent import analyse_receipt
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+_supabase = None
+
+def _db():
+    global _supabase
+    if _supabase is None:
+        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    return _supabase
 
 
 def _week_for_date(d: date) -> tuple[int, int]:
@@ -29,7 +35,7 @@ async def process_receipt(
     whatsapp_message_id: str = Form(...),
     user_id: str = Form(...)
 ):
-    existing = supabase.table("receipts")\
+    existing = _db().table("receipts")\
         .select("id")\
         .eq("whatsapp_message_id", whatsapp_message_id)\
         .execute()
@@ -74,7 +80,7 @@ async def process_receipt(
         "flagged":              analysis.get("flagged", False),
     }
 
-    receipt_res = supabase.table("receipts").insert(receipt_row).execute()
+    receipt_res = _db().table("receipts").insert(receipt_row).execute()
     receipt_id = receipt_res.data[0]["id"]
 
     items = analysis.get("items") or []
@@ -95,7 +101,7 @@ async def process_receipt(
             for item in items if item.get("name")
         ]
         if item_rows:
-            supabase.table("items").insert(item_rows).execute()
+            _db().table("items").insert(item_rows).execute()
 
     return {
         "status":     "ok",
@@ -112,7 +118,7 @@ async def process_receipt(
 @router.get("/weeks")
 def list_weeks(request: Request):
     user_id = request.state.user["sub"]
-    res = supabase.table("receipts")\
+    res = _db().table("receipts")\
         .select("year, week_number")\
         .eq("user_id", user_id)\
         .order("year",        desc=True)\
@@ -139,7 +145,7 @@ def list_weeks(request: Request):
 def get_week(year: int, week_number: int, request: Request):
     user_id = request.state.user["sub"]
 
-    receipts_res = supabase.table("receipts")\
+    receipts_res = _db().table("receipts")\
         .select("*")\
         .eq("user_id",     user_id)\
         .eq("year",        year)\
@@ -147,7 +153,7 @@ def get_week(year: int, week_number: int, request: Request):
         .order("date",     desc=False)\
         .execute()
 
-    items_res = supabase.table("items")\
+    items_res = _db().table("items")\
         .select("category, line_total, receipt_id")\
         .in_("receipt_id", [r["id"] for r in receipts_res.data] or ["none"])\
         .execute()
@@ -177,7 +183,7 @@ def get_week(year: int, week_number: int, request: Request):
 def get_receipt(receipt_id: str, request: Request):
     user_id = request.state.user["sub"]
 
-    receipt_res = supabase.table("receipts")\
+    receipt_res = _db().table("receipts")\
         .select("*")\
         .eq("id",      receipt_id)\
         .eq("user_id", user_id)\
@@ -186,7 +192,7 @@ def get_receipt(receipt_id: str, request: Request):
     if not receipt_res.data:
         raise HTTPException(status_code=404, detail="Receipt not found")
 
-    items_res = supabase.table("items")\
+    items_res = _db().table("items")\
         .select("*")\
         .eq("receipt_id", receipt_id)\
         .execute()
@@ -197,13 +203,13 @@ def get_receipt(receipt_id: str, request: Request):
 @router.patch("/receipts/{receipt_id}/flag")
 def toggle_flag(receipt_id: str, request: Request, body: dict):
     user_id = request.state.user["sub"]
-    existing = supabase.table("receipts")\
+    existing = _db().table("receipts")\
         .select("user_id")\
         .eq("id", receipt_id)\
         .execute()
     if not existing.data or existing.data[0]["user_id"] != user_id:
         raise HTTPException(status_code=404, detail="Receipt not found")
-    supabase.table("receipts")\
+    _db().table("receipts")\
         .update({"flagged": body.get("flagged", True)})\
         .eq("id", receipt_id)\
         .execute()

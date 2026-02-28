@@ -6,17 +6,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_client = OpenAI(
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-    base_url="https://openrouter.ai/api/v1"
-)
+_client: OpenAI | None = None
 
 _COMPLETION_MODEL = "google/gemini-flash-2.0"
 _VISION_MODEL     = "google/gemini-flash-2.0"
 
 
+def _get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        _client = OpenAI(
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            base_url="https://openrouter.ai/api/v1"
+        )
+    return _client
+
+
 def get_completion(prompt: str, system: str = "You are a helpful assistant.") -> str:
-    response = _client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=_COMPLETION_MODEL,
         messages=[
             {"role": "system", "content": system},

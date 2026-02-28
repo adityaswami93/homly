@@ -12,3 +12,4 @@ backend/api/middleware/__pycache__
 backend/api/dependencies/__pycache__
 backend/api/routers/__pycache__
 backend/evals/__pycache__
+backend/receipts

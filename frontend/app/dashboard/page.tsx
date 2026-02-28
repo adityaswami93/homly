@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import Navbar from "@/app/components/Navbar";
+import { isoWeek, isoWeekYear } from "@/lib/weekUtils";
 
 interface Item {
   id: string;
@@ -24,6 +25,7 @@ interface Receipt {
   tax: number | null;
   confidence: "high" | "medium" | "low";
   flagged: boolean;
+  deleted: boolean;
   notes: string | null;
   currency: string;
   items?: Item[];
@@ -69,16 +71,47 @@ function fmtDate(iso: string | null) {
   });
 }
 
+function getISOWeek(date: Date): { week: number; year: number } {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  return {
+    week: 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7),
+    year: d.getFullYear(),
+  };
+}
+
+function getWeekRange(year: number, week: number): { start: Date; end: Date } {
+  const jan4 = new Date(year, 0, 4);
+  const startOfWeek1 = new Date(jan4);
+  startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+  const start = new Date(startOfWeek1);
+  start.setDate(startOfWeek1.getDate() + (week - 1) * 7);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return { start, end };
+}
+
+function formatWeekRange(year: number, week: number): string {
+  const { start, end } = getWeekRange(year, week);
+  const s = start.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
+  const e = end.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
+  return `${s} – ${e}`;
+}
+
 function ReceiptDrawer({
-  receipt, onClose, onToggleFlag,
+  receipt, onClose, onToggleFlag, onDelete,
 }: {
   receipt: Receipt;
   onClose: () => void;
   onToggleFlag: (id: string, flagged: boolean) => void;
+  onDelete: (id: string) => void;
 }) {
   const [items,    setItems]    = useState<Item[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [toggling, setToggling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     api.get(`/receipts/${receipt.id}`).then((res) => {
@@ -92,6 +125,14 @@ function ReceiptDrawer({
     await api.patch(`/receipts/${receipt.id}/flag`, { flagged: !receipt.flagged });
     onToggleFlag(receipt.id, !receipt.flagged);
     setToggling(false);
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    await api.patch(`/receipts/${receipt.id}/delete`, { deleted: true });
+    onDelete(receipt.id);
+    setDeleting(false);
+    onClose();
   };
 
   return (
@@ -161,7 +202,7 @@ function ReceiptDrawer({
           )}
         </div>
 
-        <div className="p-5 border-t border-stone-800">
+        <div className="p-5 border-t border-stone-800 space-y-2">
           <button
             onClick={handleFlag}
             disabled={toggling}
@@ -172,6 +213,13 @@ function ReceiptDrawer({
             }`}
           >
             {toggling ? "..." : receipt.flagged ? "✓ Mark as reviewed" : "⚠ Flag for review"}
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="w-full py-2.5 rounded-xl text-sm font-medium transition-colors border border-red-500/30 text-red-400 hover:bg-red-500/5"
+          >
+            {deleting ? "Removing..." : "Remove receipt"}
           </button>
         </div>
       </div>
@@ -215,34 +263,71 @@ function EmptyWeek() {
 }
 
 export default function Dashboard() {
-  const [user,             setUser]            = useState<any>(null);
-  const [week,             setWeek]            = useState<WeekData | null>(null);
-  const [loading,          setLoading]         = useState(true);
-  const [selectedReceipt,  setSelectedReceipt] = useState<Receipt | null>(null);
+  const [user,            setUser]           = useState<any>(null);
+  const [week,            setWeek]           = useState<WeekData | null>(null);
+  const [loading,         setLoading]        = useState(true);
+  const [selectedReceipt, setSelectedReceipt]= useState<Receipt | null>(null);
+  const [currentWeek,     setCurrentWeek]    = useState<{ week: number; year: number } | null>(null);
+  const [isCurrentWeek,   setIsCurrentWeek]  = useState(true);
   const router = useRouter();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.push("/login"); return; }
       setUser(session.user);
+      const now = getISOWeek(new Date());
+      setCurrentWeek(now);
     });
   }, [router]);
 
-  const loadWeek = useCallback(async () => {
+  const loadWeek = useCallback(async (year: number, weekNum: number) => {
     setLoading(true);
     try {
-      const res = await api.get("/this-week");
+      const res = await api.get(`/weeks/${year}/${weekNum}`);
       setWeek(res.data);
     } catch (e) {
-      console.error(e);
+      setWeek(null);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (user) loadWeek();
-  }, [user, loadWeek]);
+    if (user && currentWeek) {
+      loadWeek(currentWeek.year, currentWeek.week);
+    }
+  }, [user, currentWeek, loadWeek]);
+
+  const goToPrevWeek = () => {
+    if (!currentWeek) return;
+    let { week, year } = currentWeek;
+    week -= 1;
+    if (week < 1) { year -= 1; week = 52; }
+    const newWeek = { week, year };
+    setCurrentWeek(newWeek);
+    const now = getISOWeek(new Date());
+    setIsCurrentWeek(newWeek.week === now.week && newWeek.year === now.year);
+    loadWeek(year, week);
+  };
+
+  const goToNextWeek = () => {
+    if (!currentWeek) return;
+    let { week, year } = currentWeek;
+    week += 1;
+    if (week > 52) { year += 1; week = 1; }
+    const newWeek = { week, year };
+    setCurrentWeek(newWeek);
+    const now = getISOWeek(new Date());
+    setIsCurrentWeek(newWeek.week === now.week && newWeek.year === now.year);
+    loadWeek(year, week);
+  };
+
+  const goToCurrentWeek = () => {
+    const now = getISOWeek(new Date());
+    setCurrentWeek(now);
+    setIsCurrentWeek(true);
+    loadWeek(now.year, now.week);
+  };
 
   const handleToggleFlag = (id: string, flagged: boolean) => {
     if (!week) return;
@@ -256,25 +341,63 @@ export default function Dashboard() {
     }
   };
 
-  if (!user) return null;
+  const handleDelete = (id: string) => {
+    if (!week) return;
+    const receipt = week.receipts.find(r => r.id === id);
+    setWeek((prev) => {
+      if (!prev) return prev;
+      const remaining = prev.receipts.filter(r => r.id !== id);
+      const newTotal = remaining.reduce((sum, r) => sum + (r.total || 0), 0);
+      return {
+        ...prev,
+        receipts: remaining,
+        receipt_count: remaining.length,
+        total: newTotal,
+        flagged_count: receipt?.flagged ? Math.max(0, prev.flagged_count - 1) : prev.flagged_count,
+      };
+    });
+  };
+
+  if (!user || !currentWeek) return null;
 
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
       <div className="max-w-3xl mx-auto px-4 md:px-6 py-8">
+
+        {/* Week navigator */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">This Week</h1>
-            {week && (
-              <p className="text-stone-500 text-sm mt-0.5">Week {week.week_number}, {week.year}</p>
-            )}
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {isCurrentWeek ? "This Week" : `Week ${currentWeek.week}`}
+            </h1>
+            <p className="text-stone-500 text-sm mt-0.5">
+              {formatWeekRange(currentWeek.year, currentWeek.week)}
+            </p>
           </div>
-          <button
-            onClick={loadWeek}
-            className="text-xs text-stone-600 hover:text-stone-400 border border-stone-800 hover:border-stone-700 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            Refresh
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={goToPrevWeek}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+            >
+              ←
+            </button>
+            {!isCurrentWeek && (
+              <button
+                onClick={goToCurrentWeek}
+                className="px-3 h-8 text-xs rounded-lg border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+              >
+                Today
+              </button>
+            )}
+            <button
+              onClick={goToNextWeek}
+              disabled={isCurrentWeek}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              →
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -356,6 +479,7 @@ export default function Dashboard() {
           receipt={selectedReceipt}
           onClose={() => setSelectedReceipt(null)}
           onToggleFlag={handleToggleFlag}
+          onDelete={handleDelete}
         />
       )}
     </main>

@@ -150,6 +150,7 @@ def get_week(year: int, week_number: int, request: Request):
         .eq("user_id",     user_id)\
         .eq("year",        year)\
         .eq("week_number", week_number)\
+        .eq("deleted",     False)\
         .order("date",     desc=False)\
         .execute()
 
@@ -216,6 +217,22 @@ def toggle_flag(receipt_id: str, request: Request, body: dict):
         raise HTTPException(status_code=404, detail="Receipt not found")
     _db().table("receipts")\
         .update({"flagged": body.get("flagged", True)})\
+        .eq("id", receipt_id)\
+        .execute()
+    return {"status": "ok"}
+
+
+@router.patch("/receipts/{receipt_id}/delete")
+def soft_delete_receipt(receipt_id: str, request: Request, body: dict):
+    user_id = request.state.user["sub"]
+    existing = _db().table("receipts")\
+        .select("user_id")\
+        .eq("id", receipt_id)\
+        .execute()
+    if not existing.data or existing.data[0]["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    _db().table("receipts")\
+        .update({"deleted": body.get("deleted", True)})\
         .eq("id", receipt_id)\
         .execute()
     return {"status": "ok"}

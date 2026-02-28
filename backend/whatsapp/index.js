@@ -168,7 +168,7 @@ sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
     console.log("\nScan this QR code:\n");
     // Print raw qr string — paste into a QR generator site
     console.log("QR STRING:", qr);
-    QRCode.generate(qr, { small: true });
+    qrcode.generate(qr, { small: true });
   }
   /*
   if (connection === "close") {

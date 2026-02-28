@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.dot-grid {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+@media print {
+  /* Hide everything except the analysis */
+  header,
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    background: white !important;
+    color: black !important;
+  }
+
+  .print-title {
+    display: none !important;
+  }
+
+  .print-card {
+    background: white !important;
+    border: 1px solid #e5e7eb !important;
+    break-inside: avoid;
+    color: black !important;
+  }
+
+  .print-card h3,
+  .print-card p,
+  .print-card span {
+    color: black !important;
+  }
+
+  .print-header {
+    display: flex !important;
+    align-items: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #10b981;
+  }
+
+  @page {
+    margin: 1.5cm;
+  }
+}

@@ -1,0 +1,14 @@
+.env
+backend/venv
+.vscode
+backend/services/__pycache__
+backend/api/__pycache__
+backend/ingestion/__pycache__
+backend/pipelines/__pycache__
+backend/agents/__pycache__
+package-lock.json
+backend/api/middleware/__pycache__
+.claude
+backend/api/dependencies/__pycache__
+backend/api/routers/__pycache__
+backend/evals/__pycache__

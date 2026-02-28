@@ -1,0 +1,2 @@
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS sender_name TEXT;
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS sender_phone TEXT;

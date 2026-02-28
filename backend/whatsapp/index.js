@@ -128,7 +128,12 @@ async function processReceiptImage(msg, sock) {
   const mimeType = imgMsg.mimetype || "image/jpeg";
   if (!IMAGE_MIME_TYPES.has(mimeType.toLowerCase())) return;
 
-  console.log(`Receipt detected — message ID: ${msgId}`);
+  // Extract sender info
+  const senderJid   = msg.key.participant || msg.key.remoteJid;
+  const senderPhone = senderJid.split("@")[0];
+  const pushName    = msg.pushName || null;
+
+  console.log(`Receipt detected from ${pushName || senderPhone} — message ID: ${msgId}`);
 
   try {
     const buffer = await downloadMediaMessage(
@@ -140,6 +145,8 @@ async function processReceiptImage(msg, sock) {
     form.append("file", buffer, { filename: "receipt.jpg", contentType: mimeType });
     form.append("whatsapp_message_id", msgId);
     form.append("user_id", HOMLY_USER_ID);
+    form.append("sender_name", pushName || "");
+    form.append("sender_phone", senderPhone || "");
 
     const res = await axios.post(`${FASTAPI_URL}/process-receipt`, form, {
       headers: { ...form.getHeaders(), Authorization: `Bearer ${HOMLY_TOKEN}` },
@@ -154,11 +161,11 @@ async function processReceiptImage(msg, sock) {
 
     if (flagged) {
       await sock.sendMessage(msg.key.remoteJid, {
-        text: `Receipt captured but needs a manual check.\nVendor: ${vendor || "unknown"}, Total: ${total ? `SGD ${total}` : "unreadable"}`,
+        text: `Receipt from ${pushName || senderPhone} captured but needs a manual check.\nVendor: ${vendor || "unknown"}, Total: ${total ? `SGD ${total}` : "unreadable"}`,
       });
     }
 
-    console.log(`Receipt saved — ${vendor || "unknown"}, SGD ${total ?? "?"}, confidence: ${confidence}`);
+    console.log(`Receipt saved — ${vendor || "unknown"}, SGD ${total ?? "?"}, confidence: ${confidence}, sender: ${pushName || senderPhone}`);
   } catch (err) {
     console.error(`Failed to process receipt ${msgId}:`, err.response?.data || err.message);
   }
@@ -185,7 +192,8 @@ async function sendWeeklySummary(sock, groupJid, cutoffMode = "last7days") {
         ? new Date(r.date).toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short" })
         : "Unknown date";
       const amt = r.total != null ? `SGD ${Number(r.total).toFixed(2)}` : "amount unclear";
-      return `${d}  ${r.vendor || "Unknown vendor"}\n  ${amt}${r.flagged ? " ⚠️" : " ✓"}`;
+      const sender = r.sender_name ? ` (${r.sender_name})` : "";
+      return `${d}  ${r.vendor || "Unknown vendor"}${sender}\n  ${amt}${r.flagged ? " ⚠️" : " ✓"}`;
     }).join("\n");
 
     const CATEGORY_EMOJI = {

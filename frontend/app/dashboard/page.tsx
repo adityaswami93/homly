@@ -27,6 +27,8 @@ interface Receipt {
   deleted: boolean;
   notes: string | null;
   currency: string;
+  sender_name: string | null;
+  sender_phone: string | null;
   items?: Item[];
 }
 
@@ -146,6 +148,9 @@ function ReceiptDrawer({
               {receipt.vendor || "Unknown vendor"}
             </h2>
             <p className="text-stone-500 text-sm mt-0.5">{fmtDate(receipt.date)}</p>
+            {receipt.sender_name && (
+              <p className="text-stone-600 text-xs mt-0.5">Posted by {receipt.sender_name}</p>
+            )}
           </div>
           <button onClick={onClose} className="text-stone-600 hover:text-stone-300 text-xl transition-colors">×</button>
         </div>
@@ -455,7 +460,12 @@ export default function Dashboard() {
                         <p className="text-stone-200 font-medium text-sm group-hover:text-stone-100 transition-colors">
                           {receipt.vendor || "Unknown vendor"}
                         </p>
-                        <p className="text-stone-600 text-xs mt-0.5">{fmtDate(receipt.date)}</p>
+                        <p className="text-stone-600 text-xs mt-0.5">
+                          {fmtDate(receipt.date)}
+                          {receipt.sender_name && (
+                            <span className="text-stone-600"> · {receipt.sender_name}</span>
+                          )}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">

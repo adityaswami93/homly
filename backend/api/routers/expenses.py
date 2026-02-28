@@ -33,7 +33,9 @@ async def process_receipt(
     request: Request,
     file: UploadFile = File(...),
     whatsapp_message_id: str = Form(...),
-    user_id: str = Form(...)
+    user_id: str = Form(...),
+    sender_name: str = Form(default=None),
+    sender_phone: str = Form(default=None),
 ):
     existing = _db().table("receipts")\
         .select("id")\
@@ -78,6 +80,8 @@ async def process_receipt(
         "week_number":          week_num,
         "year":                 year,
         "flagged":              analysis.get("flagged", False),
+        "sender_name":          sender_name or None,
+        "sender_phone":         sender_phone or None,
     }
 
     receipt_res = _db().table("receipts").insert(receipt_row).execute()

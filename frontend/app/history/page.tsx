@@ -73,8 +73,12 @@ export default function History() {
     if (expanded === key) { setExpanded(null); return; }
     setExpanded(key);
     if (!details[key]) {
-      const res = await api.get(`/weeks/${week.year}/${week.week_number}`);
-      setDetails((prev) => ({ ...prev, [key]: res.data }));
+      try {
+        const res = await api.get(`/weeks/${week.year}/${week.week_number}`);
+        setDetails((prev) => ({ ...prev, [key]: res.data }));
+      } catch {
+        setExpanded(null);
+      }
     }
   };
 

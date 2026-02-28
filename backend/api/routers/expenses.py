@@ -121,6 +121,7 @@ def list_weeks(request: Request):
     res = _db().table("receipts")\
         .select("year, week_number")\
         .eq("user_id", user_id)\
+        .eq("deleted",     False)\
         .order("year",        desc=True)\
         .order("week_number", desc=True)\
         .execute()

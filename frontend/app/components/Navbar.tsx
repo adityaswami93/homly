@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "This Week" },
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/history",   label: "History" },
   { href: "/setup",     label: "Setup" },
 ];

@@ -1,32 +1,56 @@
 import os
+import httpx
+import base64
 from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# OpenRouter behind the facade - swap this out without touching anything else
 _client = OpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY"),
     base_url="https://openrouter.ai/api/v1"
 )
 
-# Change these two constants to swap models globally
-_COMPLETION_MODEL = "openai/gpt-4o-mini"
-_EMBEDDING_MODEL = "openai/text-embedding-ada-002"
+_COMPLETION_MODEL = "google/gemini-flash-2.0"
+_VISION_MODEL     = "google/gemini-flash-2.0"
 
-def get_embedding(text: str) -> list[float]:
-    response = _client.embeddings.create(
-        input=text,
-        model=_EMBEDDING_MODEL
-    )
-    return response.data[0].embedding
 
-def get_completion(prompt: str, system: str = "You are a helpful financial analyst.") -> str:
+def get_completion(prompt: str, system: str = "You are a helpful assistant.") -> str:
     response = _client.chat.completions.create(
         model=_COMPLETION_MODEL,
         messages=[
             {"role": "system", "content": system},
-            {"role": "user", "content": prompt}
+            {"role": "user",   "content": prompt}
         ]
     )
     return response.choices[0].message.content
+
+
+def get_vision_completion(prompt: str, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
+    data_url = f"data:{mime_type};base64,{b64}"
+
+    payload = {
+        "model": _VISION_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text",      "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}}
+                ]
+            }
+        ]
+    }
+
+    resp = httpx.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
+            "Content-Type":  "application/json",
+        },
+        json=payload,
+        timeout=60
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]

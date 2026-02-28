@@ -10,8 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from contextlib import asynccontextmanager
-from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -19,27 +17,16 @@ logger = logging.getLogger(__name__)
 
 from api.middleware.auth import AuthMiddleware
 from api.dependencies.limiter import limiter
-from api.routers import chat, watchlist, preferences, earnings, admin
+from api.routers import expenses
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(admin.run_ingestion, "cron", hour="0,6,12,18")
-    scheduler.add_job(admin.run_digest_for_current_hour, "cron", minute=0)
-    scheduler.add_job(admin.run_watchlist_digest, "cron", day_of_week="sun", hour=0, minute=0)
-    scheduler.start()
-    yield
-    scheduler.shutdown()
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(title="Homly API")
 
 app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://finclaro.vercel.app",
-        "http://localhost:3000"
+        "https://homly.vercel.app",
+        "http://localhost:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -58,13 +45,9 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-app.include_router(chat.router)
-app.include_router(watchlist.router)
-app.include_router(preferences.router)
-app.include_router(earnings.router)
-app.include_router(admin.router)
+app.include_router(expenses.router)
 
 
 @app.get("/")
 def root():
-    return {"status": "Finclaro API running"}
+    return {"status": "Homly API running"}

@@ -1,0 +1,20 @@
+{
+  "name": "homly-whatsapp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@supabase/supabase-js": "^2.39.0",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "form-data": "^4.0.0",
+    "node-cron": "^3.0.3",
+    "pino": "^9.3.2"
+  },
+  "engines": { "node": ">=18" }
+}

@@ -25,7 +25,7 @@ app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://homly.vercel.app",
+        "https://homly-six.vercel.app,
         "http://localhost:3000",
     ],
     allow_credentials=True,

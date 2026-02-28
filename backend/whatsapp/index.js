@@ -3,12 +3,15 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   downloadMediaMessage,
-} = require("@whiskeysockets/baileys");
+  Browsers,
+} = require("baileys");
+
 const { Boom } = require("@hapi/boom");
 const axios = require("axios");
 const FormData = require("form-data");
 const cron = require("node-cron");
 const pino = require("pino");
+const qrcode = require("qrcode-terminal");
 require("dotenv").config();
 
 const FASTAPI_URL   = process.env.FASTAPI_URL  || "http://localhost:8000";
@@ -149,9 +152,10 @@ async function startSock() {
   const { state, saveCreds } = await useMultiFileAuthState("auth_state");
 
   const sock = makeWASocket({
+    printQRInTerminal: false,
+    version: [2, 3000, 1033893291],
     auth: state,
     logger: pino({ level: "warn" }),
-    printQRInTerminal: true,
     browser: ["Homly", "Chrome", "1.0.0"],
   });
 
@@ -159,10 +163,19 @@ async function startSock() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
-      console.log("\nScan the QR code with WhatsApp → Linked Devices → Link a Device\n");
-    }
+sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
+  if (qr) {
+    qrcode.generate(qr, { small: true });
+  }
+  /*
+  if (connection === "close") {
+    // Log the full error object
+    console.log("Full error:", JSON.stringify(lastDisconnect?.error, null, 2));
+    const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
+    console.log(`Connection closed, reason: ${reason}`);
+    setTimeout(startSock, 3000);
+  }
+  */
     if (connection === "open") {
       console.log("WhatsApp connected!");
       groupJid = await findGroupJid(sock);
@@ -191,10 +204,14 @@ async function startSock() {
     }
     if (connection === "close") {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      console.log(`Connection closed, reason: ${reason}`);
+      
       if (reason === DisconnectReason.loggedOut) {
         console.log("Logged out — delete auth_state folder and restart");
+        process.exit(1);
       } else {
-        console.log(`Reconnecting (reason: ${reason})...`);
+        // For ALL other reasons including 405, retry
+        console.log("Reconnecting in 3 seconds...");
         setTimeout(startSock, 3000);
       }
     }

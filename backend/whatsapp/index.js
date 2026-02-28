@@ -334,6 +334,24 @@ async function startSock() {
           console.error("JWT refresh failed:", e.message);
         }
       }, 45 * 60 * 1000);
+
+      // Poll message queue every 10 seconds and send any pending messages
+      setInterval(async () => {
+        try {
+          const res = await axios.get(`${FASTAPI_URL}/internal/messages`, {
+            headers: { "X-Internal-Key": INTERNAL_KEY }
+          });
+          const { messages } = res.data;
+          for (const msg of messages) {
+            if (groupJid) {
+              await sock.sendMessage(groupJid, { text: msg.text });
+              console.log("Sent queued message to group");
+            }
+          }
+        } catch (e) {
+          // silently ignore
+        }
+      }, 10000);
     }
 
     if (connection === "close") {

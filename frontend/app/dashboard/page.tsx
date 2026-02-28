@@ -273,6 +273,8 @@ export default function Dashboard() {
   const [selectedReceipt, setSelectedReceipt]= useState<Receipt | null>(null);
   const [currentWeek,     setCurrentWeek]    = useState<{ week: number; year: number } | null>(null);
   const [isCurrentWeek,   setIsCurrentWeek]  = useState(true);
+  const [sending,         setSending]        = useState(false);
+  const [sent,            setSent]           = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -333,6 +335,25 @@ export default function Dashboard() {
     loadWeek(now.year, now.week);
   };
 
+  const handleSendTotal = async () => {
+    if (!week || !currentWeek) return;
+    setSending(true);
+    setSent(false);
+    try {
+      await api.post("/messages/send", {
+        type: "week_total",
+        year: currentWeek.year,
+        week_number: currentWeek.week,
+      });
+      setSent(true);
+      setTimeout(() => setSent(false), 3000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleToggleFlag = (id: string, flagged: boolean) => {
     if (!week) return;
     setWeek((prev) => prev ? {
@@ -379,28 +400,37 @@ export default function Dashboard() {
               {formatWeekRange(currentWeek.year, currentWeek.week)}
             </p>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <button
-              onClick={goToPrevWeek}
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+              onClick={handleSendTotal}
+              disabled={sending || !week || week.receipt_count === 0}
+              className="flex items-center gap-1.5 text-xs bg-amber-400/10 hover:bg-amber-400/15 border border-amber-400/30 text-amber-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              ←
+              {sent ? "✓ Sent" : sending ? "Sending..." : "📤 Send to group"}
             </button>
-            {!isCurrentWeek && (
+            <div className="flex items-center gap-1">
               <button
-                onClick={goToCurrentWeek}
-                className="px-3 h-8 text-xs rounded-lg border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+                onClick={goToPrevWeek}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
               >
-                Today
+                ←
               </button>
-            )}
-            <button
-              onClick={goToNextWeek}
-              disabled={isCurrentWeek}
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              →
-            </button>
+              {!isCurrentWeek && (
+                <button
+                  onClick={goToCurrentWeek}
+                  className="px-3 h-8 text-xs rounded-lg border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+                >
+                  Today
+                </button>
+              )}
+              <button
+                onClick={goToNextWeek}
+                disabled={isCurrentWeek}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                →
+              </button>
+            </div>
           </div>
         </div>
 

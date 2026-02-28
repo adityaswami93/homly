@@ -18,6 +18,7 @@ SKIP_AUTH_PATHS = [
     "/internal/qr",
     "/internal/connected",
     "/internal/settings",
+    "/internal/messages",
     "/setup/state",
     "/setup/group",
     "/setup/qr-stream",

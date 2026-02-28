@@ -8,8 +8,8 @@ load_dotenv()
 
 _client: OpenAI | None = None
 
-_COMPLETION_MODEL = "google/gemini-flash-2.0"
-_VISION_MODEL     = "google/gemini-flash-2.0"
+_COMPLETION_MODEL = "google/gemini-2.5-flash-lite"
+_VISION_MODEL     = "google/gemini-2.5-flash-lite"
 
 
 def _get_client() -> OpenAI:

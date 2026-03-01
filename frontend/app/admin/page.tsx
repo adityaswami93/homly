@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import Navbar from "@/app/components/Navbar";
+import { useToast } from "@/lib/toast";
+import { ToastContainer } from "@/app/components/Toast";
 
 interface Member { user_id: string; role: string; }
 interface Household {
@@ -38,6 +40,7 @@ export default function AdminPage() {
   const [sending,     setSending]     = useState(false);
   const [inviteSent,  setInviteSent]  = useState(false);
   const router = useRouter();
+  const { toasts, dismissToast, toast } = useToast();
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -74,9 +77,10 @@ export default function AdminPage() {
       setInviteSent(true);
       setInviteEmail("");
       setInviteHousehold("");
+      toast.success(`Invite sent to ${inviteEmail}`);
       await load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Failed to send invite");
+      toast.error(e.response?.data?.detail || "Failed to send invite");
     } finally {
       setSending(false);
     }
@@ -222,6 +226,7 @@ export default function AdminPage() {
           </>
         )}
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </main>
   );
 }

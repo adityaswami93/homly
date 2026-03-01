@@ -4,14 +4,16 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
+import { useToast } from "@/lib/toast";
+import { ToastContainer } from "@/app/components/Toast";
 
 function OnboardingInner() {
   const [step,         setStep]         = useState<"loading"|"create"|"done">("loading");
   const [householdName,setHouseholdName]= useState("Home");
   const [saving,       setSaving]       = useState(false);
-  const [error,        setError]        = useState("");
   const router      = useRouter();
   const searchParams = useSearchParams();
+  const { toasts, dismissToast, toast } = useToast();
 
   useEffect(() => {
     const init = async () => {
@@ -35,8 +37,8 @@ function OnboardingInner() {
           });
           router.push("/dashboard");
           return;
-        } catch (e) {
-          setError("Invalid or expired invite link.");
+        } catch {
+          toast.error("Invalid or expired invite link.");
         }
       }
 
@@ -47,13 +49,12 @@ function OnboardingInner() {
 
   const handleCreate = async () => {
     setSaving(true);
-    setError("");
     try {
       await api.post("/household", { name: householdName });
       setStep("done");
       setTimeout(() => router.push("/dashboard"), 1500);
     } catch (e: any) {
-      setError(e.response?.data?.detail || "Failed to create household");
+      toast.error(e.response?.data?.detail || "Failed to create household");
     } finally {
       setSaving(false);
     }
@@ -86,7 +87,6 @@ function OnboardingInner() {
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                 className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-400/60 transition text-sm"
               />
-              {error && <p className="text-red-400 text-sm">{error}</p>}
               <button
                 onClick={handleCreate}
                 disabled={saving || !householdName}
@@ -105,6 +105,7 @@ function OnboardingInner() {
           </div>
         )}
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </main>
   );
 }

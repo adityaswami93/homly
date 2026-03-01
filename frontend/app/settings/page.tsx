@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import Navbar from "@/app/components/Navbar";
+import { useToast } from "@/lib/toast";
+import { ToastContainer } from "@/app/components/Toast";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const HOURS = Array.from({ length: 24 }, (_, i) => {
@@ -39,6 +41,7 @@ export default function SettingsPage() {
   const [saving,  setSaving]  = useState(false);
   const [saved,   setSaved]   = useState(false);
   const router = useRouter();
+  const { toasts, dismissToast, toast } = useToast();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -59,10 +62,15 @@ export default function SettingsPage() {
     if (!form) return;
     setSaving(true);
     setSaved(false);
-    await api.patch("/settings", form);
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    try {
+      await api.patch("/settings", form);
+      setSaved(true);
+      toast.success("Settings saved");
+    } catch {
+      toast.error("Failed to save settings");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const update = (key: keyof Settings, value: any) => {
@@ -188,6 +196,7 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </main>
   );
 }

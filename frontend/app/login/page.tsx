@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/lib/toast";
+import { ToastContainer } from "@/app/components/Toast";
 
 type Mode = "login" | "forgot" | "magic";
 
@@ -14,6 +16,7 @@ export default function Login() {
   const [error,    setError]    = useState("");
   const [sent,     setSent]     = useState(false);
   const router = useRouter();
+  const { toasts, dismissToast, toast } = useToast();
 
   const reset = (newMode: Mode) => {
     setMode(newMode);
@@ -45,6 +48,7 @@ export default function Login() {
       setError(error.message);
     } else {
       setSent(true);
+      toast.success("Reset link sent — check your inbox");
     }
     setLoading(false);
   };
@@ -63,6 +67,7 @@ export default function Login() {
       setError(error.message);
     } else {
       setSent(true);
+      toast.success("Magic link sent — check your inbox");
     }
     setLoading(false);
   };

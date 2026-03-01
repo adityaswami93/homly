@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import Navbar from "@/app/components/Navbar";
+import { useToast } from "@/lib/toast";
+import { ToastContainer } from "@/app/components/Toast";
 
 interface Item {
   id: string;
@@ -102,12 +104,13 @@ function formatWeekRange(year: number, week: number): string {
 }
 
 function ReceiptDrawer({
-  receipt, onClose, onToggleFlag, onDelete,
+  receipt, onClose, onToggleFlag, onDelete, onToast,
 }: {
   receipt: Receipt;
   onClose: () => void;
   onToggleFlag: (id: string, flagged: boolean) => void;
   onDelete: (id: string) => void;
+  onToast: (msg: string, type: "success" | "error") => void;
 }) {
   const [items,    setItems]    = useState<Item[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -130,10 +133,16 @@ function ReceiptDrawer({
 
   const handleDelete = async () => {
     setDeleting(true);
-    await api.patch(`/receipts/${receipt.id}/delete`, { deleted: true });
-    onDelete(receipt.id);
-    setDeleting(false);
-    onClose();
+    try {
+      await api.patch(`/receipts/${receipt.id}/delete`, { deleted: true });
+      onDelete(receipt.id);
+      onToast("Receipt removed", "success");
+      onClose();
+    } catch {
+      onToast("Failed to remove receipt", "error");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -274,8 +283,8 @@ export default function Dashboard() {
   const [currentWeek,     setCurrentWeek]    = useState<{ week: number; year: number } | null>(null);
   const [isCurrentWeek,   setIsCurrentWeek]  = useState(true);
   const [sending,         setSending]        = useState(false);
-  const [sent,            setSent]           = useState(false);
   const router = useRouter();
+  const { toasts, dismissToast, toast } = useToast();
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -351,17 +360,15 @@ export default function Dashboard() {
   const handleSendTotal = async () => {
     if (!week || !currentWeek) return;
     setSending(true);
-    setSent(false);
     try {
       await api.post("/messages/send", {
         type: "week_total",
         year: currentWeek.year,
         week_number: currentWeek.week,
       });
-      setSent(true);
-      setTimeout(() => setSent(false), 3000);
-    } catch (e) {
-      console.error(e);
+      toast.success("Summary sent to WhatsApp group");
+    } catch {
+      toast.error("Failed to send message");
     } finally {
       setSending(false);
     }
@@ -419,7 +426,7 @@ export default function Dashboard() {
               disabled={sending || !week || week.receipt_count === 0}
               className="flex items-center gap-1.5 text-xs bg-amber-400/10 hover:bg-amber-400/15 border border-amber-400/30 text-amber-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              {sent ? "✓ Sent" : sending ? "Sending..." : "📤 Send to group"}
+              {sending ? "Sending..." : "📤 Send to group"}
             </button>
             <div className="flex items-center gap-1">
               <button
@@ -532,8 +539,10 @@ export default function Dashboard() {
           onClose={() => setSelectedReceipt(null)}
           onToggleFlag={handleToggleFlag}
           onDelete={handleDelete}
+          onToast={(msg, type) => type === "success" ? toast.success(msg) : toast.error(msg)}
         />
       )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </main>
   );
 }

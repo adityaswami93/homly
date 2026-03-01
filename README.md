@@ -1,5 +1,15 @@
 # Homly
 
+## Development process
+
+Features are tracked and documented under `documents/`. Each feature has:
+- `implementation.md` — the Claude Code prompt and technical decisions
+- `release.md` — what was built, files changed, migrations, known issues
+
+See [documents/README.md](documents/README.md) for the full index.
+
+---
+
 WhatsApp-based household expense tracker. Your helper sends receipt photos to a WhatsApp group → automatic OCR → weekly dashboard with category breakdown and reimbursement total.
 
 ## How it works

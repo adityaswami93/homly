@@ -23,6 +23,9 @@ documents/005-messages/
 | 003 | settings | Configurable summary schedule, cutoff mode, group name | ✅ Released |
 | 004 | sender | Capture who posted each receipt | ✅ Released |
 | 005 | messages | Send messages to WhatsApp group from dashboard | ✅ Released |
+| 006 | multi-tenant | Households, household_members, household_id filtering, invite flow | ✅ Released |
+| 007 | auth-pages | Password reset + magic link login flows, Supabase callback pages | ✅ Released |
+| 008 | toast | Toast notification system across all interactive pages | ✅ Released |
 
 ---
 

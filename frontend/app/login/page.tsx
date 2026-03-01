@@ -238,6 +238,7 @@ export default function Login() {
           Homly is a private household tool.
         </p>
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </main>
   );
 }

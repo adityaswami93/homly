@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
+_jwks_client = jwt.PyJWKClient(
+    f"{os.getenv('SUPABASE_URL')}/auth/v1/.well-known/jwks.json",
+    cache_keys=True,
+)
+
 SKIP_AUTH_PATHS = [
     "/",
     "/docs",
@@ -66,12 +71,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             }
             return await call_next(request)
 
-        # Verify JWT
+        # Verify JWT via JWKS (handles ES256 and HS256 automatically)
         try:
+            signing_key = _jwks_client.get_signing_key_from_jwt(token)
             payload = jwt.decode(
                 token,
-                os.getenv("SUPABASE_JWT_SECRET"),
-                algorithms=["HS256"],
+                signing_key.key,
+                algorithms=["ES256", "HS256"],
                 audience="authenticated",
             )
         except jwt.ExpiredSignatureError:

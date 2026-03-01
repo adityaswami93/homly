@@ -38,6 +38,10 @@ async def process_receipt(
     sender_name: Optional[str] = Form(default=None),
     sender_phone: Optional[str] = Form(default=None),
 ):
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
     existing = _db().table("receipts")\
         .select("id")\
         .eq("whatsapp_message_id", whatsapp_message_id)\
@@ -68,6 +72,7 @@ async def process_receipt(
 
     receipt_row = {
         "user_id":              user_id,
+        "household_id":         household_id,
         "vendor":               analysis.get("vendor"),
         "date":                 receipt_date.isoformat(),
         "subtotal":             analysis.get("subtotal"),
@@ -93,6 +98,7 @@ async def process_receipt(
         item_rows = [
             {
                 "receipt_id":   receipt_id,
+                "household_id": household_id,
                 "name":         item.get("name"),
                 "qty":          item.get("qty", 1),
                 "unit_price":   item.get("unit_price"),
@@ -122,10 +128,14 @@ async def process_receipt(
 
 @router.get("/weeks")
 def list_weeks(request: Request):
-    user_id = request.state.user["sub"]
+    user_id      = request.state.user["sub"]
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
     res = _db().table("receipts")\
         .select("year, week_number")\
-        .eq("user_id", user_id)\
+        .eq("household_id", household_id)\
         .eq("deleted",     False)\
         .order("year",        desc=True)\
         .order("week_number", desc=True)\
@@ -149,11 +159,14 @@ def list_weeks(request: Request):
 
 @router.get("/weeks/{year}/{week_number}")
 def get_week(year: int, week_number: int, request: Request):
-    user_id = request.state.user["sub"]
+    user_id      = request.state.user["sub"]
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
 
     receipts_res = _db().table("receipts")\
         .select("*")\
-        .eq("user_id",     user_id)\
+        .eq("household_id", household_id)\
         .eq("year",        year)\
         .eq("week_number", week_number)\
         .eq("deleted",     False)\
@@ -193,12 +206,15 @@ def get_week(year: int, week_number: int, request: Request):
 
 @router.get("/receipts/{receipt_id}")
 def get_receipt(receipt_id: str, request: Request):
-    user_id = request.state.user["sub"]
+    user_id      = request.state.user["sub"]
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
 
     receipt_res = _db().table("receipts")\
         .select("*")\
-        .eq("id",      receipt_id)\
-        .eq("user_id", user_id)\
+        .eq("id",           receipt_id)\
+        .eq("household_id", household_id)\
         .execute()
 
     if not receipt_res.data:
@@ -214,12 +230,16 @@ def get_receipt(receipt_id: str, request: Request):
 
 @router.patch("/receipts/{receipt_id}/flag")
 def toggle_flag(receipt_id: str, request: Request, body: dict):
-    user_id = request.state.user["sub"]
+    user_id      = request.state.user["sub"]
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
     existing = _db().table("receipts")\
-        .select("user_id")\
+        .select("household_id")\
         .eq("id", receipt_id)\
         .execute()
-    if not existing.data or existing.data[0]["user_id"] != user_id:
+    if not existing.data or existing.data[0]["household_id"] != household_id:
         raise HTTPException(status_code=404, detail="Receipt not found")
     _db().table("receipts")\
         .update({"flagged": body.get("flagged", True)})\
@@ -230,12 +250,16 @@ def toggle_flag(receipt_id: str, request: Request, body: dict):
 
 @router.patch("/receipts/{receipt_id}/delete")
 def soft_delete_receipt(receipt_id: str, request: Request, body: dict):
-    user_id = request.state.user["sub"]
+    user_id      = request.state.user["sub"]
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
     existing = _db().table("receipts")\
-        .select("user_id")\
+        .select("household_id")\
         .eq("id", receipt_id)\
         .execute()
-    if not existing.data or existing.data[0]["user_id"] != user_id:
+    if not existing.data or existing.data[0]["household_id"] != household_id:
         raise HTTPException(status_code=404, detail="Receipt not found")
     _db().table("receipts")\
         .update({"deleted": body.get("deleted", True)})\
@@ -253,13 +277,17 @@ def this_week(request: Request):
 
 @router.get("/summary/last7days")
 def last_7_days(request: Request):
-    user_id = request.state.user["sub"]
+    user_id      = request.state.user["sub"]
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
     today = date.today()
     date_from = today - timedelta(days=6)  # last 7 days inclusive
 
     receipts_res = _db().table("receipts")\
         .select("*")\
-        .eq("user_id", user_id)\
+        .eq("household_id", household_id)\
         .eq("deleted", False)\
         .gte("date", date_from.isoformat())\
         .lte("date", today.isoformat())\

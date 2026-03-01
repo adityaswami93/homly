@@ -16,13 +16,17 @@ message_queue: list[dict] = []
 
 @router.post("/messages/send")
 async def send_message(request: Request, body: dict):
-    user_id  = request.state.user["sub"]
+    user_id      = request.state.user["sub"]
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
     msg_type = body.get("type")
 
     if msg_type == "week_total":
-        text = await build_week_total(user_id, body.get("year"), body.get("week_number"))
+        text = await build_week_total(household_id, body.get("year"), body.get("week_number"))
     elif msg_type == "last7days_total":
-        text = await build_last7days_total(user_id)
+        text = await build_last7days_total(household_id)
     elif msg_type == "custom":
         text = body.get("text", "").strip()
         if not text:
@@ -51,7 +55,7 @@ CATEGORY_EMOJI = {
 }
 
 
-async def build_week_total(user_id: str, year: int = None, week_number: int = None) -> str:
+async def build_week_total(household_id: str, year: int = None, week_number: int = None) -> str:
     today = date.today()
     if not year or not week_number:
         iso = today.isocalendar()
@@ -60,7 +64,7 @@ async def build_week_total(user_id: str, year: int = None, week_number: int = No
 
     receipts_res = supabase.table("receipts")\
         .select("*")\
-        .eq("user_id", user_id)\
+        .eq("household_id", household_id)\
         .eq("year", year)\
         .eq("week_number", week_number)\
         .eq("deleted", False)\
@@ -116,13 +120,13 @@ async def build_week_total(user_id: str, year: int = None, week_number: int = No
     ])
 
 
-async def build_last7days_total(user_id: str) -> str:
+async def build_last7days_total(household_id: str) -> str:
     today = date.today()
     date_from = today - timedelta(days=6)
 
     receipts_res = supabase.table("receipts")\
         .select("*")\
-        .eq("user_id", user_id)\
+        .eq("household_id", household_id)\
         .eq("deleted", False)\
         .gte("date", date_from.isoformat())\
         .lte("date", today.isoformat())\

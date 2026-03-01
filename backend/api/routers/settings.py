@@ -17,33 +17,37 @@ DEFAULTS = {
 }
 
 
-def get_or_create_settings(user_id: str) -> dict:
-    res = supabase.table("settings").select("*").eq("user_id", user_id).execute()
+def get_or_create_settings(household_id: str) -> dict:
+    res = supabase.table("settings").select("*").eq("household_id", household_id).execute()
     if res.data:
         return res.data[0]
-    # Create defaults
-    row = {"user_id": user_id, **DEFAULTS}
+    row = {"household_id": household_id, **DEFAULTS}
     supabase.table("settings").insert(row).execute()
     return row
 
 
 @router.get("/settings")
 def get_settings(request: Request):
-    user_id = request.state.user["sub"]
-    return get_or_create_settings(user_id)
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+    return get_or_create_settings(household_id)
 
 
 @router.patch("/settings")
 def update_settings(request: Request, body: dict):
-    user_id = request.state.user["sub"]
-    get_or_create_settings(user_id)  # ensure row exists
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
+    get_or_create_settings(household_id)  # ensure row exists
 
     allowed = {"summary_day", "summary_hour", "summary_timezone", "cutoff_mode", "group_name"}
     update = {k: v for k, v in body.items() if k in allowed}
     update["updated_at"] = "now()"
 
-    supabase.table("settings").update(update).eq("user_id", user_id).execute()
-    return get_or_create_settings(user_id)
+    supabase.table("settings").update(update).eq("household_id", household_id).execute()
+    return get_or_create_settings(household_id)
 
 
 @router.get("/internal/settings")
@@ -53,4 +57,8 @@ async def get_settings_internal(request: Request):
     if key != os.getenv("INTERNAL_KEY", "homly-internal"):
         raise HTTPException(status_code=403, detail="Forbidden")
     user_id = os.getenv("HOMLY_USER_ID")
-    return get_or_create_settings(user_id)
+    member = supabase.table("household_members").select("household_id").eq("user_id", user_id).execute()
+    household_id = member.data[0]["household_id"] if member.data else None
+    if not household_id:
+        raise HTTPException(status_code=404, detail="No household for bot user")
+    return get_or_create_settings(household_id)

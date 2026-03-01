@@ -5,19 +5,20 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard", label: "This Week" },
   { href: "/history",   label: "History" },
   { href: "/setup",     label: "Setup" },
   { href: "/settings",  label: "Settings" },
 ];
 
 interface NavbarProps {
-  user: { email?: string } | null;
+  user: { email?: string; user_metadata?: any } | null;
 }
 
 export default function Navbar({ user }: NavbarProps) {
-  const pathname = usePathname();
-  const router   = useRouter();
+  const pathname       = usePathname();
+  const router         = useRouter();
+  const isSuperAdmin   = user?.user_metadata?.is_super_admin === true;
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -47,6 +48,18 @@ export default function Navbar({ user }: NavbarProps) {
               {item.label}
             </Link>
           ))}
+          {isSuperAdmin && (
+            <Link
+              href="/admin"
+              className={`transition-colors ${
+                pathname === "/admin"
+                  ? "text-amber-400"
+                  : "text-stone-400 hover:text-stone-200"
+              }`}
+            >
+              Admin
+            </Link>
+          )}
         </nav>
       </div>
       <div className="flex items-center gap-3">

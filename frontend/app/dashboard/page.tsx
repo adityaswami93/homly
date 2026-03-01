@@ -278,9 +278,22 @@ export default function Dashboard() {
   const router = useRouter();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.push("/login"); return; }
       setUser(session.user);
+
+      // Check household
+      try {
+        const res = await api.get("/household");
+        if (!res.data?.id) {
+          router.push("/onboarding");
+          return;
+        }
+      } catch (e) {
+        router.push("/onboarding");
+        return;
+      }
+
       const now = getISOWeek(new Date());
       setCurrentWeek(now);
     });

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 from api.middleware.auth import AuthMiddleware
 from api.dependencies.limiter import limiter
-from api.routers import expenses, setup, internal, settings, messages
+from api.routers import expenses, setup, internal, settings, messages, households
 
 app = FastAPI(title="Homly API")
 
@@ -35,22 +35,17 @@ app.add_middleware(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled error on {request.method} {request.url.path}: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "An internal error occurred"}
-    )
-
+    return JSONResponse(status_code=500, content={"detail": "An internal error occurred"})
 
 app.include_router(expenses.router)
 app.include_router(setup.router)
 app.include_router(internal.router)
 app.include_router(settings.router)
 app.include_router(messages.router)
-
+app.include_router(households.router)
 
 @app.get("/")
 def root():

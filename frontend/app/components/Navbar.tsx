@@ -4,12 +4,64 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
+function IconWeek({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="14" height="13" rx="2" />
+      <path d="M3 8h14" />
+      <path d="M7 2v3M13 2v3" />
+      <path d="M7 12h2M11 12h2M7 15h2" />
+    </svg>
+  );
+}
+
+function IconHistory({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3.5 10A6.5 6.5 0 1 0 10 3.5" />
+      <path d="M3.5 6V10h3.5" />
+      <path d="M10 7v3.5l2.5 1.5" />
+    </svg>
+  );
+}
+
+function IconSetup({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="6" height="6" rx="1" />
+      <rect x="11" y="3" width="6" height="6" rx="1" />
+      <rect x="3" y="11" width="6" height="6" rx="1" />
+      <path d="M11 14h2M15 14h1M13 11v2M13 15v2" />
+    </svg>
+  );
+}
+
+function IconSettings({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="10" cy="10" r="2.5" />
+      <path d="M10 3v1.5M10 15.5V17M3 10h1.5M15.5 10H17M4.93 4.93l1.06 1.06M14.01 14.01l1.06 1.06M4.93 15.07l1.06-1.06M14.01 5.99l1.06-1.06" />
+    </svg>
+  );
+}
+
+function IconAdmin({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 2.5L4 5v4.5c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V5L10 2.5z" />
+      <path d="M7.5 10l1.5 1.5 3-3" />
+    </svg>
+  );
+}
+
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "This Week", short: "Week" },
-  { href: "/history",   label: "History",   short: "History" },
-  { href: "/setup",     label: "Setup",     short: "Setup" },
-  { href: "/settings",  label: "Settings",  short: "Settings" },
+  { href: "/dashboard", label: "This Week", short: "Week",     Icon: IconWeek },
+  { href: "/history",   label: "History",   short: "History",  Icon: IconHistory },
+  { href: "/setup",     label: "Setup",     short: "Setup",    Icon: IconSetup },
+  { href: "/settings",  label: "Settings",  short: "Settings", Icon: IconSettings },
 ];
+
+const ADMIN_ITEM = { href: "/admin", label: "Admin", short: "Admin", Icon: IconAdmin };
 
 interface NavbarProps {
   user: { email?: string; user_metadata?: any } | null;
@@ -25,10 +77,7 @@ export default function Navbar({ user }: NavbarProps) {
     router.push("/login");
   };
 
-  const allNavItems = [
-    ...NAV_ITEMS,
-    ...(isSuperAdmin ? [{ href: "/admin", label: "Admin", short: "Admin" }] : []),
-  ];
+  const allNavItems = [...NAV_ITEMS, ...(isSuperAdmin ? [ADMIN_ITEM] : [])];
 
   return (
     <>
@@ -74,17 +123,21 @@ export default function Navbar({ user }: NavbarProps) {
 
       {/* Mobile bottom nav */}
       <nav className="sm:hidden fixed bottom-0 inset-x-0 z-10 bg-[#0f0e0c]/95 backdrop-blur-sm border-t border-stone-800 flex justify-around py-2 pb-safe">
-        {allNavItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`flex flex-col items-center gap-0.5 px-3 py-1 min-w-[3rem] transition-colors ${
-              pathname === item.href ? "text-amber-400" : "text-stone-500"
-            }`}
-          >
-            <span className="text-[11px] font-medium">{item.short}</span>
-          </Link>
-        ))}
+        {allNavItems.map(({ href, short, Icon }) => {
+          const active = pathname === href;
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`flex flex-col items-center gap-1 px-3 py-1 min-w-[3rem] transition-colors ${
+                active ? "text-amber-400" : "text-stone-500"
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="text-[10px] font-medium">{short}</span>
+            </Link>
+          );
+        })}
       </nav>
     </>
   );

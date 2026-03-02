@@ -104,18 +104,23 @@ function formatWeekRange(year: number, week: number): string {
 }
 
 function ReceiptDrawer({
-  receipt, onClose, onToggleFlag, onDelete, onToast,
+  receipt, isAdmin, onClose, onToggleFlag, onDelete, onDateChange, onToast,
 }: {
   receipt: Receipt;
+  isAdmin: boolean;
   onClose: () => void;
   onToggleFlag: (id: string, flagged: boolean) => void;
   onDelete: (id: string) => void;
+  onDateChange: (id: string, newDate: string, weekNumber: number, year: number) => void;
   onToast: (msg: string, type: "success" | "error") => void;
 }) {
-  const [items,    setItems]    = useState<Item[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [toggling, setToggling] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [items,       setItems]       = useState<Item[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [toggling,    setToggling]    = useState(false);
+  const [deleting,    setDeleting]    = useState(false);
+  const [editingDate, setEditingDate] = useState(false);
+  const [dateValue,   setDateValue]   = useState(receipt.date?.slice(0, 10) ?? "");
+  const [savingDate,  setSavingDate]  = useState(false);
 
   useEffect(() => {
     api.get(`/receipts/${receipt.id}`).then((res) => {
@@ -145,6 +150,21 @@ function ReceiptDrawer({
     }
   };
 
+  const handleSaveDate = async () => {
+    if (!dateValue) return;
+    setSavingDate(true);
+    try {
+      const res = await api.patch(`/receipts/${receipt.id}/date`, { date: dateValue });
+      onDateChange(receipt.id, res.data.date, res.data.week_number, res.data.year);
+      setEditingDate(false);
+      onToast("Date updated", "success");
+    } catch {
+      onToast("Failed to update date", "error");
+    } finally {
+      setSavingDate(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-stretch sm:justify-end" onClick={onClose}>
       <div
@@ -156,7 +176,41 @@ function ReceiptDrawer({
             <h2 className="font-semibold text-stone-100 text-lg">
               {receipt.vendor || "Unknown vendor"}
             </h2>
-            <p className="text-stone-500 text-sm mt-0.5">{fmtDate(receipt.date)}</p>
+            {editingDate ? (
+              <div className="flex items-center gap-2 mt-1.5">
+                <input
+                  type="date"
+                  value={dateValue}
+                  onChange={(e) => setDateValue(e.target.value)}
+                  className="bg-stone-800 border border-stone-700 rounded-lg px-2 py-1 text-xs text-stone-200 focus:outline-none focus:border-amber-400/60"
+                />
+                <button
+                  onClick={handleSaveDate}
+                  disabled={savingDate}
+                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-40"
+                >
+                  {savingDate ? "Saving..." : "Save"}
+                </button>
+                <button
+                  onClick={() => { setEditingDate(false); setDateValue(receipt.date?.slice(0, 10) ?? ""); }}
+                  className="text-xs text-stone-600 hover:text-stone-400 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-stone-500 text-sm">{fmtDate(receipt.date)}</p>
+                {isAdmin && (
+                  <button
+                    onClick={() => { setDateValue(receipt.date?.slice(0, 10) ?? ""); setEditingDate(true); }}
+                    className="text-stone-700 hover:text-stone-400 text-xs transition-colors"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+            )}
             {receipt.sender_name && (
               <p className="text-stone-600 text-xs mt-0.5">Posted by {receipt.sender_name}</p>
             )}
@@ -277,6 +331,7 @@ function EmptyWeek() {
 
 export default function Dashboard() {
   const [user,            setUser]           = useState<any>(null);
+  const [isAdmin,         setIsAdmin]        = useState(false);
   const [week,            setWeek]           = useState<WeekData | null>(null);
   const [loading,         setLoading]        = useState(true);
   const [selectedReceipt, setSelectedReceipt]= useState<Receipt | null>(null);
@@ -298,6 +353,9 @@ export default function Dashboard() {
           router.push("/onboarding");
           return;
         }
+        const myMember = res.data.members?.find((m: any) => m.user_id === session.user.id);
+        const isSuperAdmin = session.user.user_metadata?.is_super_admin === true;
+        setIsAdmin(myMember?.role === "admin" || isSuperAdmin);
       } catch (e) {
         router.push("/onboarding");
         return;
@@ -401,6 +459,21 @@ export default function Dashboard() {
         flagged_count: receipt?.flagged ? Math.max(0, prev.flagged_count - 1) : prev.flagged_count,
       };
     });
+  };
+
+  const handleDateChange = (id: string, newDate: string, weekNumber: number, year: number) => {
+    // If the receipt moved to a different week, remove it from the current view
+    if (!currentWeek || weekNumber !== currentWeek.week || year !== currentWeek.year) {
+      handleDelete(id);
+      setSelectedReceipt(null);
+    } else {
+      // Same week — just update the date in state
+      setWeek((prev) => prev ? {
+        ...prev,
+        receipts: prev.receipts.map((r) => r.id === id ? { ...r, date: newDate } : r),
+      } : prev);
+      setSelectedReceipt((prev) => prev ? { ...prev, date: newDate } : prev);
+    }
   };
 
   if (!user || !currentWeek) return null;
@@ -536,9 +609,11 @@ export default function Dashboard() {
       {selectedReceipt && (
         <ReceiptDrawer
           receipt={selectedReceipt}
+          isAdmin={isAdmin}
           onClose={() => setSelectedReceipt(null)}
           onToggleFlag={handleToggleFlag}
           onDelete={handleDelete}
+          onDateChange={handleDateChange}
           onToast={(msg, type) => type === "success" ? toast.success(msg) : toast.error(msg)}
         />
       )}

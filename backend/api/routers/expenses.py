@@ -273,6 +273,50 @@ def soft_delete_receipt(receipt_id: str, request: Request, body: dict):
     return {"status": "ok"}
 
 
+@router.patch("/receipts/{receipt_id}/date")
+def update_receipt_date(receipt_id: str, request: Request, body: dict):
+    user         = request.state.user
+    household_id = user.get("household_id")
+    role         = user.get("role")
+    is_super_admin = user.get("is_super_admin")
+
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+    if role != "admin" and not is_super_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    new_date_str = body.get("date")
+    if not new_date_str:
+        raise HTTPException(status_code=400, detail="date required")
+    try:
+        new_date = date.fromisoformat(new_date_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format — use YYYY-MM-DD")
+
+    existing = _db().table("receipts")\
+        .select("household_id")\
+        .eq("id", receipt_id)\
+        .execute()
+    if not existing.data or existing.data[0]["household_id"] != household_id:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    week_num, year = _week_for_date(new_date)
+
+    _db().table("receipts").update({
+        "date":        new_date.isoformat(),
+        "week_number": week_num,
+        "year":        year,
+    }).eq("id", receipt_id).execute()
+
+    _db().table("items").update({
+        "receipt_date": new_date.isoformat(),
+        "week_number":  week_num,
+        "year":         year,
+    }).eq("receipt_id", receipt_id).execute()
+
+    return {"status": "ok", "date": new_date.isoformat(), "week_number": week_num, "year": year}
+
+
 @router.get("/this-week")
 def this_week(request: Request, household_id: Optional[str] = Query(default=None)):
     today = date.today()

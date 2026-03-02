@@ -16,7 +16,7 @@ export default function Setup() {
   const [qr,          setQr]          = useState<string | null>(null);
   const [connected,   setConnected]   = useState(false);
   const [groups,      setGroups]      = useState<Group[]>([]);
-  const [selected,    setSelected]    = useState("");
+  const [selected,    setSelected]    = useState<Group | null>(null);
   const [saving,      setSaving]      = useState(false);
   const [saved,       setSaved]       = useState(false);
   const [regenerating,setRegenerating]= useState(false);
@@ -56,7 +56,7 @@ export default function Setup() {
   const handleSaveGroup = async () => {
     if (!selected) return;
     setSaving(true);
-    await api.post("/setup/group", { group_name: selected });
+    await api.patch("/settings", { group_jid: selected.jid, group_name: selected.name });
     setSaving(false);
     setSaved(true);
   };
@@ -128,9 +128,9 @@ export default function Setup() {
                   {groups.map((g) => (
                     <button
                       key={g.jid}
-                      onClick={() => setSelected(g.name)}
+                      onClick={() => setSelected(g)}
                       className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-colors ${
-                        selected === g.name
+                        selected?.jid === g.jid
                           ? "border-amber-400/50 bg-amber-400/8 text-amber-300"
                           : "border-stone-800 hover:border-stone-700 text-stone-300"
                       }`}
@@ -148,7 +148,7 @@ export default function Setup() {
                 </button>
                 {saved && (
                   <p className="text-emerald-400 text-xs text-center">
-                    Bot will now monitor &quot;{selected}&quot; for receipt images.
+                    Bot will now monitor &quot;{selected?.name}&quot; for receipt images.
                   </p>
                 )}
               </div>

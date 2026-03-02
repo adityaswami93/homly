@@ -92,7 +92,7 @@ export default function Setup() {
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
-      <div className="max-w-lg mx-auto px-4 py-12">
+      <div className="max-w-lg mx-auto px-4 py-12 pb-24 sm:pb-12">
         <h1 className="text-2xl font-semibold tracking-tight mb-2">WhatsApp Setup</h1>
         <p className="text-stone-500 text-sm mb-8">
           Connect your WhatsApp account and select the expense group.
@@ -113,7 +113,7 @@ export default function Setup() {
             </p>
           ) : qr ? (
             <div className="flex flex-col items-center gap-4">
-              <img src={qr} alt="WhatsApp QR Code" className="w-56 h-56 rounded-lg bg-white p-2" />
+              <img src={qr} alt="WhatsApp QR Code" className="w-48 h-48 sm:w-56 sm:h-56 rounded-lg bg-white p-2" />
               <p className="text-stone-500 text-xs text-center">
                 Open WhatsApp → Linked Devices → Link a Device → scan this code
               </p>

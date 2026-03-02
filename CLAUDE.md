@@ -405,6 +405,29 @@ Receipts use `deleted: boolean` (not hard delete). All queries filter `.eq("dele
 - Dark stone theme: `bg-[#0f0e0c]`, amber accent (`amber-400`), stone neutrals
 - Toast notifications via `useToast` hook + `<ToastContainer />`
 
+### Mobile responsiveness
+
+**Navigation** — desktop nav links are `hidden sm:flex` in the header. A fixed bottom nav (`sm:hidden`) in `Navbar.tsx` handles mobile. All pages must add `pb-24 sm:pb-8` (or similar) to their content container to prevent content going under the bottom nav.
+
+**Bottom padding pattern** — every page's `max-w-* mx-auto px-4 py-*` div must include `pb-24 sm:pb-*` so content scrolls clear of the fixed bottom nav on mobile.
+
+**Grids** — never hardcode `grid-cols-N` without responsive variants. Use `grid-cols-N sm:grid-cols-M` so small screens stack or use fewer columns. Examples:
+- 7-item row (days of week): `grid-cols-4 sm:grid-cols-7`
+- 2-column category grid: `grid-cols-1 sm:grid-cols-2`
+- 3 summary cards: `grid-cols-3` with `p-3 sm:p-4` and `text-sm sm:text-lg` inside
+
+**Flex rows on mobile** — form rows that contain multiple inputs/selects/buttons use `flex-col sm:flex-row`. Inputs get `w-full sm:flex-1`, selects/buttons get `w-full sm:w-auto`.
+
+**Drawers / sheets** — right-side drawer pattern on desktop becomes a bottom sheet on mobile:
+```tsx
+// Overlay
+<div className="fixed inset-0 z-50 flex items-end sm:items-stretch sm:justify-end">
+// Panel
+<div className="w-full sm:max-w-md h-[88vh] sm:h-full rounded-t-2xl sm:rounded-none border-t sm:border-t-0 sm:border-l">
+```
+
+**Hiding non-essential info on mobile** — use `hidden sm:inline` for secondary labels (e.g. confidence badge in receipt rows, long button text). Show icon or abbreviated version on mobile instead.
+
 ---
 
 ## Migrations

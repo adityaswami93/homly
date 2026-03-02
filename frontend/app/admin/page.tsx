@@ -101,7 +101,7 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
-      <div className="max-w-5xl mx-auto px-4 md:px-6 py-8">
+      <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 pb-24 sm:pb-8">
         <div className="flex items-center gap-3 mb-8">
           <h1 className="text-2xl font-semibold tracking-tight">Super Admin</h1>
           <span className="text-xs bg-amber-400/15 border border-amber-400/30 text-amber-300 px-2 py-0.5 rounded-full">
@@ -112,18 +112,18 @@ export default function AdminPage() {
         {/* Invite */}
         <div className="border border-stone-800 rounded-xl p-5 mb-6">
           <h2 className="text-sm font-medium text-stone-300 mb-4">Invite User</h2>
-          <div className="flex gap-3 flex-wrap">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
             <input
               type="email"
               placeholder="Email address"
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
-              className="flex-1 min-w-48 bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-amber-400/60"
+              className="w-full sm:flex-1 sm:min-w-48 bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-amber-400/60"
             />
             <select
               value={inviteHousehold}
               onChange={(e) => setInviteHousehold(e.target.value)}
-              className="bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-amber-400/60"
+              className="w-full sm:w-auto bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-amber-400/60"
             >
               <option value="">New household</option>
               {households.map((h) => (
@@ -133,7 +133,7 @@ export default function AdminPage() {
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value)}
-              className="bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-amber-400/60"
+              className="w-full sm:w-auto bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-amber-400/60"
             >
               <option value="admin">Admin</option>
               <option value="member">Member</option>
@@ -141,7 +141,7 @@ export default function AdminPage() {
             <button
               onClick={handleInvite}
               disabled={sending || !inviteEmail}
-              className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-900 font-semibold px-5 py-2.5 rounded-xl transition text-sm"
+              className="w-full sm:w-auto bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-900 font-semibold px-5 py-2.5 rounded-xl transition text-sm"
             >
               {inviteSent ? "✓ Sent" : sending ? "Sending..." : "Send invite"}
             </button>

@@ -146,9 +146,9 @@ function ReceiptDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-stretch sm:justify-end" onClick={onClose}>
       <div
-        className="w-full max-w-md h-full bg-[#1a1814] border-l border-stone-800 overflow-y-auto"
+        className="w-full sm:max-w-md h-[88vh] sm:h-full bg-[#1a1814] border-t sm:border-t-0 sm:border-l border-stone-800 overflow-y-auto rounded-t-2xl sm:rounded-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-5 border-b border-stone-800 flex items-start justify-between">
@@ -244,7 +244,7 @@ function SummaryCard({ label, value, accent, warn }: {
   label: string; value: string; accent?: boolean; warn?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border p-4 ${
+    <div className={`rounded-xl border p-3 sm:p-4 ${
       accent ? "bg-amber-400/8 border-amber-400/20"
       : warn  ? "bg-red-500/6 border-red-500/20"
       :         "bg-stone-900/60 border-stone-800"
@@ -252,7 +252,7 @@ function SummaryCard({ label, value, accent, warn }: {
       <p className={`text-xs mb-1 ${accent ? "text-amber-400/70" : warn ? "text-red-400/70" : "text-stone-500"}`}>
         {label}
       </p>
-      <p className={`text-lg font-semibold font-mono tracking-tight ${
+      <p className={`text-sm sm:text-lg font-semibold font-mono tracking-tight ${
         accent ? "text-amber-300" : warn ? "text-red-300" : "text-stone-200"
       }`}>
         {value}
@@ -408,11 +408,11 @@ export default function Dashboard() {
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
-      <div className="max-w-3xl mx-auto px-4 md:px-6 py-8">
+      <div className="max-w-3xl mx-auto px-4 md:px-6 py-8 pb-24 sm:pb-8">
 
         {/* Week navigator */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
+        <div className="flex items-start justify-between mb-6 gap-3">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight">
               {isCurrentWeek ? "This Week" : `Week ${currentWeek.week}`}
             </h1>
@@ -420,13 +420,13 @@ export default function Dashboard() {
               {formatWeekRange(currentWeek.year, currentWeek.week)}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handleSendTotal}
               disabled={sending || !week || week.receipt_count === 0}
               className="flex items-center gap-1.5 text-xs bg-amber-400/10 hover:bg-amber-400/15 border border-amber-400/30 text-amber-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              {sending ? "Sending..." : "📤 Send to group"}
+              {sending ? "..." : <><span className="hidden sm:inline">📤 Send to group</span><span className="sm:hidden">📤</span></>}
             </button>
             <div className="flex items-center gap-1">
               <button
@@ -460,7 +460,7 @@ export default function Dashboard() {
           <EmptyWeek />
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-6">
               <SummaryCard label="Total to pay"  value={fmt(week.total)} accent />
               <SummaryCard label="Receipts"      value={String(week.receipt_count)} />
               <SummaryCard label="Need review"   value={String(week.flagged_count)} warn={week.flagged_count > 0} />
@@ -518,8 +518,8 @@ export default function Dashboard() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`text-xs ${CONFIDENCE_STYLE[receipt.confidence] || "text-stone-500"}`}>
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                      <span className={`hidden sm:inline text-xs ${CONFIDENCE_STYLE[receipt.confidence] || "text-stone-500"}`}>
                         {receipt.confidence}
                       </span>
                       <span className="text-stone-200 font-mono text-sm">{fmt(receipt.total, receipt.currency)}</span>

@@ -28,6 +28,7 @@ documents/005-messages/
 | 008 | toast | Toast notification system across all interactive pages | ✅ Released |
 | 009 | qr-reset | QR code regeneration from setup page + bot auth refactor (service key) | ✅ Released |
 | 010 | setup-group-ux | Saved group display, change group flow, group search on setup page | ✅ Released |
+| 011 | mobile-responsive | Mobile bottom nav, bottom-sheet drawer, responsive grids and forms | ✅ Released |
 
 ---
 

@@ -83,7 +83,7 @@ export default function SettingsPage() {
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
-      <div className="max-w-lg mx-auto px-4 py-12">
+      <div className="max-w-lg mx-auto px-4 py-12 pb-24 sm:pb-12">
         <h1 className="text-2xl font-semibold tracking-tight mb-2">Settings</h1>
         <p className="text-stone-500 text-sm mb-8">Configure your weekly summary schedule.</p>
 
@@ -98,7 +98,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="text-xs text-stone-500 block mb-2">Send summary on</label>
-                <div className="grid grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
                   {DAYS.map((day, i) => (
                     <button
                       key={day}

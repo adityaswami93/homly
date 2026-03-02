@@ -87,7 +87,7 @@ export default function History() {
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
-      <div className="max-w-3xl mx-auto px-4 md:px-6 py-8">
+      <div className="max-w-3xl mx-auto px-4 md:px-6 py-8 pb-24 sm:pb-8">
         <h1 className="text-2xl font-semibold tracking-tight mb-6">History</h1>
 
         {loading ? (
@@ -134,7 +134,7 @@ export default function History() {
                           {Object.keys(detail.category_totals).length > 0 && (
                             <div className="mb-4">
                               <p className="text-stone-600 text-xs uppercase tracking-widest mb-2">By Category</p>
-                              <div className="grid grid-cols-2 gap-1.5">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                                 {Object.entries(detail.category_totals)
                                   .sort(([, a], [, b]) => b - a)
                                   .map(([cat, amt]) => (

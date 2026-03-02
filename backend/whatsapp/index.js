@@ -29,6 +29,8 @@ const IMAGE_MIME_TYPES = new Set([
 const groupMap = new Map();
 // household_id → cron job
 const cronJobs = new Map();
+// current active socket (set on every startSock call)
+let currentSock = null;
 
 // ── Settings ────────────────────────────────────────────────
 async function fetchAllSettings() {
@@ -245,6 +247,7 @@ async function startSock() {
     logger: pino({ level: "warn" }),
     browser: ["Homly", "Chrome", "1.0.0"],
   });
+  currentSock = sock;
 
   sock.ev.on("creds.update", saveCreds);
 
@@ -325,6 +328,22 @@ async function startSock() {
 
   return sock;
 }
+
+// ── QR regeneration request polling ─────────────────────────
+// Runs independently of connection state so the button always works
+setInterval(async () => {
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/internal/qr-status`, {
+      headers: { "X-Internal-Key": INTERNAL_KEY }
+    });
+    if (res.data.qr_requested && currentSock) {
+      console.log("QR regeneration requested — restarting connection...");
+      currentSock.end(new Error("QR reset requested by user"));
+    }
+  } catch (e) {
+    // silently ignore — backend may not be up yet
+  }
+}, 5000);
 
 console.log("Homly WhatsApp listener starting...");
 startSock().catch(console.error);

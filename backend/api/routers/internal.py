@@ -28,3 +28,14 @@ async def receive_connected(request: Request, body: dict):
     whatsapp_state["qr"] = None
     whatsapp_state["groups"] = body.get("groups", [])
     return {"status": "ok"}
+
+
+@router.get("/internal/qr-status")
+async def qr_status(request: Request):
+    """Bot polls this to check if a QR regeneration was requested"""
+    key = request.headers.get("X-Internal-Key")
+    if key != INTERNAL_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    requested = whatsapp_state.get("qr_requested", False)
+    whatsapp_state["qr_requested"] = False  # clear after reading
+    return {"qr_requested": requested}

@@ -18,12 +18,21 @@ whatsapp_state = {
     "connected": False,
     "group_name": None,
     "groups": [],
+    "qr_requested": False,
 }
 
 
 @router.get("/setup/state")
 def get_state():
     return whatsapp_state
+
+
+@router.post("/setup/reset-qr")
+async def reset_qr():
+    """Clears stored QR and signals the bot to restart its connection and generate a fresh QR"""
+    whatsapp_state["qr"] = None
+    whatsapp_state["qr_requested"] = True
+    return {"status": "ok"}
 
 
 @router.post("/setup/group")

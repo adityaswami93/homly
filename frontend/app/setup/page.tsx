@@ -12,13 +12,14 @@ interface Group {
 }
 
 export default function Setup() {
-  const [user,      setUser]      = useState<any>(null);
-  const [qr,        setQr]        = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [groups,    setGroups]    = useState<Group[]>([]);
-  const [selected,  setSelected]  = useState("");
-  const [saving,    setSaving]    = useState(false);
-  const [saved,     setSaved]     = useState(false);
+  const [user,        setUser]        = useState<any>(null);
+  const [qr,          setQr]          = useState<string | null>(null);
+  const [connected,   setConnected]   = useState(false);
+  const [groups,      setGroups]      = useState<Group[]>([]);
+  const [selected,    setSelected]    = useState("");
+  const [saving,      setSaving]      = useState(false);
+  const [saved,       setSaved]       = useState(false);
+  const [regenerating,setRegenerating]= useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -42,6 +43,15 @@ export default function Setup() {
     }, 3000);
     return () => clearInterval(interval);
   }, [user]);
+
+  const handleRegenerateQr = async () => {
+    setRegenerating(true);
+    setQr(null);
+    try {
+      await api.post("/setup/reset-qr");
+    } catch (e) {}
+    setRegenerating(false);
+  };
 
   const handleSaveGroup = async () => {
     if (!selected) return;
@@ -81,11 +91,27 @@ export default function Setup() {
               <p className="text-stone-500 text-xs text-center">
                 Open WhatsApp → Linked Devices → Link a Device → scan this code
               </p>
+              <button
+                onClick={handleRegenerateQr}
+                disabled={regenerating}
+                className="text-xs text-stone-500 hover:text-stone-300 underline underline-offset-2 transition disabled:opacity-40"
+              >
+                {regenerating ? "Clearing..." : "QR expired? Generate a new one"}
+              </button>
             </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-              <p className="text-stone-500 text-sm">Waiting for QR code from bot...</p>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                <p className="text-stone-500 text-sm">Waiting for QR code from bot...</p>
+              </div>
+              <button
+                onClick={handleRegenerateQr}
+                disabled={regenerating}
+                className="self-start text-xs text-stone-500 hover:text-stone-300 underline underline-offset-2 transition disabled:opacity-40"
+              >
+                {regenerating ? "Requesting..." : "Generate QR code"}
+              </button>
             </div>
           )}
         </div>

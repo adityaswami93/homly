@@ -414,7 +414,7 @@ export default function Dashboard() {
         <div className="flex items-start justify-between mb-6 gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight">
-              {isCurrentWeek ? "This Week" : `Week ${currentWeek.week}`}
+              {isCurrentWeek ? "Dashboard" : `Week ${currentWeek.week}`}
             </h1>
             <p className="text-stone-500 text-sm mt-0.5">
               {formatWeekRange(currentWeek.year, currentWeek.week)}

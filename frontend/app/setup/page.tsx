@@ -16,9 +16,11 @@ export default function Setup() {
   const [qr,          setQr]          = useState<string | null>(null);
   const [connected,   setConnected]   = useState(false);
   const [groups,      setGroups]      = useState<Group[]>([]);
+  const [savedGroup,  setSavedGroup]  = useState<Group | null>(null);
   const [selected,    setSelected]    = useState<Group | null>(null);
+  const [changing,    setChanging]    = useState(false);
+  const [search,      setSearch]      = useState("");
   const [saving,      setSaving]      = useState(false);
-  const [saved,       setSaved]       = useState(false);
   const [regenerating,setRegenerating]= useState(false);
   const router = useRouter();
 
@@ -29,7 +31,18 @@ export default function Setup() {
     });
   }, [router]);
 
-  // Poll state from backend
+  // Load saved group from settings on mount
+  useEffect(() => {
+    if (!user) return;
+    api.get("/settings").then((res) => {
+      const { group_jid, group_name } = res.data;
+      if (group_jid && group_name) {
+        setSavedGroup({ jid: group_jid, name: group_name });
+      }
+    }).catch(() => {});
+  }, [user]);
+
+  // Poll WhatsApp connection state from backend
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(async () => {
@@ -58,8 +71,21 @@ export default function Setup() {
     setSaving(true);
     await api.patch("/settings", { group_jid: selected.jid, group_name: selected.name });
     setSaving(false);
-    setSaved(true);
+    setSavedGroup(selected);
+    setChanging(false);
+    setSelected(null);
+    setSearch("");
   };
+
+  const handleChangeGroup = () => {
+    setChanging(true);
+    setSelected(null);
+    setSearch("");
+  };
+
+  const filteredGroups = search.trim()
+    ? groups.filter((g) => g.name.toLowerCase().includes(search.toLowerCase()))
+    : groups;
 
   if (!user) return null;
 
@@ -120,37 +146,75 @@ export default function Setup() {
         {connected && (
           <div className="border border-stone-800 rounded-xl p-6">
             <h2 className="font-medium text-sm mb-4">Step 2 — Select expense group</h2>
-            {groups.length === 0 ? (
+
+            {/* Saved group display */}
+            {savedGroup && !changing ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-emerald-400/30 bg-emerald-400/5">
+                  <div>
+                    <p className="text-sm text-stone-200">{savedGroup.name}</p>
+                    <p className="text-xs text-stone-500 mt-0.5">Active group</p>
+                  </div>
+                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                </div>
+                <button
+                  onClick={handleChangeGroup}
+                  className="w-full text-sm text-stone-500 hover:text-stone-300 border border-stone-800 hover:border-stone-700 py-2.5 rounded-xl transition"
+                >
+                  Change group
+                </button>
+              </div>
+            ) : groups.length === 0 ? (
               <p className="text-stone-500 text-sm">Loading your groups...</p>
             ) : (
               <div className="space-y-3">
-                <div className="space-y-1.5">
-                  {groups.map((g) => (
-                    <button
-                      key={g.jid}
-                      onClick={() => setSelected(g)}
-                      className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-colors ${
-                        selected?.jid === g.jid
-                          ? "border-amber-400/50 bg-amber-400/8 text-amber-300"
-                          : "border-stone-800 hover:border-stone-700 text-stone-300"
-                      }`}
-                    >
-                      {g.name}
-                    </button>
-                  ))}
+                {/* Search */}
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search groups..."
+                  className="w-full bg-stone-900 border border-stone-800 rounded-xl px-4 py-2.5 text-sm text-stone-200 placeholder-stone-600 focus:outline-none focus:border-stone-600"
+                />
+
+                {/* Group list */}
+                <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  {filteredGroups.length === 0 ? (
+                    <p className="text-stone-500 text-sm px-1">No groups match &quot;{search}&quot;</p>
+                  ) : (
+                    filteredGroups.map((g) => (
+                      <button
+                        key={g.jid}
+                        onClick={() => setSelected(g)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-colors ${
+                          selected?.jid === g.jid
+                            ? "border-amber-400/50 bg-amber-400/8 text-amber-300"
+                            : "border-stone-800 hover:border-stone-700 text-stone-300"
+                        }`}
+                      >
+                        {g.name}
+                      </button>
+                    ))
+                  )}
                 </div>
-                <button
-                  onClick={handleSaveGroup}
-                  disabled={!selected || saving || saved}
-                  className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-900 font-semibold py-3 rounded-xl transition text-sm"
-                >
-                  {saved ? "✓ Group saved" : saving ? "Saving..." : "Save group"}
-                </button>
-                {saved && (
-                  <p className="text-emerald-400 text-xs text-center">
-                    Bot will now monitor &quot;{selected?.name}&quot; for receipt images.
-                  </p>
-                )}
+
+                <div className="flex gap-2">
+                  {changing && (
+                    <button
+                      onClick={() => { setChanging(false); setSelected(null); setSearch(""); }}
+                      className="flex-1 border border-stone-800 hover:border-stone-700 text-stone-400 hover:text-stone-300 py-3 rounded-xl transition text-sm"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    onClick={handleSaveGroup}
+                    disabled={!selected || saving}
+                    className="flex-1 bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-900 font-semibold py-3 rounded-xl transition text-sm"
+                  >
+                    {saving ? "Saving..." : "Save group"}
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -113,7 +113,7 @@ SUPABASE_URL=https://yourproject.supabase.co
 SUPABASE_KEY=your_service_role_key
 SUPABASE_JWT_SECRET=your_jwt_secret
 OPENROUTER_API_KEY=your_openrouter_key
-HOMLY_USER_ID=your_supabase_user_uuid
+INTERNAL_KEY=homly-internal            # shared secret for /internal/* endpoints
 ```
 
 ### WhatsApp bot
@@ -130,23 +130,10 @@ npm start
 
 WhatsApp bot env variables (`backend/whatsapp/.env`):
 ```
-GROUP_NAME=Household Expenses          # exact WhatsApp group name, case-sensitive
 FASTAPI_URL=http://localhost:8000
-HOMLY_USER_ID=your_supabase_user_uuid
-HOMLY_TOKEN=your_supabase_jwt_token    # see note below
-SUPABASE_URL=https://yourproject.supabase.co
-SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_REFRESH_TOKEN=your_refresh_token
+SUPABASE_KEY=your_service_role_key     # same key as backend — never expires, no refresh needed
+INTERNAL_KEY=homly-internal            # shared secret for /internal/* endpoints
 ```
-
-**Getting your JWT token and refresh token:**
-After logging into the dashboard, open browser console and run:
-```js
-const s = (await supabase.auth.getSession()).data.session
-console.log("access:", s.access_token)
-console.log("refresh:", s.refresh_token)
-```
-The bot auto-refreshes the JWT every 45 minutes so it never expires.
 
 ### Frontend (Next.js)
 ```bash
@@ -257,9 +244,14 @@ All endpoints except `/process-receipt` require a Supabase JWT in the `Authoriza
 - Partially cut off → ensure full receipt is in frame
 - Handwritten receipts → limited support, flag manually
 
-**JWT expired errors**
-- The bot auto-refreshes but needs `SUPABASE_REFRESH_TOKEN` set
-- If missing, re-extract the token from browser console and update Railway env vars
+**QR code won't appear / spinner stuck**
+- Click **"Generate QR code"** on the setup page — this signals the bot to restart its connection
+- If the button doesn't help, check Railway logs for the WhatsApp bot service; the bot may have crashed
+- After the bot reconnects, the QR appears on the setup page within ~10 seconds
+
+**QR code expired before scanning**
+- Click **"QR expired? Generate a new one"** on the setup page
+- WhatsApp QR codes expire after ~20 seconds; the bot will generate a fresh one immediately
 
 **Receipt flagged for review**
 - Open dashboard → click the receipt → toggle flag after manual verification

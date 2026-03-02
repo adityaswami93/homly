@@ -26,6 +26,7 @@ documents/005-messages/
 | 006 | multi-tenant | Households, household_members, household_id filtering, invite flow | ✅ Released |
 | 007 | auth-pages | Password reset + magic link login flows, Supabase callback pages | ✅ Released |
 | 008 | toast | Toast notification system across all interactive pages | ✅ Released |
+| 009 | qr-reset | QR code regeneration from setup page + bot auth refactor (service key) | ✅ Released |
 
 ---
 

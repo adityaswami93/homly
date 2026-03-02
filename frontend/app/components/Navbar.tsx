@@ -55,7 +55,7 @@ function IconAdmin({ className }: { className?: string }) {
 }
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "This Week", short: "Week",     Icon: IconWeek },
+  { href: "/dashboard", label: "Dashboard", short: "Week",     Icon: IconWeek },
   { href: "/history",   label: "History",   short: "History",  Icon: IconHistory },
   { href: "/setup",     label: "Setup",     short: "Setup",    Icon: IconSetup },
   { href: "/settings",  label: "Settings",  short: "Settings", Icon: IconSettings },

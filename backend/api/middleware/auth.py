@@ -49,24 +49,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         token = auth_header.split(" ", 1)[1]
 
         # Allow service role key (used by WhatsApp bot)
+        # household_id is NOT resolved here — the endpoint reads it from the request body/params
         service_key = os.getenv("SUPABASE_KEY", "")
         if token == service_key:
-            user_id = os.getenv("HOMLY_USER_ID")
-            household_id = None
-            role = "admin"
-            try:
-                member = supabase.table("household_members")\
-                    .select("household_id, role")\
-                    .eq("user_id", user_id)\
-                    .execute()
-                household_id = member.data[0]["household_id"] if member.data else None
-                role = member.data[0]["role"] if member.data else "admin"
-            except Exception as e:
-                logger.error(f"Failed to fetch household for service user {user_id}: {e}")
             request.state.user = {
-                "sub": user_id,
-                "household_id": household_id,
-                "role": role,
+                "sub": None,
+                "household_id": None,
+                "role": "service",
+                "is_service_key": True,
                 "is_super_admin": False,
             }
             return await call_next(request)

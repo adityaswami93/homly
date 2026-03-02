@@ -42,7 +42,7 @@ def update_settings(request: Request, body: dict):
 
     get_or_create_settings(household_id)  # ensure row exists
 
-    allowed = {"summary_day", "summary_hour", "summary_timezone", "cutoff_mode", "group_name"}
+    allowed = {"summary_day", "summary_hour", "summary_timezone", "cutoff_mode", "group_name", "group_jid"}
     update = {k: v for k, v in body.items() if k in allowed}
     update["updated_at"] = "now()"
 
@@ -52,13 +52,9 @@ def update_settings(request: Request, body: dict):
 
 @router.get("/internal/settings")
 async def get_settings_internal(request: Request):
-    """Called by WhatsApp bot to get current settings"""
+    """Called by WhatsApp bot to get settings for all households"""
     key = request.headers.get("X-Internal-Key")
     if key != os.getenv("INTERNAL_KEY", "homly-internal"):
         raise HTTPException(status_code=403, detail="Forbidden")
-    user_id = os.getenv("HOMLY_USER_ID")
-    member = supabase.table("household_members").select("household_id").eq("user_id", user_id).execute()
-    household_id = member.data[0]["household_id"] if member.data else None
-    if not household_id:
-        raise HTTPException(status_code=404, detail="No household for bot user")
-    return get_or_create_settings(household_id)
+    res = supabase.table("settings").select("*").execute()
+    return res.data

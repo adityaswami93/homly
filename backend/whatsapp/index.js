@@ -10,17 +10,14 @@ const FormData = require("form-data");
 const cron = require("node-cron");
 const pino = require("pino");
 const QRCode = require("qrcode");
-const fs = require("fs");
 require("dotenv").config();
 
-const FASTAPI_URL   = process.env.FASTAPI_URL  || "http://localhost:8000";
-const HOMLY_USER_ID = process.env.HOMLY_USER_ID;
-const INTERNAL_KEY  = process.env.INTERNAL_KEY || "homly-internal";
-let   HOMLY_TOKEN   = process.env.HOMLY_TOKEN;
-let   GROUP_NAME    = process.env.GROUP_NAME || null;
+const FASTAPI_URL = process.env.FASTAPI_URL || "http://localhost:8000";
+const INTERNAL_KEY = process.env.INTERNAL_KEY || "homly-internal";
+const SERVICE_KEY = process.env.SUPABASE_KEY;
 
-if (!HOMLY_USER_ID || !HOMLY_TOKEN) {
-  console.error("Missing required env vars: HOMLY_USER_ID, HOMLY_TOKEN");
+if (!SERVICE_KEY) {
+  console.error("Missing required env var: SUPABASE_KEY");
   process.exit(1);
 }
 
@@ -28,28 +25,35 @@ const IMAGE_MIME_TYPES = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"
 ]);
 
-// ── Settings ────────────────────────────────────────────────
-let currentCronJob = null;
+// groupJid → { household_id, settings }
+const groupMap = new Map();
+// household_id → cron job
+const cronJobs = new Map();
 
-async function fetchSettings() {
+// ── Settings ────────────────────────────────────────────────
+async function fetchAllSettings() {
   try {
     const res = await axios.get(`${FASTAPI_URL}/internal/settings`, {
       headers: { "X-Internal-Key": INTERNAL_KEY }
     });
-    return res.data;
+    return Array.isArray(res.data) ? res.data : [res.data];
   } catch (e) {
     console.error("Failed to fetch settings:", e.message);
-    return {
-      summary_day: 6,
-      summary_hour: 9,
-      summary_timezone: "Asia/Singapore",
-      cutoff_mode: "last7days",
-      group_name: GROUP_NAME,
-    };
+    return [];
   }
 }
 
-// day: 0=Monday..6=Sunday → cron day: 1=Monday..7=Sunday (or 0=Sunday)
+function buildGroupMap(allSettings, knownGroupJids) {
+  groupMap.clear();
+  for (const s of allSettings) {
+    if (s.group_jid && s.household_id && knownGroupJids.has(s.group_jid)) {
+      groupMap.set(s.group_jid, { household_id: s.household_id, settings: s });
+    }
+  }
+  console.log(`Group map built: ${groupMap.size} household(s) active`);
+}
+
+// day: 0=Monday..6=Sunday → cron day
 function daytoCron(day) {
   // Our day: 0=Mon,1=Tue,2=Wed,3=Thu,4=Fri,5=Sat,6=Sun
   // Cron day: 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
@@ -57,42 +61,23 @@ function daytoCron(day) {
   return map[day];
 }
 
-function scheduleSummary(sock, getGroupJid, settings) {
-  if (currentCronJob) {
-    currentCronJob.stop();
-    currentCronJob = null;
-  }
+function scheduleAllSummaries(sock) {
+  for (const job of cronJobs.values()) job.stop();
+  cronJobs.clear();
 
-  const { summary_day, summary_hour, summary_timezone, cutoff_mode } = settings;
-  const cronDay = daytoCron(summary_day);
-  const cronExpr = `0 ${summary_hour} * * ${cronDay}`;
+  for (const [groupJid, { household_id, settings }] of groupMap.entries()) {
+    const { summary_day, summary_hour, summary_timezone } = settings;
+    const cronExpr = `0 ${summary_hour} * * ${daytoCron(summary_day)}`;
 
-  console.log(`Scheduling summary: cron="${cronExpr}" tz="${summary_timezone}" mode="${cutoff_mode}"`);
+    const job = cron.schedule(cronExpr, async () => {
+      const entry = groupMap.get(groupJid);
+      if (entry) {
+        await sendWeeklySummary(sock, groupJid, entry.household_id, entry.settings.cutoff_mode);
+      }
+    }, { timezone: summary_timezone });
 
-  currentCronJob = cron.schedule(cronExpr, async () => {
-    const groupJid = getGroupJid();
-    if (groupJid) {
-      // Re-fetch settings in case they changed
-      const latest = await fetchSettings();
-      await sendWeeklySummary(sock, groupJid, latest.cutoff_mode);
-    }
-  }, { timezone: summary_timezone });
-}
-
-// ── Token refresh ────────────────────────────────────────────
-async function refreshToken() {
-  try {
-    const { createClient } = require("@supabase/supabase-js");
-    const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
-    const { data } = await sb.auth.refreshSession({ refresh_token: process.env.SUPABASE_REFRESH_TOKEN });
-    if (data?.session) {
-      HOMLY_TOKEN = data.session.access_token;
-      console.log("JWT refreshed");
-    } else {
-      console.error("JWT refresh returned no session");
-    }
-  } catch (e) {
-    console.error("JWT refresh failed:", e.message);
+    cronJobs.set(household_id, job);
+    console.log(`Scheduled summary for household ${household_id}: cron="${cronExpr}" tz="${summary_timezone}"`);
   }
 }
 
@@ -120,22 +105,16 @@ async function pushConnected(groups) {
   }
 }
 
-function getGroupNameFromFile() {
-  try {
-    if (fs.existsSync("/tmp/homly_group.txt")) {
-      const name = fs.readFileSync("/tmp/homly_group.txt", "utf8").trim();
-      if (name) return name;
-    }
-  } catch (e) {}
-  return GROUP_NAME;
-}
-
 // ── Receipt processing ──────────────────────────────────────
 async function processReceiptImage(msg, sock) {
-    // Add this at the very top:
-  console.log("MSG KEY:", JSON.stringify(msg.key, null, 2));
-  console.log("PUSH NAME:", msg.pushName);
-  console.log("MSG PARTICIPANT:", msg.key.participant);
+  const groupJid = msg.key.remoteJid;
+  const entry = groupMap.get(groupJid);
+  if (!entry) {
+    console.warn(`No household mapped for group ${groupJid} — ignoring receipt`);
+    return;
+  }
+  const { household_id } = entry;
+
   const msgId   = msg.key.id;
   const msgInfo = msg.message;
 
@@ -149,12 +128,11 @@ async function processReceiptImage(msg, sock) {
   const mimeType = imgMsg.mimetype || "image/jpeg";
   if (!IMAGE_MIME_TYPES.has(mimeType.toLowerCase())) return;
 
-  // Extract sender info
-  const senderJid   = msg.key.participant || msg.key.remoteJid || "";
+  const senderJid   = msg.key.participant || groupJid;
   const senderPhone = senderJid.includes("@") ? senderJid.split("@")[0] : senderJid || null;
   const pushName    = msg.pushName || null;
 
-  console.log(`Receipt from jid=${senderJid} phone=${senderPhone} name=${pushName} — msg=${msgId}`);
+  console.log(`Receipt from ${pushName || senderPhone} — msg=${msgId} → household=${household_id}`);
 
   try {
     const buffer = await downloadMediaMessage(
@@ -165,53 +143,42 @@ async function processReceiptImage(msg, sock) {
     const form = new FormData();
     form.append("file", buffer, { filename: "receipt.jpg", contentType: mimeType });
     form.append("whatsapp_message_id", msgId);
-    form.append("user_id", HOMLY_USER_ID);
+    form.append("household_id", household_id);
     if (pushName)    form.append("sender_name",  pushName);
     if (senderPhone) form.append("sender_phone", senderPhone);
 
-    let res = await axios.post(`${FASTAPI_URL}/process-receipt`, form, {
-      headers: { ...form.getHeaders(), Authorization: `Bearer ${HOMLY_TOKEN}` },
+    const res = await axios.post(`${FASTAPI_URL}/process-receipt`, form, {
+      headers: { ...form.getHeaders(), Authorization: `Bearer ${SERVICE_KEY}` },
       timeout: 60000,
-    }).catch(async (err) => {
-      if (err.response?.status === 401) {
-        console.log("Token expired — refreshing and retrying...");
-        await refreshToken();
-        return axios.post(`${FASTAPI_URL}/process-receipt`, form, {
-          headers: { ...form.getHeaders(), Authorization: `Bearer ${HOMLY_TOKEN}` },
-          timeout: 60000,
-        });
-      }
-      throw err;
     });
 
     const { vendor, total, confidence, flagged } = res.data;
 
-    await sock.sendMessage(msg.key.remoteJid, {
-      react: { text: "✅", key: msg.key },
-    });
+    await sock.sendMessage(groupJid, { react: { text: "✅", key: msg.key } });
 
     if (flagged) {
-      await sock.sendMessage(msg.key.remoteJid, {
+      await sock.sendMessage(groupJid, {
         text: `Receipt from ${pushName || senderPhone} captured but needs a manual check.\nVendor: ${vendor || "unknown"}, Total: ${total ? `SGD ${total}` : "unreadable"}`,
       });
     }
 
-    console.log(`Receipt saved — ${vendor || "unknown"}, SGD ${total ?? "?"}, confidence: ${confidence}, sender: ${pushName || senderPhone}`);
+    console.log(`Receipt saved — ${vendor || "unknown"}, SGD ${total ?? "?"}, confidence: ${confidence}`);
   } catch (err) {
     console.error(`Failed to process receipt ${msgId}:`, err.response?.data || err.message);
   }
 }
 
 // ── Weekly summary ──────────────────────────────────────────
-async function sendWeeklySummary(sock, groupJid, cutoffMode = "last7days") {
-  console.log(`Sending summary (mode: ${cutoffMode})...`);
+async function sendWeeklySummary(sock, groupJid, householdId, cutoffMode = "last7days") {
+  console.log(`Sending summary to ${groupJid} (household: ${householdId}, mode: ${cutoffMode})...`);
   try {
     const endpoint = cutoffMode === "last7days" ? "/summary/last7days" : "/this-week";
     const res = await axios.get(`${FASTAPI_URL}${endpoint}`, {
-      headers: { Authorization: `Bearer ${HOMLY_TOKEN}` },
+      headers: { Authorization: `Bearer ${SERVICE_KEY}` },
+      params: { household_id: householdId },
     });
 
-    const { receipts, category_totals, total, flagged_count, week_number, year, date_from, date_to } = res.data;
+    const { receipts, category_totals, total, flagged_count, date_from, date_to, week_number, year } = res.data;
 
     if (!receipts || receipts.length === 0) {
       await sock.sendMessage(groupJid, { text: "No receipts recorded in this period." });
@@ -261,7 +228,7 @@ async function sendWeeklySummary(sock, groupJid, cutoffMode = "last7days") {
     ].join("\n");
 
     await sock.sendMessage(groupJid, { text: message });
-    console.log("Summary sent");
+    console.log(`Summary sent to ${groupJid}`);
   } catch (err) {
     console.error("Failed to send summary:", err.response?.data || err.message);
   }
@@ -279,9 +246,6 @@ async function startSock() {
     browser: ["Homly", "Chrome", "1.0.0"],
   });
 
-  let groupJid = null;
-  const getGroupJid = () => groupJid;
-
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
@@ -297,65 +261,27 @@ async function startSock() {
       const groupList = Object.values(groups).map(g => ({ jid: g.id, name: g.subject }));
       await pushConnected(groupList);
 
-      // Load settings and find group
-      const settings = await fetchSettings();
-      const targetName = settings.group_name || getGroupNameFromFile();
+      // Build group → household map from DB settings
+      const knownGroupJids = new Set(Object.keys(groups));
+      const allSettings = await fetchAllSettings();
+      buildGroupMap(allSettings, knownGroupJids);
+      scheduleAllSummaries(sock);
 
-      for (const [jid, meta] of Object.entries(groups)) {
-        if (meta.subject === targetName) {
-          groupJid = jid;
-          console.log(`Found group: "${targetName}" → ${jid}`);
-          break;
-        }
-      }
-
-      if (!groupJid) {
-        console.warn(`Group not found. Set it via the setup page.`);
-        const interval = setInterval(async () => {
-          const s = await fetchSettings();
-          const name = s.group_name || getGroupNameFromFile();
-          const g = await sock.groupFetchAllParticipating();
-          for (const [jid, meta] of Object.entries(g)) {
-            if (meta.subject === name) {
-              groupJid = jid;
-              console.log(`Group set: "${name}" → ${jid}`);
-              clearInterval(interval);
-              break;
-            }
-          }
-        }, 10000);
-      }
-
-      // Schedule summary based on settings
-      scheduleSummary(sock, getGroupJid, settings);
-
-      // Poll settings every 5 min and reschedule if changed
-      let lastSettings = JSON.stringify(settings);
+      // Re-sync map every 5 min in case settings changed (new group assigned, etc.)
+      let lastSettingsStr = JSON.stringify(allSettings);
       setInterval(async () => {
-        const latest = await fetchSettings();
+        const latest = await fetchAllSettings();
         const latestStr = JSON.stringify(latest);
-        if (latestStr !== lastSettings) {
-          console.log("Settings changed — rescheduling summary...");
-          scheduleSummary(sock, getGroupJid, latest);
-          lastSettings = latestStr;
-
-          // Update group if changed
-          const name = latest.group_name || getGroupNameFromFile();
+        if (latestStr !== lastSettingsStr) {
+          console.log("Settings changed — rebuilding group map...");
           const g = await sock.groupFetchAllParticipating();
-          for (const [jid, meta] of Object.entries(g)) {
-            if (meta.subject === name) {
-              groupJid = jid;
-              break;
-            }
-          }
+          buildGroupMap(latest, new Set(Object.keys(g)));
+          scheduleAllSummaries(sock);
+          lastSettingsStr = latestStr;
         }
       }, 5 * 60 * 1000);
 
-      // Refresh token immediately on connect, then every 45 min
-      await refreshToken();
-      setInterval(refreshToken, 45 * 60 * 1000);
-
-      // Poll message queue every 10 seconds and send any pending messages
+      // Poll message queue every 10 seconds
       setInterval(async () => {
         try {
           const res = await axios.get(`${FASTAPI_URL}/internal/messages`, {
@@ -363,9 +289,9 @@ async function startSock() {
           });
           const { messages } = res.data;
           for (const msg of messages) {
-            if (groupJid) {
-              await sock.sendMessage(groupJid, { text: msg.text });
-              console.log("Sent queued message to group");
+            if (msg.group_jid && groupMap.has(msg.group_jid)) {
+              await sock.sendMessage(msg.group_jid, { text: msg.text });
+              console.log(`Sent queued message to ${msg.group_jid}`);
             }
           }
         } catch (e) {
@@ -389,7 +315,7 @@ async function startSock() {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
-      if (!groupJid || msg.key.remoteJid !== groupJid) continue;
+      if (!groupMap.has(msg.key.remoteJid)) continue;
       if (!msg.message?.imageMessage &&
           !msg.message?.viewOnceMessage?.message?.imageMessage &&
           !msg.message?.viewOnceMessageV2?.message?.imageMessage) continue;

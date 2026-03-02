@@ -2,7 +2,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form, Query
 from typing import Optional
 from supabase import create_client
 from datetime import date, timedelta
@@ -34,13 +34,18 @@ async def process_receipt(
     request: Request,
     file: UploadFile = File(...),
     whatsapp_message_id: str = Form(...),
-    user_id: str = Form(...),
+    user_id: Optional[str] = Form(default=None),
     sender_name: Optional[str] = Form(default=None),
     sender_phone: Optional[str] = Form(default=None),
+    household_id: Optional[str] = Form(default=None),
 ):
-    household_id = request.state.user.get("household_id")
-    if not household_id:
-        raise HTTPException(status_code=403, detail="No household found")
+    resolved_household = request.state.user.get("household_id")
+    if not resolved_household:
+        if request.state.user.get("is_service_key"):
+            resolved_household = household_id
+        if not resolved_household:
+            raise HTTPException(status_code=403, detail="No household found")
+    household_id = resolved_household
 
     existing = _db().table("receipts")\
         .select("id")\
@@ -269,18 +274,23 @@ def soft_delete_receipt(receipt_id: str, request: Request, body: dict):
 
 
 @router.get("/this-week")
-def this_week(request: Request):
+def this_week(request: Request, household_id: Optional[str] = Query(default=None)):
     today = date.today()
     week_num, year = _week_for_date(today)
+    # Inject service-key household_id into state so get_week can resolve it
+    if not request.state.user.get("household_id") and request.state.user.get("is_service_key") and household_id:
+        request.state.user["household_id"] = household_id
     return get_week(year, week_num, request)
 
 
 @router.get("/summary/last7days")
-def last_7_days(request: Request):
-    user_id      = request.state.user["sub"]
-    household_id = request.state.user.get("household_id")
-    if not household_id:
+def last_7_days(request: Request, household_id: Optional[str] = Query(default=None)):
+    resolved = request.state.user.get("household_id")
+    if not resolved and request.state.user.get("is_service_key"):
+        resolved = household_id
+    if not resolved:
         raise HTTPException(status_code=403, detail="No household found")
+    household_id = resolved
 
     today = date.today()
     date_from = today - timedelta(days=6)  # last 7 days inclusive

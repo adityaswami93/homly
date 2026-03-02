@@ -34,7 +34,13 @@ async def send_message(request: Request, body: dict):
     else:
         raise HTTPException(status_code=400, detail=f"Unknown message type: {msg_type}")
 
-    message_queue.append({"text": text, "user_id": user_id})
+    group_jid = None
+    try:
+        s = supabase.table("settings").select("group_jid").eq("household_id", household_id).execute()
+        group_jid = s.data[0]["group_jid"] if s.data else None
+    except Exception:
+        pass
+    message_queue.append({"text": text, "group_jid": group_jid, "household_id": household_id})
     return {"status": "queued", "text": text}
 
 

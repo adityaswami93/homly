@@ -79,6 +79,23 @@ function scheduleSummary(sock, getGroupJid, settings) {
   }, { timezone: summary_timezone });
 }
 
+// ── Token refresh ────────────────────────────────────────────
+async function refreshToken() {
+  try {
+    const { createClient } = require("@supabase/supabase-js");
+    const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+    const { data } = await sb.auth.refreshSession({ refresh_token: process.env.SUPABASE_REFRESH_TOKEN });
+    if (data?.session) {
+      HOMLY_TOKEN = data.session.access_token;
+      console.log("JWT refreshed");
+    } else {
+      console.error("JWT refresh returned no session");
+    }
+  } catch (e) {
+    console.error("JWT refresh failed:", e.message);
+  }
+}
+
 // ── QR / connection helpers ─────────────────────────────────
 async function pushQR(qrData) {
   try {
@@ -152,9 +169,19 @@ async function processReceiptImage(msg, sock) {
     if (pushName)    form.append("sender_name",  pushName);
     if (senderPhone) form.append("sender_phone", senderPhone);
 
-    const res = await axios.post(`${FASTAPI_URL}/process-receipt`, form, {
+    let res = await axios.post(`${FASTAPI_URL}/process-receipt`, form, {
       headers: { ...form.getHeaders(), Authorization: `Bearer ${HOMLY_TOKEN}` },
       timeout: 60000,
+    }).catch(async (err) => {
+      if (err.response?.status === 401) {
+        console.log("Token expired — refreshing and retrying...");
+        await refreshToken();
+        return axios.post(`${FASTAPI_URL}/process-receipt`, form, {
+          headers: { ...form.getHeaders(), Authorization: `Bearer ${HOMLY_TOKEN}` },
+          timeout: 60000,
+        });
+      }
+      throw err;
     });
 
     const { vendor, total, confidence, flagged } = res.data;
@@ -324,20 +351,9 @@ async function startSock() {
         }
       }, 5 * 60 * 1000);
 
-      // JWT refresh every 45 min
-      setInterval(async () => {
-        try {
-          const { createClient } = require("@supabase/supabase-js");
-          const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
-          const { data } = await sb.auth.refreshSession({ refresh_token: process.env.SUPABASE_REFRESH_TOKEN });
-          if (data?.session) {
-            HOMLY_TOKEN = data.session.access_token;
-            console.log("JWT refreshed");
-          }
-        } catch (e) {
-          console.error("JWT refresh failed:", e.message);
-        }
-      }, 45 * 60 * 1000);
+      // Refresh token immediately on connect, then every 45 min
+      await refreshToken();
+      setInterval(refreshToken, 45 * 60 * 1000);
 
       // Poll message queue every 10 seconds and send any pending messages
       setInterval(async () => {

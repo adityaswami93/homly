@@ -441,6 +441,8 @@ Run migrations manually in Supabase SQL editor in order:
 004_sender.sql         → sender fields on receipts
 006_multi_tenant.sql   → households, members, invites + backfill
 007_group_jid.sql      → group_jid on settings, user_id nullable on receipts
+013_reimbursement.sql  → reimbursable flag on receipts, reimbursements table, settings columns
+014_image_storage.sql  → image_path on receipts, Supabase Storage
 ```
 
 > There is no migration runner — apply each file manually. Files are idempotent (`IF NOT EXISTS`, `IF NOT NULL`).

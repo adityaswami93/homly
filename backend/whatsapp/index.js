@@ -12,6 +12,12 @@ const pino = require("pino");
 const QRCode = require("qrcode");
 require("dotenv").config();
 
+const {
+  ensureBucket,
+  downloadAuthState,
+  uploadAuthState,
+} = require("./storage-state");
+
 const FASTAPI_URL = process.env.FASTAPI_URL || "http://localhost:8000";
 const INTERNAL_KEY = process.env.INTERNAL_KEY || "homly-internal";
 const SERVICE_KEY = process.env.SUPABASE_KEY;
@@ -246,6 +252,10 @@ async function sendWeeklySummary(sock, groupJid, householdId, cutoffMode = "last
 
 // ── Main ────────────────────────────────────────────────────
 async function startSock() {
+  // Restore auth state from Supabase Storage before starting
+  await ensureBucket();
+  await downloadAuthState();
+
   const { state, saveCreds } = await useMultiFileAuthState("auth_state");
 
   const sock = makeWASocket({
@@ -257,7 +267,10 @@ async function startSock() {
   });
   currentSock = sock;
 
-  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("creds.update", async () => {
+    saveCreds();
+    await uploadAuthState();
+  });
 
   sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
     if (qr) {

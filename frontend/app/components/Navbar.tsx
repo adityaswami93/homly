@@ -45,6 +45,15 @@ function IconSettings({ className }: { className?: string }) {
   );
 }
 
+function IconAnalytics({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 14l4-4 3 3 4-5 3 3" />
+      <path d="M3 17h14" />
+    </svg>
+  );
+}
+
 function IconReimburse({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -66,6 +75,7 @@ function IconAdmin({ className }: { className?: string }) {
 
 const NAV_ITEMS = [
   { href: "/dashboard",      label: "Dashboard",    short: "Week",      Icon: IconWeek },
+  { href: "/analytics",      label: "Analytics",    short: "Analytics", Icon: IconAnalytics },
   { href: "/reimbursements", label: "Reimburse",    short: "Reimburse", Icon: IconReimburse },
   { href: "/history",        label: "History",      short: "History",   Icon: IconHistory },
   { href: "/setup",          label: "Setup",        short: "Setup",     Icon: IconSetup },

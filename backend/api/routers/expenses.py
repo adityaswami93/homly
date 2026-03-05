@@ -183,33 +183,46 @@ async def process_receipt(
 
 @router.get("/weeks")
 def list_weeks(request: Request):
-    user_id      = request.state.user["sub"]
     household_id = request.state.user.get("household_id")
     if not household_id:
         raise HTTPException(status_code=403, detail="No household found")
 
-    res = _db().table("receipts")\
-        .select("year, week_number")\
+    receipts_res = _db().table("receipts")\
+        .select("year, week_number, total, reimbursable, flagged")\
         .eq("household_id", household_id)\
-        .eq("deleted",     False)\
+        .eq("deleted", False)\
         .order("year",        desc=True)\
         .order("week_number", desc=True)\
         .execute()
 
-    seen = set()
-    weeks = []
-    for row in res.data:
-        key = (row["year"], row["week_number"])
-        if key not in seen:
-            seen.add(key)
-            w = Week(row["year"], row["week_number"])
-            weeks.append({
-                "year":        row["year"],
-                "week_number": row["week_number"],
-                "week_start":  w.monday().isoformat(),
-                "week_end":    w.sunday().isoformat(),
-            })
-    return weeks
+    # Group by week
+    weeks: dict[str, dict] = {}
+    for r in receipts_res.data:
+        key = f"{r['year']}-{r['week_number']}"
+        if key not in weeks:
+            weeks[key] = {
+                "year":               r["year"],
+                "week_number":        r["week_number"],
+                "total":              0,
+                "reimbursable_total": 0,
+                "receipt_count":      0,
+                "flagged_count":      0,
+            }
+        weeks[key]["total"]         += r["total"] or 0
+        weeks[key]["receipt_count"] += 1
+        weeks[key]["flagged_count"] += 1 if r.get("flagged") else 0
+        if r.get("reimbursable"):
+            weeks[key]["reimbursable_total"] += r["total"] or 0
+
+    result = []
+    for w in weeks.values():
+        result.append({
+            **w,
+            "total":              round(w["total"],              2),
+            "reimbursable_total": round(w["reimbursable_total"], 2),
+        })
+
+    return result
 
 
 @router.get("/weeks/{year}/{week_number}")

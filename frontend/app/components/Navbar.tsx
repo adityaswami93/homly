@@ -45,6 +45,16 @@ function IconSettings({ className }: { className?: string }) {
   );
 }
 
+function IconReimburse({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 6v1.5M10 12.5V14" />
+      <path d="M7.5 12c0 1.1.9 1.5 2.5 1.5s2.5-.4 2.5-1.5-1-1.5-2.5-1.5S7.5 9.1 7.5 8c0-1.1 1-1.5 2.5-1.5S12.5 7 12.5 8" />
+    </svg>
+  );
+}
+
 function IconAdmin({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -55,10 +65,11 @@ function IconAdmin({ className }: { className?: string }) {
 }
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", short: "Week",     Icon: IconWeek },
-  { href: "/history",   label: "History",   short: "History",  Icon: IconHistory },
-  { href: "/setup",     label: "Setup",     short: "Setup",    Icon: IconSetup },
-  { href: "/settings",  label: "Settings",  short: "Settings", Icon: IconSettings },
+  { href: "/dashboard",      label: "Dashboard",    short: "Week",      Icon: IconWeek },
+  { href: "/reimbursements", label: "Reimburse",    short: "Reimburse", Icon: IconReimburse },
+  { href: "/history",        label: "History",      short: "History",   Icon: IconHistory },
+  { href: "/setup",          label: "Setup",        short: "Setup",     Icon: IconSetup },
+  { href: "/settings",       label: "Settings",     short: "Settings",  Icon: IconSettings },
 ];
 
 const ADMIN_ITEM = { href: "/admin", label: "Admin", short: "Admin", Icon: IconAdmin };

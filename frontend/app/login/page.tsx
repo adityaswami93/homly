@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/lib/toast";
@@ -235,7 +236,9 @@ export default function Login() {
         )}
 
         <p className="text-stone-600 text-xs mt-8 text-center">
-          Homly is a private household tool.
+          <Link href="/" className="hover:text-stone-400 transition-colors">
+            ← Back to home
+          </Link>
         </p>
       </div>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />

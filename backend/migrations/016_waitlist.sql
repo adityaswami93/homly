@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS waitlist (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  email      TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE waitlist DISABLE ROW LEVEL SECURITY;

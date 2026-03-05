@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 from api.middleware.auth import AuthMiddleware
 from api.dependencies.limiter import limiter
-from api.routers import expenses, setup, internal, settings, messages, households, reimbursements, analytics
+from api.routers import expenses, setup, internal, settings, messages, households, reimbursements, analytics, insights
 
 app = FastAPI(title="Homly API")
 
@@ -48,6 +48,7 @@ app.include_router(messages.router)
 app.include_router(households.router)
 app.include_router(reimbursements.router)
 app.include_router(analytics.router)
+app.include_router(insights.router)
 
 @app.get("/")
 def root():

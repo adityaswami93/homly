@@ -10,8 +10,8 @@ const NAV_ITEMS = [
   { href: "/dashboard",      label: "This Week"  },
   { href: "/analytics",      label: "Analytics"  },
   { href: "/reimbursements", label: "Reimburse"  },
+  { href: "/insights",       label: "Insights"   },
   { href: "/history",        label: "History"    },
-  { href: "/setup",          label: "Setup"      },
   { href: "/settings",       label: "Settings"   },
 ];
 

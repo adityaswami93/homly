@@ -250,6 +250,49 @@ async function sendWeeklySummary(sock, groupJid, householdId, cutoffMode = "last
   }
 }
 
+// ── Shopping list command ────────────────────────────────────
+async function handleShoppingListCommand(sock, jid) {
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/internal/shopping-list`, {
+      headers: { "X-Internal-Key": INTERNAL_KEY }
+    });
+    const { items, suggestions } = res.data;
+
+    const lines = [];
+
+    if (items.length > 0) {
+      lines.push("🛒 *Shopping List*");
+      items.forEach(item => {
+        const variant = item.variant ? ` (${item.variant})` : "";
+        lines.push(`• ${item.canonical_name}${variant}`);
+      });
+    }
+
+    if (suggestions.length > 0) {
+      if (lines.length > 0) lines.push("");
+      lines.push("📋 *Suggested — running low:*");
+      suggestions.forEach(s => {
+        const variant  = s.variant ? ` (${s.variant})` : "";
+        const urgency  = s.urgency === "overdue"
+          ? `overdue by ${Math.abs(s.days_until)}d`
+          : `due in ${s.days_until}d`;
+        lines.push(`• ${s.canonical_name}${variant} — ${urgency}`);
+      });
+    }
+
+    if (lines.length === 0) {
+      await sock.sendMessage(jid, {
+        text: "No items on your shopping list and nothing looks low on stock yet."
+      });
+      return;
+    }
+
+    await sock.sendMessage(jid, { text: lines.join("\n") });
+  } catch (e) {
+    console.error("Shopping list command failed:", e.message);
+  }
+}
+
 // ── Main ────────────────────────────────────────────────────
 async function startSock() {
   // Restore auth state from Supabase Storage before starting
@@ -340,6 +383,19 @@ async function startSock() {
     if (type !== "notify") return;
     for (const msg of messages) {
       if (!groupMap.has(msg.key.remoteJid)) continue;
+
+      const text = msg.message?.conversation
+        || msg.message?.extendedTextMessage?.text
+        || "";
+
+      // Shopping list command
+      if (text.trim().toLowerCase() === "shopping list"
+        || text.trim().toLowerCase() === "/shopping") {
+        await handleShoppingListCommand(sock, msg.key.remoteJid);
+        continue;
+      }
+
+      // Receipt image handling
       if (!msg.message?.imageMessage &&
           !msg.message?.viewOnceMessage?.message?.imageMessage &&
           !msg.message?.viewOnceMessageV2?.message?.imageMessage) continue;

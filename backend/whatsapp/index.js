@@ -312,7 +312,9 @@ async function startSock() {
 
   sock.ev.on("creds.update", async () => {
     saveCreds();
-    await uploadAuthState();
+    setTimeout(async () => {
+      await uploadAuthState();
+    }, 2000);
   });
 
   sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
@@ -382,20 +384,32 @@ async function startSock() {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
-      if (!groupMap.has(msg.key.remoteJid)) continue;
+      const remoteJid = msg.key.remoteJid;
 
-      const text = msg.message?.conversation
+      // Debug logging — helps diagnose command routing
+      const dbgConv    = msg.message?.conversation;
+      const dbgExt     = msg.message?.extendedTextMessage?.text;
+      const dbgEphConv = msg.message?.ephemeralMessage?.message?.conversation;
+      const dbgEphExt  = msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text;
+      console.log(`[msg] jid=${remoteJid} fromMe=${msg.key.fromMe} groupMapHas=${groupMap.has(remoteJid)} conv=${dbgConv} ext=${dbgExt} ephConv=${dbgEphConv} ephExt=${dbgEphExt}`);
+
+      // Extract text from all possible wrappers
+      const text = (
+        msg.message?.conversation
         || msg.message?.extendedTextMessage?.text
-        || "";
+        || msg.message?.ephemeralMessage?.message?.conversation
+        || msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text
+        || ""
+      ).trim().toLowerCase();
 
-      // Shopping list command
-      if (text.trim().toLowerCase() === "shopping list"
-        || text.trim().toLowerCase() === "/shopping") {
-        await handleShoppingListCommand(sock, msg.key.remoteJid);
+      // Shopping list command — works from ANY mapped group, not filtered by groupJid
+      if (groupMap.has(remoteJid) && (text.includes("shopping list") || text.includes("/shopping"))) {
+        await handleShoppingListCommand(sock, remoteJid);
         continue;
       }
 
-      // Receipt image handling
+      // Receipt image handling — must be a mapped group
+      if (!groupMap.has(remoteJid)) continue;
       if (!msg.message?.imageMessage &&
           !msg.message?.viewOnceMessage?.message?.imageMessage &&
           !msg.message?.viewOnceMessageV2?.message?.imageMessage) continue;

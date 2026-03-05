@@ -33,6 +33,7 @@ SKIP_AUTH_PATHS = [
     "/setup/reset-qr",
     "/setup/qr-stream",
     "/auth/accept-invite",
+    "/internal/shopping-list",
 ]
 
 

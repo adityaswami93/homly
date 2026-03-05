@@ -34,6 +34,7 @@ interface Receipt {
   sender_name: string | null;
   sender_phone: string | null;
   reimbursable: boolean;
+  image_path: string | null;
   items?: Item[];
 }
 
@@ -120,20 +121,30 @@ function ReceiptDrawer({
   onToggleReimbursable: (id: string, reimbursable: boolean) => void;
   onToast: (msg: string, type: "success" | "error") => void;
 }) {
-  const [items,       setItems]       = useState<Item[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [toggling,    setToggling]    = useState(false);
-  const [deleting,    setDeleting]    = useState(false);
-  const [editingDate, setEditingDate] = useState(false);
-  const [dateValue,   setDateValue]   = useState(receipt.date?.slice(0, 10) ?? "");
-  const [savingDate,  setSavingDate]  = useState(false);
+  const [items,        setItems]        = useState<Item[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [toggling,     setToggling]     = useState(false);
+  const [deleting,     setDeleting]     = useState(false);
+  const [editingDate,  setEditingDate]  = useState(false);
+  const [dateValue,    setDateValue]    = useState(receipt.date?.slice(0, 10) ?? "");
+  const [savingDate,   setSavingDate]   = useState(false);
+  const [imageUrl,     setImageUrl]     = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
 
   useEffect(() => {
     api.get(`/receipts/${receipt.id}`).then((res) => {
       setItems(res.data.items || []);
       setLoading(false);
     });
-  }, [receipt.id]);
+
+    if (receipt.image_path) {
+      setImageLoading(true);
+      api.get(`/receipts/${receipt.id}/image`)
+        .then((res) => { setImageUrl(res.data.url); })
+        .catch(() => {})
+        .finally(() => setImageLoading(false));
+    }
+  }, [receipt.id, receipt.image_path]);
 
   const handleFlag = async () => {
     setToggling(true);
@@ -223,6 +234,37 @@ function ReceiptDrawer({
           </div>
           <button onClick={onClose} className="text-stone-600 hover:text-stone-300 text-xl transition-colors">×</button>
         </div>
+
+        {/* Receipt image */}
+        {receipt.image_path && (
+          <div className="border-b border-stone-800">
+            {imageLoading ? (
+              <div className="h-48 flex items-center justify-center bg-stone-900/40">
+                <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : imageUrl ? (
+              <div className="relative">
+                <img
+                  src={imageUrl}
+                  alt="Receipt"
+                  className="w-full max-h-72 object-contain bg-stone-950"
+                />
+                <a
+                  href={imageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="absolute top-2 right-2 bg-stone-900/80 hover:bg-stone-800 border border-stone-700 text-stone-300 text-xs px-2.5 py-1.5 rounded-lg transition-colors backdrop-blur-sm"
+                >
+                  View full ↗
+                </a>
+              </div>
+            ) : (
+              <div className="h-24 flex items-center justify-center bg-stone-900/20">
+                <p className="text-stone-700 text-xs">Image unavailable</p>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="p-5 border-b border-stone-800 flex items-center justify-between">
           <div>

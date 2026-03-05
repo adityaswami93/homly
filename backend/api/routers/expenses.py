@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form, Query
@@ -31,6 +32,28 @@ def get_reimbursable(sender_name: str | None, sender_phone: str | None, settings
         phone_match = sender_phone and sender_phone         in helper_list
         return bool(name_match or phone_match)
     return True
+def upload_receipt_image(
+    file_bytes: bytes,
+    mime_type: str,
+    household_id: str,
+) -> "str | None":
+    """Upload receipt image to Supabase Storage. Returns storage path or None."""
+    try:
+        ext      = mime_type.split("/")[-1].replace("jpeg", "jpg")
+        today    = date.today().isoformat()
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        path     = f"{household_id}/{today}/{filename}"
+        _db().storage.from_("receipts").upload(
+            path=path,
+            file=file_bytes,
+            file_options={"content-type": mime_type, "upsert": "false"},
+        )
+        return path
+    except Exception as e:
+        print(f"Image upload failed: {e}")
+        return None
+
+
 _supabase = None
 
 def _db():
@@ -80,6 +103,10 @@ async def process_receipt(
         raise HTTPException(status_code=400, detail="Image too large (max 10 MB)")
 
     content_type = file.content_type or "image/jpeg"
+
+    # Upload image to Supabase Storage
+    image_path = upload_receipt_image(image_bytes, content_type, household_id)
+
     analysis = analyse_receipt(image_bytes, mime_type=content_type)
 
     if "error" in analysis and "vendor" not in analysis:
@@ -115,6 +142,7 @@ async def process_receipt(
         "sender_name":          sender_name or None,
         "sender_phone":         sender_phone or None,
         "reimbursable":         reimbursable,
+        "image_path":           image_path,
     }
 
     receipt_res = _db().table("receipts").insert(receipt_row).execute()
@@ -419,3 +447,31 @@ def last_7_days(request: Request, household_id: Optional[str] = Query(default=No
         "receipts":          receipts_res.data,
         "category_totals":   category_totals,
     }
+
+
+@router.get("/receipts/{receipt_id}/image")
+def get_receipt_image_url(receipt_id: str, request: Request):
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
+    receipt = _db().table("receipts")\
+        .select("image_path, household_id")\
+        .eq("id", receipt_id)\
+        .execute()
+
+    if not receipt.data:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    if receipt.data[0]["household_id"] != household_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    image_path = receipt.data[0].get("image_path")
+    if not image_path:
+        raise HTTPException(status_code=404, detail="No image stored for this receipt")
+
+    # Generate signed URL valid for 60 minutes
+    result = _db().storage.from_("receipts").create_signed_url(
+        path=image_path,
+        expires_in=3600,
+    )
+    return {"url": result["signedURL"]}

@@ -101,7 +101,7 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
-      <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 pb-24 sm:pb-8">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-8 pb-24 sm:pb-8">
         <div className="flex items-center gap-3 mb-8">
           <h1 className="text-2xl font-semibold tracking-tight">Super Admin</h1>
           <span className="text-xs bg-amber-400/15 border border-amber-400/30 text-amber-300 px-2 py-0.5 rounded-full">
@@ -151,9 +151,9 @@ export default function AdminPage() {
         {loading ? (
           <p className="text-stone-600 text-sm">Loading...</p>
         ) : (
-          <>
+          <div className="grid lg:grid-cols-2 gap-6 items-start">
             {/* Households */}
-            <div className="mb-8">
+            <div>
               <h2 className="text-stone-500 text-xs uppercase tracking-widest mb-3">
                 Households ({households.length})
               </h2>
@@ -223,7 +223,7 @@ export default function AdminPage() {
                 )}
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />

@@ -211,7 +211,7 @@ export default function Analytics() {
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
-      <div className="max-w-4xl mx-auto px-4 md:px-6 py-8 pb-24 sm:pb-8">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-8 pb-24 sm:pb-8">
 
         {/* Header + controls */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -357,61 +357,38 @@ export default function Analytics() {
               </Section>
             )}
 
-            {/* Category breakdown + Receipt volume side by side on larger screens */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-              {/* Category breakdown */}
-              {catEntries.length > 0 && (
-                <Section title="By category">
-                  <div className="space-y-3">
-                    {catEntries.map(([cat, amount]) => {
-                      const pct = catTotal > 0 ? Math.min(100, Math.round((amount / catTotal) * 100)) : 0;
-                      return (
-                        <div key={cat}>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-stone-300 text-sm">
-                              {CATEGORY_EMOJI[cat] ?? "📦"} {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                            </span>
-                            <div className="flex items-center gap-2.5">
-                              <span className="text-stone-500 text-xs">{pct}%</span>
-                              <span className="text-stone-200 text-sm font-mono w-24 text-right">{fmt(amount)}</span>
-                            </div>
-                          </div>
-                          <div className="h-1 bg-stone-800 rounded-full">
-                            <div
-                              className="h-1 rounded-full transition-all"
-                              style={{ width: `${pct}%`, background: CATEGORY_COLOR[cat] ?? "#78716c" }}
-                            />
+            {/* Category breakdown */}
+            {catEntries.length > 0 && (
+              <Section title="By category">
+                <div className="space-y-3">
+                  {catEntries.map(([cat, amount]) => {
+                    const pct = catTotal > 0 ? Math.min(100, Math.round((amount / catTotal) * 100)) : 0;
+                    return (
+                      <div key={cat}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-stone-300 text-sm">
+                            {CATEGORY_EMOJI[cat] ?? "📦"} {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                          </span>
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-stone-500 text-xs">{pct}%</span>
+                            <span className="text-stone-200 text-sm font-mono w-24 text-right">{fmt(amount)}</span>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </Section>
-              )}
+                        <div className="h-1 bg-stone-800 rounded-full">
+                          <div
+                            className="h-1 rounded-full transition-all"
+                            style={{ width: `${pct}%`, background: CATEGORY_COLOR[cat] ?? "#78716c" }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Section>
+            )}
 
-              {/* Receipt volume */}
-              {data.receipt_volume.length > 0 && (
-                <Section title="Receipt volume by week">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={data.receipt_volume} barCategoryGap="30%" margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-                      <CartesianGrid stroke="#292524" strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fill: "#78716c", fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: "#78716c", fontSize: 10 }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
-                      <Tooltip content={<DarkTooltip />} cursor={{ fill: "#292524" }} />
-                      <Bar dataKey="count" name="receipts" fill="#44403c" radius={[4, 4, 0, 0]}>
-                        {data.receipt_volume.map((_, i) => (
-                          <Cell key={i} fill="#a8a29e40" />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Section>
-              )}
-            </div>
-
-            {/* Top vendors + Sender breakdown */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Top vendors + Biggest purchases + Receipt volume */}
+            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
 
               {/* Top vendors */}
               {data.top_vendors.length > 0 && (
@@ -430,54 +407,73 @@ export default function Analytics() {
                 </Section>
               )}
 
-              {/* Sender breakdown */}
-              {data.sender_breakdown.length > 0 && (
-                <Section title="By sender">
-                  <div className="space-y-3">
-                    {data.sender_breakdown.map((s) => {
-                      const ownTotal = s.total - s.reimbursable_total;
-                      return (
-                        <div key={s.sender_name} className="py-1.5 border-b border-stone-800/60 last:border-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <div>
-                              <p className="text-stone-200 text-sm">{s.sender_name}</p>
-                              <p className="text-stone-600 text-xs mt-0.5">
-                                {s.receipt_count} receipt{s.receipt_count !== 1 ? "s" : ""}
-                              </p>
-                            </div>
-                            <span className="text-stone-200 font-mono text-sm">{fmt(s.total)}</span>
+              {/* Biggest purchases */}
+              {data.biggest_purchases.length > 0 && (
+                <Section title="Biggest purchases">
+                  <div className="space-y-2">
+                    {data.biggest_purchases.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between py-1.5 border-b border-stone-800/60 last:border-0">
+                        <div>
+                          <p className="text-stone-200 text-sm">{p.vendor || "Unknown vendor"}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-stone-600 text-xs">{fmtDate(p.date)}</p>
+                            {p.reimbursable && <span className="text-emerald-400/70 text-xs">reimburse</span>}
+                            {p.flagged && <span className="text-amber-400/70 text-xs">⚠ flagged</span>}
                           </div>
-                          {s.reimbursable_total > 0 && (
-                            <div className="flex gap-3 text-xs mt-1">
-                              <span className="text-emerald-400/80">↑ {fmt(s.reimbursable_total)} reimburse</span>
-                              {ownTotal > 0 && <span className="text-stone-500">own {fmt(ownTotal)}</span>}
-                            </div>
-                          )}
                         </div>
-                      );
-                    })}
+                        <span className="text-stone-200 font-mono text-sm">{fmt(p.total)}</span>
+                      </div>
+                    ))}
                   </div>
+                </Section>
+              )}
+
+              {/* Receipt volume */}
+              {data.receipt_volume.length > 0 && (
+                <Section title="Receipt volume">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={data.receipt_volume} barCategoryGap="30%" margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                      <CartesianGrid stroke="#292524" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: "#78716c", fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: "#78716c", fontSize: 10 }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
+                      <Tooltip content={<DarkTooltip />} cursor={{ fill: "#292524" }} />
+                      <Bar dataKey="count" name="receipts" fill="#44403c" radius={[4, 4, 0, 0]}>
+                        {data.receipt_volume.map((_, i) => (
+                          <Cell key={i} fill="#a8a29e40" />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 </Section>
               )}
             </div>
 
-            {/* Biggest purchases */}
-            {data.biggest_purchases.length > 0 && (
-              <Section title="Biggest purchases">
-                <div className="space-y-2">
-                  {data.biggest_purchases.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between py-1.5 border-b border-stone-800/60 last:border-0">
-                      <div>
-                        <p className="text-stone-200 text-sm">{p.vendor || "Unknown vendor"}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <p className="text-stone-600 text-xs">{fmtDate(p.date)}</p>
-                          {p.reimbursable && <span className="text-emerald-400/70 text-xs">reimburse</span>}
-                          {p.flagged && <span className="text-amber-400/70 text-xs">⚠ flagged</span>}
+            {/* Sender breakdown */}
+            {data.sender_breakdown.length > 0 && (
+              <Section title="By sender">
+                <div className="space-y-3">
+                  {data.sender_breakdown.map((s) => {
+                    const ownTotal = s.total - s.reimbursable_total;
+                    return (
+                      <div key={s.sender_name} className="py-1.5 border-b border-stone-800/60 last:border-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <div>
+                            <p className="text-stone-200 text-sm">{s.sender_name}</p>
+                            <p className="text-stone-600 text-xs mt-0.5">
+                              {s.receipt_count} receipt{s.receipt_count !== 1 ? "s" : ""}
+                            </p>
+                          </div>
+                          <span className="text-stone-200 font-mono text-sm">{fmt(s.total)}</span>
                         </div>
+                        {s.reimbursable_total > 0 && (
+                          <div className="flex gap-3 text-xs mt-1">
+                            <span className="text-emerald-400/80">↑ {fmt(s.reimbursable_total)} reimburse</span>
+                            {ownTotal > 0 && <span className="text-stone-500">own {fmt(ownTotal)}</span>}
+                          </div>
+                        )}
                       </div>
-                      <span className="text-stone-200 font-mono text-sm">{fmt(p.total)}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </Section>
             )}

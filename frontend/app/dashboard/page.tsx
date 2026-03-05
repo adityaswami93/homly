@@ -583,7 +583,7 @@ export default function Dashboard() {
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
-      <div className="max-w-3xl mx-auto px-4 md:px-6 py-8 pb-24 sm:pb-8">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-8 pb-24 sm:pb-8">
 
         {/* Week navigator */}
         <div className="flex items-start justify-between mb-6 gap-3">
@@ -662,70 +662,74 @@ export default function Dashboard() {
               </div>
             )}
 
-            {Object.keys(week.category_totals).length > 0 && (
-              <div className="bg-stone-900/60 border border-stone-800 rounded-xl p-4 mb-6">
-                <h2 className="text-stone-500 text-xs uppercase tracking-widest mb-4">By Category</h2>
-                <div className="space-y-3">
-                  {Object.entries(week.category_totals)
-                    .sort(([, a], [, b]) => b - a)
-                    .map(([cat, amount]) => {
-                      const pct = week.total > 0 ? Math.min(100, Math.round((amount / week.total) * 100)) : 0;
-                      return (
-                        <div key={cat}>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-stone-300 text-sm">
-                              {CATEGORY_EMOJI[cat]} {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                            </span>
-                            <div className="flex items-center gap-3">
-                              <span className="text-stone-500 text-xs">{pct}%</span>
-                              <span className="text-stone-200 text-sm font-mono">{fmt(amount)}</span>
+            <div className="grid lg:grid-cols-2 gap-6 items-start">
+              <div>
+                {Object.keys(week.category_totals).length > 0 && (
+                  <div className="bg-stone-900/60 border border-stone-800 rounded-xl p-4">
+                    <h2 className="text-stone-500 text-xs uppercase tracking-widest mb-4">By Category</h2>
+                    <div className="space-y-3">
+                      {Object.entries(week.category_totals)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([cat, amount]) => {
+                          const pct = week.total > 0 ? Math.min(100, Math.round((amount / week.total) * 100)) : 0;
+                          return (
+                            <div key={cat}>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-stone-300 text-sm">
+                                  {CATEGORY_EMOJI[cat]} {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                                </span>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-stone-500 text-xs">{pct}%</span>
+                                  <span className="text-stone-200 text-sm font-mono">{fmt(amount)}</span>
+                                </div>
+                              </div>
+                              <div className="h-1 bg-stone-800 rounded-full">
+                                <div className="h-1 bg-amber-400/70 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                              </div>
                             </div>
-                          </div>
-                          <div className="h-1 bg-stone-800 rounded-full">
-                            <div className="h-1 bg-amber-400/70 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
 
-            <div>
-              <h2 className="text-stone-500 text-xs uppercase tracking-widest mb-3">Receipts</h2>
-              <div className="space-y-2">
-                {week.receipts.map((receipt) => (
-                  <button
-                    key={receipt.id}
-                    onClick={() => setSelectedReceipt(receipt)}
-                    className="w-full bg-stone-900/40 border border-stone-800 hover:border-stone-700 rounded-xl px-4 py-3.5 flex items-center justify-between transition-colors group text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      {receipt.flagged && <span className="text-amber-400 text-sm">⚠</span>}
-                      <div>
-                        <p className="text-stone-200 font-medium text-sm group-hover:text-stone-100 transition-colors">
-                          {receipt.vendor || "Unknown vendor"}
-                        </p>
-                        <p className="text-stone-600 text-xs mt-0.5">
-                          {fmtDate(receipt.date)}
-                          {receipt.sender_name && (
-                            <span className="text-stone-600"> · {receipt.sender_name}</span>
-                          )}
-                        </p>
+              <div>
+                <h2 className="text-stone-500 text-xs uppercase tracking-widest mb-3">Receipts</h2>
+                <div className="space-y-2">
+                  {week.receipts.map((receipt) => (
+                    <button
+                      key={receipt.id}
+                      onClick={() => setSelectedReceipt(receipt)}
+                      className="w-full bg-stone-900/40 border border-stone-800 hover:border-stone-700 rounded-xl px-4 py-3.5 flex items-center justify-between transition-colors group text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        {receipt.flagged && <span className="text-amber-400 text-sm">⚠</span>}
+                        <div>
+                          <p className="text-stone-200 font-medium text-sm group-hover:text-stone-100 transition-colors">
+                            {receipt.vendor || "Unknown vendor"}
+                          </p>
+                          <p className="text-stone-600 text-xs mt-0.5">
+                            {fmtDate(receipt.date)}
+                            {receipt.sender_name && (
+                              <span className="text-stone-600"> · {receipt.sender_name}</span>
+                            )}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                      <span className={`hidden sm:inline text-xs ${CONFIDENCE_STYLE[receipt.confidence] || "text-stone-500"}`}>
-                        {receipt.confidence}
-                      </span>
-                      {!receipt.reimbursable && (
-                        <span className="hidden sm:inline text-xs text-stone-600">own</span>
-                      )}
-                      <span className="text-stone-200 font-mono text-sm">{fmt(receipt.total, receipt.currency)}</span>
-                      <span className="text-stone-700 group-hover:text-stone-500 transition-colors">→</span>
-                    </div>
-                  </button>
-                ))}
+                      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                        <span className={`hidden sm:inline text-xs ${CONFIDENCE_STYLE[receipt.confidence] || "text-stone-500"}`}>
+                          {receipt.confidence}
+                        </span>
+                        {!receipt.reimbursable && (
+                          <span className="hidden sm:inline text-xs text-stone-600">own</span>
+                        )}
+                        <span className="text-stone-200 font-mono text-sm">{fmt(receipt.total, receipt.currency)}</span>
+                        <span className="text-stone-700 group-hover:text-stone-500 transition-colors">→</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </>

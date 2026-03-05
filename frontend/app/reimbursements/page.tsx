@@ -190,7 +190,7 @@ export default function ReimbursementsPage() {
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
-      <div className="max-w-3xl mx-auto px-4 md:px-6 py-8 pb-24 sm:pb-8">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-8 pb-24 sm:pb-8">
 
         {/* Header */}
         <div className="mb-6">

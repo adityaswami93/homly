@@ -8,6 +8,8 @@ import Navbar from "@/app/components/Navbar";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
 
+const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
+
 interface Item {
   id: string;
   name: string;
@@ -31,17 +33,20 @@ interface Receipt {
   currency: string;
   sender_name: string | null;
   sender_phone: string | null;
+  reimbursable: boolean;
   items?: Item[];
 }
 
 interface WeekData {
-  year: number;
-  week_number: number;
-  total: number;
-  receipt_count: number;
-  flagged_count: number;
-  receipts: Receipt[];
-  category_totals: Record<string, number>;
+  year:               number;
+  week_number:        number;
+  total:              number;
+  reimbursable_total: number;
+  own_total:          number;
+  receipt_count:      number;
+  flagged_count:      number;
+  receipts:           Receipt[];
+  category_totals:    Record<string, number>;
 }
 
 const CATEGORY_EMOJI: Record<string, string> = {
@@ -50,12 +55,12 @@ const CATEGORY_EMOJI: Record<string, string> = {
 };
 
 const CATEGORY_COLOR: Record<string, string> = {
-  "groceries":      "bg-emerald-500/20 text-emerald-300",
-  "household":      "bg-blue-500/20 text-blue-300",
-  "personal care":  "bg-purple-500/20 text-purple-300",
-  "food & beverage":"bg-orange-500/20 text-orange-300",
-  "transport":      "bg-cyan-500/20 text-cyan-300",
-  "other":          "bg-stone-600/30 text-stone-400",
+  "groceries":       "bg-emerald-500/20 text-emerald-300",
+  "household":       "bg-blue-500/20 text-blue-300",
+  "personal care":   "bg-purple-500/20 text-purple-300",
+  "food & beverage": "bg-orange-500/20 text-orange-300",
+  "transport":       "bg-cyan-500/20 text-cyan-300",
+  "other":           "bg-stone-600/30 text-stone-400",
 };
 
 const CONFIDENCE_STYLE: Record<string, string> = {
@@ -104,7 +109,7 @@ function formatWeekRange(year: number, week: number): string {
 }
 
 function ReceiptDrawer({
-  receipt, isAdmin, onClose, onToggleFlag, onDelete, onDateChange, onToast,
+  receipt, isAdmin, onClose, onToggleFlag, onDelete, onDateChange, onToggleReimbursable, onToast,
 }: {
   receipt: Receipt;
   isAdmin: boolean;
@@ -112,6 +117,7 @@ function ReceiptDrawer({
   onToggleFlag: (id: string, flagged: boolean) => void;
   onDelete: (id: string) => void;
   onDateChange: (id: string, newDate: string, weekNumber: number, year: number) => void;
+  onToggleReimbursable: (id: string, reimbursable: boolean) => void;
   onToast: (msg: string, type: "success" | "error") => void;
 }) {
   const [items,       setItems]       = useState<Item[]>([]);
@@ -282,6 +288,21 @@ function ReceiptDrawer({
             {toggling ? "..." : receipt.flagged ? "✓ Mark as reviewed" : "⚠ Flag for review"}
           </button>
           <button
+            onClick={async () => {
+              await api.patch(`/receipts/${receipt.id}/reimbursable`, {
+                reimbursable: !receipt.reimbursable,
+              });
+              onToggleReimbursable(receipt.id, !receipt.reimbursable);
+            }}
+            className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors border ${
+              receipt.reimbursable
+                ? "border-stone-700 text-stone-400 hover:text-stone-200 hover:border-stone-600"
+                : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-400/5"
+            }`}
+          >
+            {receipt.reimbursable ? "Remove from reimbursement" : "Add to reimbursement"}
+          </button>
+          <button
             onClick={handleDelete}
             disabled={deleting}
             className="w-full py-2.5 rounded-xl text-sm font-medium transition-colors border border-red-500/30 text-red-400 hover:bg-red-500/5"
@@ -338,6 +359,8 @@ export default function Dashboard() {
   const [currentWeek,     setCurrentWeek]    = useState<{ week: number; year: number } | null>(null);
   const [isCurrentWeek,   setIsCurrentWeek]  = useState(true);
   const [sending,         setSending]        = useState(false);
+  const [paying,          setPaying]         = useState(false);
+  const [paid,            setPaid]           = useState(false);
   const router = useRouter();
   const { toasts, dismissToast, toast } = useToast();
 
@@ -432,6 +455,26 @@ export default function Dashboard() {
     }
   };
 
+  const handleMarkPaid = async () => {
+    if (!week || !currentWeek) return;
+    setPaying(true);
+    try {
+      await api.post("/reimbursements", {
+        year:        currentWeek.year,
+        week_number: currentWeek.week,
+        amount:      week.reimbursable_total,
+        note:        `Week ${currentWeek.week} reimbursement`,
+      });
+      setPaid(true);
+      toast.success(`SGD ${week.reimbursable_total.toFixed(2)} marked as paid`);
+      setTimeout(() => setPaid(false), 3000);
+    } catch {
+      toast.error("Failed to mark as paid");
+    } finally {
+      setPaying(false);
+    }
+  };
+
   const handleToggleFlag = (id: string, flagged: boolean) => {
     if (!week) return;
     setWeek((prev) => prev ? {
@@ -453,26 +496,43 @@ export default function Dashboard() {
       const newTotal = remaining.reduce((sum, r) => sum + (r.total || 0), 0);
       return {
         ...prev,
-        receipts: remaining,
-        receipt_count: remaining.length,
-        total: newTotal,
-        flagged_count: receipt?.flagged ? Math.max(0, prev.flagged_count - 1) : prev.flagged_count,
+        receipts:           remaining,
+        receipt_count:      remaining.length,
+        total:              newTotal,
+        reimbursable_total: round(remaining.filter(r => r.reimbursable).reduce((s, r) => s + (r.total || 0), 0)),
+        own_total:          round(remaining.filter(r => !r.reimbursable).reduce((s, r) => s + (r.total || 0), 0)),
+        flagged_count:      receipt?.flagged ? Math.max(0, prev.flagged_count - 1) : prev.flagged_count,
       };
     });
   };
 
   const handleDateChange = (id: string, newDate: string, weekNumber: number, year: number) => {
-    // If the receipt moved to a different week, remove it from the current view
     if (!currentWeek || weekNumber !== currentWeek.week || year !== currentWeek.year) {
       handleDelete(id);
       setSelectedReceipt(null);
     } else {
-      // Same week — just update the date in state
       setWeek((prev) => prev ? {
         ...prev,
         receipts: prev.receipts.map((r) => r.id === id ? { ...r, date: newDate } : r),
       } : prev);
       setSelectedReceipt((prev) => prev ? { ...prev, date: newDate } : prev);
+    }
+  };
+
+  const handleToggleReimbursable = (id: string, reimbursable: boolean) => {
+    if (!week) return;
+    setWeek((prev) => {
+      if (!prev) return prev;
+      const updated = prev.receipts.map(r => r.id === id ? { ...r, reimbursable } : r);
+      return {
+        ...prev,
+        receipts:           updated,
+        reimbursable_total: round(updated.filter(r => r.reimbursable).reduce((s, r) => s + (r.total || 0), 0)),
+        own_total:          round(updated.filter(r => !r.reimbursable).reduce((s, r) => s + (r.total || 0), 0)),
+      };
+    });
+    if (selectedReceipt?.id === id) {
+      setSelectedReceipt((prev) => prev ? { ...prev, reimbursable } : prev);
     }
   };
 
@@ -533,11 +593,32 @@ export default function Dashboard() {
           <EmptyWeek />
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-6">
-              <SummaryCard label="Total to pay"  value={fmt(week.total)} accent />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-6">
+              <SummaryCard label="To reimburse"  value={fmt(week.reimbursable_total)} accent />
+              <SummaryCard label="Your spending" value={fmt(week.own_total)} />
               <SummaryCard label="Receipts"      value={String(week.receipt_count)} />
               <SummaryCard label="Need review"   value={String(week.flagged_count)} warn={week.flagged_count > 0} />
             </div>
+
+            {week.reimbursable_total > 0 && (
+              <div className="flex items-center justify-between bg-stone-900/40 border border-stone-800 rounded-xl px-4 py-3 mb-6">
+                <div>
+                  <p className="text-stone-300 text-sm font-medium">
+                    SGD {week.reimbursable_total.toFixed(2)} to reimburse
+                  </p>
+                  <p className="text-stone-600 text-xs mt-0.5">
+                    {week.receipts.filter(r => r.reimbursable).length} reimbursable receipts
+                  </p>
+                </div>
+                <button
+                  onClick={handleMarkPaid}
+                  disabled={paying}
+                  className="text-sm bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded-lg transition-colors disabled:opacity-40"
+                >
+                  {paid ? "✓ Marked paid" : paying ? "..." : "Mark as paid"}
+                </button>
+              </div>
+            )}
 
             {Object.keys(week.category_totals).length > 0 && (
               <div className="bg-stone-900/60 border border-stone-800 rounded-xl p-4 mb-6">
@@ -595,6 +676,9 @@ export default function Dashboard() {
                       <span className={`hidden sm:inline text-xs ${CONFIDENCE_STYLE[receipt.confidence] || "text-stone-500"}`}>
                         {receipt.confidence}
                       </span>
+                      {!receipt.reimbursable && (
+                        <span className="hidden sm:inline text-xs text-stone-600">own</span>
+                      )}
                       <span className="text-stone-200 font-mono text-sm">{fmt(receipt.total, receipt.currency)}</span>
                       <span className="text-stone-700 group-hover:text-stone-500 transition-colors">→</span>
                     </div>
@@ -614,6 +698,7 @@ export default function Dashboard() {
           onToggleFlag={handleToggleFlag}
           onDelete={handleDelete}
           onDateChange={handleDateChange}
+          onToggleReimbursable={handleToggleReimbursable}
           onToast={(msg, type) => type === "success" ? toast.success(msg) : toast.error(msg)}
         />
       )}

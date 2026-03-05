@@ -17,6 +17,7 @@ interface WeekDetail {
   year: number;
   week_number: number;
   total: number;
+  reimbursable_total: number;
   receipt_count: number;
   flagged_count: number;
   receipts: any[];
@@ -45,6 +46,7 @@ export default function History() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [details,  setDetails]  = useState<Record<string, WeekDetail>>({});
   const [loading,  setLoading]  = useState(true);
+  const [showAll,  setShowAll]  = useState(true);
   const router = useRouter();
 
   useEffect(() => {
@@ -88,7 +90,19 @@ export default function History() {
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
       <Navbar user={user} />
       <div className="max-w-3xl mx-auto px-4 md:px-6 py-8 pb-24 sm:pb-8">
-        <h1 className="text-2xl font-semibold tracking-tight mb-6">History</h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-semibold tracking-tight">History</h1>
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+              showAll
+                ? "border-stone-700 text-stone-400 hover:text-stone-200"
+                : "border-amber-400/30 bg-amber-400/8 text-amber-300"
+            }`}
+          >
+            {showAll ? "All expenses" : "Reimbursable only"}
+          </button>
+        </div>
 
         {loading ? (
           <p className="text-stone-600 text-sm">Loading...</p>
@@ -148,25 +162,35 @@ export default function History() {
                           )}
 
                           <div className="space-y-1.5">
-                            {detail.receipts.map((r: any) => (
-                              <div key={r.id} className="flex items-center justify-between py-1.5 border-b border-stone-800/50 last:border-0">
-                                <div>
-                                  <p className="text-stone-300 text-sm">{r.vendor || "Unknown vendor"}</p>
-                                  <p className="text-stone-600 text-xs">
-                                    {r.date ? new Date(r.date).toLocaleDateString("en-SG", {
-                                      weekday: "short", day: "numeric", month: "short"
-                                    }) : "—"}
-                                    {r.flagged && <span className="text-amber-400 ml-2">⚠ flagged</span>}
-                                  </p>
+                            {detail.receipts
+                              .filter((r: any) => showAll || r.reimbursable !== false)
+                              .map((r: any) => (
+                                <div key={r.id} className="flex items-center justify-between py-1.5 border-b border-stone-800/50 last:border-0">
+                                  <div>
+                                    <p className="text-stone-300 text-sm">{r.vendor || "Unknown vendor"}</p>
+                                    <p className="text-stone-600 text-xs">
+                                      {r.date ? new Date(r.date).toLocaleDateString("en-SG", {
+                                        weekday: "short", day: "numeric", month: "short"
+                                      }) : "—"}
+                                      {r.flagged && <span className="text-amber-400 ml-2">⚠ flagged</span>}
+                                    </p>
+                                  </div>
+                                  <span className="text-stone-300 text-sm font-mono">{fmt(r.total)}</span>
                                 </div>
-                                <span className="text-stone-300 text-sm font-mono">{fmt(r.total)}</span>
-                              </div>
-                            ))}
+                              ))}
                           </div>
 
-                          <div className="mt-3 pt-3 border-t border-stone-800 flex justify-between">
-                            <span className="text-stone-500 text-sm">{detail.receipt_count} receipts</span>
-                            <span className="text-stone-200 font-semibold font-mono text-sm">{fmt(detail.total)}</span>
+                          <div className="mt-3 pt-3 border-t border-stone-800">
+                            <div className="flex justify-between mb-1">
+                              <span className="text-stone-500 text-sm">{detail.receipt_count} receipts</span>
+                              <span className="text-stone-200 font-semibold font-mono text-sm">{fmt(detail.total)}</span>
+                            </div>
+                            {detail.reimbursable_total != null && detail.reimbursable_total !== detail.total && (
+                              <div className="flex justify-between">
+                                <span className="text-stone-600 text-xs">To reimburse</span>
+                                <span className="text-emerald-400 font-mono text-xs">{fmt(detail.reimbursable_total)}</span>
+                              </div>
+                            )}
                           </div>
                         </>
                       )}

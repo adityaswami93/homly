@@ -9,11 +9,13 @@ router = APIRouter()
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 DEFAULTS = {
-    "summary_day":      6,
-    "summary_hour":     9,
-    "summary_timezone": "Asia/Singapore",
-    "cutoff_mode":      "last7days",
-    "group_name":       None,
+    "summary_day":        6,
+    "summary_hour":       9,
+    "summary_timezone":   "Asia/Singapore",
+    "cutoff_mode":        "last7days",
+    "group_name":         None,
+    "reimbursement_mode": "all",
+    "helper_identifiers": "",
 }
 
 
@@ -42,7 +44,7 @@ def update_settings(request: Request, body: dict):
 
     get_or_create_settings(household_id)  # ensure row exists
 
-    allowed = {"summary_day", "summary_hour", "summary_timezone", "cutoff_mode", "group_name", "group_jid"}
+    allowed = {"summary_day", "summary_hour", "summary_timezone", "cutoff_mode", "group_name", "group_jid", "reimbursement_mode", "helper_identifiers"}
     update = {k: v for k, v in body.items() if k in allowed}
     update["updated_at"] = "now()"
 

@@ -14,6 +14,23 @@ from agents.receipt_agent import analyse_receipt
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def get_reimbursable(sender_name: str | None, sender_phone: str | None, settings: dict) -> bool:
+    mode = settings.get("reimbursement_mode", "all")
+    if mode == "all":
+        return True
+    if mode == "none":
+        return False
+    if mode == "helpers_only":
+        identifiers = settings.get("helper_identifiers", "") or ""
+        if not identifiers:
+            return False
+        helper_list = [h.strip().lower() for h in identifiers.split(",") if h.strip()]
+        name_match  = sender_name  and sender_name.lower()  in helper_list
+        phone_match = sender_phone and sender_phone         in helper_list
+        return bool(name_match or phone_match)
+    return True
 _supabase = None
 
 def _db():
@@ -46,6 +63,10 @@ async def process_receipt(
         if not resolved_household:
             raise HTTPException(status_code=403, detail="No household found")
     household_id = resolved_household
+
+    from api.routers.settings import get_or_create_settings
+    settings = get_or_create_settings(household_id)
+    reimbursable = get_reimbursable(sender_name, sender_phone, settings)
 
     existing = _db().table("receipts")\
         .select("id")\
@@ -93,6 +114,7 @@ async def process_receipt(
         "flagged":              analysis.get("flagged", False),
         "sender_name":          sender_name or None,
         "sender_phone":         sender_phone or None,
+        "reimbursable":         reimbursable,
     }
 
     receipt_res = _db().table("receipts").insert(receipt_row).execute()
@@ -199,13 +221,15 @@ def get_week(year: int, week_number: int, request: Request):
     flagged_count = sum(1 for r in receipts_res.data if r.get("flagged"))
 
     return {
-        "year":             year,
-        "week_number":      week_number,
-        "total":            round(total, 2),
-        "receipt_count":    len(receipts_res.data),
-        "flagged_count":    flagged_count,
-        "receipts":         receipts_res.data,
-        "category_totals":  category_totals,
+        "year":               year,
+        "week_number":        week_number,
+        "total":              round(total, 2),
+        "reimbursable_total": round(sum(r["total"] or 0 for r in receipts_res.data if r.get("reimbursable")), 2),
+        "own_total":          round(sum(r["total"] or 0 for r in receipts_res.data if not r.get("reimbursable")), 2),
+        "receipt_count":      len(receipts_res.data),
+        "flagged_count":      flagged_count,
+        "receipts":           receipts_res.data,
+        "category_totals":    category_totals,
     }
 
 
@@ -268,6 +292,25 @@ def soft_delete_receipt(receipt_id: str, request: Request, body: dict):
         raise HTTPException(status_code=404, detail="Receipt not found")
     _db().table("receipts")\
         .update({"deleted": body.get("deleted", True)})\
+        .eq("id", receipt_id)\
+        .execute()
+    return {"status": "ok"}
+
+
+@router.patch("/receipts/{receipt_id}/reimbursable")
+def toggle_reimbursable(receipt_id: str, request: Request, body: dict):
+    user_id      = request.state.user["sub"]
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+    existing = _db().table("receipts")\
+        .select("household_id")\
+        .eq("id", receipt_id)\
+        .execute()
+    if not existing.data or existing.data[0]["household_id"] != household_id:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    _db().table("receipts")\
+        .update({"reimbursable": body.get("reimbursable", True)})\
         .eq("id", receipt_id)\
         .execute()
     return {"status": "ok"}
@@ -366,11 +409,13 @@ def last_7_days(request: Request, household_id: Optional[str] = Query(default=No
     flagged_count = sum(1 for r in receipts_res.data if r.get("flagged"))
 
     return {
-        "date_from":       date_from.isoformat(),
-        "date_to":         today.isoformat(),
-        "total":           round(total, 2),
-        "receipt_count":   len(receipts_res.data),
-        "flagged_count":   flagged_count,
-        "receipts":        receipts_res.data,
-        "category_totals": category_totals,
+        "date_from":         date_from.isoformat(),
+        "date_to":           today.isoformat(),
+        "total":             round(total, 2),
+        "reimbursable_total": round(sum(r["total"] or 0 for r in receipts_res.data if r.get("reimbursable")), 2),
+        "own_total":          round(sum(r["total"] or 0 for r in receipts_res.data if not r.get("reimbursable")), 2),
+        "receipt_count":     len(receipts_res.data),
+        "flagged_count":     flagged_count,
+        "receipts":          receipts_res.data,
+        "category_totals":   category_totals,
     }

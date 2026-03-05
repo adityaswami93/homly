@@ -180,7 +180,15 @@ async function sendWeeklySummary(sock, groupJid, householdId, cutoffMode = "last
       params: { household_id: householdId },
     });
 
-    const { receipts, category_totals, total, flagged_count, date_from, date_to, week_number, year } = res.data;
+    const data = res.data;
+    const receipts       = (data.receipts || []).filter(r => r.reimbursable !== false);
+    const category_totals = data.category_totals;
+    const total          = data.reimbursable_total ?? data.total;
+    const flagged_count  = receipts.filter(r => r.flagged).length;
+    const week_number    = data.week_number;
+    const year           = data.year;
+    const date_from      = data.date_from;
+    const date_to        = data.date_to;
 
     if (!receipts || receipts.length === 0) {
       await sock.sendMessage(groupJid, { text: "No receipts recorded in this period." });

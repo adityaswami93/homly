@@ -101,41 +101,41 @@ export default function MembersPage() {
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">
       {loading ? (
-        <div className="text-gray-400 text-sm py-12 text-center">Loading…</div>
+        <div className="text-stone-500 text-sm py-12 text-center">Loading…</div>
       ) : !household ? (
-        <div className="text-gray-400 text-sm">No household found.</div>
+        <div className="text-stone-500 text-sm">No household found.</div>
       ) : (
         <>
           {/* Household info */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5 mb-4">
-            <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Household</p>
-            <h2 className="text-lg font-semibold text-gray-900">{household.name}</h2>
+          <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 mb-4">
+            <p className="text-xs text-stone-500 uppercase tracking-widest mb-1">Household</p>
+            <h2 className="text-lg font-semibold text-stone-100">{household.name}</h2>
           </div>
 
           {/* Members list */}
-          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden mb-4">
-            <div className="px-5 py-3.5 border-b border-gray-100">
-              <h3 className="text-sm font-medium text-gray-700">
+          <div className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden mb-4">
+            <div className="px-5 py-3.5 border-b border-stone-800">
+              <h3 className="text-sm font-medium text-stone-300">
                 Members ({household.members.length})
               </h3>
             </div>
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-stone-800">
               {household.members.map((member) => {
                 const isMe = member.user_id === user.id;
+                const displayName = member.email || `${member.user_id.slice(0, 8)}…`;
+                const initial = displayName.charAt(0).toUpperCase();
                 return (
                   <div key={member.user_id} className="flex items-center justify-between px-5 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center shrink-0">
-                        <span className="text-sm font-medium text-gray-600">
-                          {(member.email || member.user_id).charAt(0).toUpperCase()}
-                        </span>
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-stone-700 to-stone-600 flex items-center justify-center shrink-0">
+                        <span className="text-sm font-medium text-stone-200">{initial}</span>
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {member.email || member.user_id.slice(0, 8) + "…"}
-                          {isMe && <span className="ml-1.5 text-xs text-gray-400">(you)</span>}
+                        <p className="text-sm font-medium text-stone-100">
+                          {displayName}
+                          {isMe && <span className="ml-1.5 text-xs text-stone-500">(you)</span>}
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5">
+                        <p className="text-xs text-stone-500 mt-0.5">
                           {member.joined_at
                             ? new Date(member.joined_at).toLocaleDateString("en-SG", {
                                 day: "numeric",
@@ -152,14 +152,14 @@ export default function MembersPage() {
                           <select
                             value={member.role}
                             onChange={(e) => handleRoleChange(member.user_id, e.target.value)}
-                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:outline-none focus:border-emerald-400 min-h-[36px] text-base"
+                            className="text-xs border border-stone-700 bg-stone-800 rounded-lg px-2 py-1.5 text-stone-200 focus:outline-none focus:border-emerald-600 min-h-[36px] text-base"
                           >
                             <option value="member">Member</option>
                             <option value="admin">Admin</option>
                           </select>
                           <button
                             onClick={() => handleRemove(member.user_id)}
-                            className="text-xs text-red-500 hover:text-red-700 px-2 py-1.5 min-h-[36px]"
+                            className="text-xs text-red-400 hover:text-red-300 px-2 py-1.5 min-h-[36px]"
                           >
                             Remove
                           </button>
@@ -168,8 +168,8 @@ export default function MembersPage() {
                         <span
                           className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                             member.role === "admin"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-gray-100 text-gray-600"
+                              ? "bg-amber-900/40 text-amber-300"
+                              : "bg-stone-800 text-stone-400"
                           }`}
                         >
                           {member.role}
@@ -184,8 +184,8 @@ export default function MembersPage() {
 
           {/* Invite */}
           {isAdmin && (
-            <div className="bg-white border border-gray-100 rounded-xl p-5">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Invite a member</h3>
+            <div className="bg-stone-900 border border-stone-800 rounded-xl p-5">
+              <h3 className="text-sm font-medium text-stone-300 mb-3">Invite a member</h3>
               <div className="flex gap-2">
                 <input
                   type="email"
@@ -193,7 +193,7 @@ export default function MembersPage() {
                   onChange={(e) => setInviteEmail(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleInvite()}
                   placeholder="email@example.com"
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-emerald-400 min-h-[44px] text-base"
+                  className="flex-1 border border-stone-700 bg-stone-800 rounded-lg px-3 py-2 text-sm text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-emerald-600 min-h-[44px] text-base"
                 />
                 <button
                   onClick={handleInvite}
@@ -203,7 +203,7 @@ export default function MembersPage() {
                   {inviting ? "Sending…" : "Invite"}
                 </button>
               </div>
-              <p className="text-xs text-gray-400 mt-2">
+              <p className="text-xs text-stone-500 mt-2">
                 They will receive an email with a link to join your household.
               </p>
             </div>

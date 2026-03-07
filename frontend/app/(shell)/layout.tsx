@@ -13,8 +13,8 @@ import Link from "next/link";
 
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -25,6 +25,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
         return;
       }
       setUser(session.user);
+      setIsSuperAdmin(session.user.user_metadata?.is_super_admin === true);
     });
   }, [router]);
 
@@ -39,17 +40,22 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
       .catch(() => null);
   }, []);
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
+
   const activeApp = getActiveApp(pathname);
   const pageTitle = getPageTitle(pathname, activeApp);
 
   if (!user) return null;
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-[#F8F9FB]">
-      {/* Rail — visible on tablet (md) and up */}
-      <Rail activeApp={activeApp} user={user} />
+    <div className="flex h-[100dvh] overflow-hidden bg-[#0f0e0c]">
+      {/* Rail */}
+      <Rail activeApp={activeApp} isSuperAdmin={isSuperAdmin} />
 
-      {/* Subnav — visible on desktop (lg) only */}
+      {/* Subnav */}
       <Subnav activeApp={activeApp} pathname={pathname} connected={connected} />
 
       {/* Main content column */}
@@ -58,13 +64,13 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
         <Topbar
           pageTitle={pageTitle}
           activeApp={activeApp}
-          actionLabel={activeApp?.actionLabel}
-          onAction={activeApp?.actionLabel ? () => setShowAddModal(true) : undefined}
+          user={user}
+          onSignOut={handleSignOut}
         />
 
-        {/* Mobile horizontal subnav pills — below topbar, above content, hidden on desktop */}
+        {/* Mobile horizontal subnav pills */}
         {activeApp && activeApp.nav.length > 1 && (
-          <div className="lg:hidden border-b border-gray-100 bg-white shrink-0">
+          <div className="lg:hidden border-b border-stone-800 bg-[#111827] shrink-0">
             <div className="flex gap-2 px-4 py-2 overflow-x-auto scrollbar-none">
               {activeApp.nav.map((item) => {
                 const isActive = pathname === item.href;
@@ -73,7 +79,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
                     key={item.href}
                     href={item.href}
                     className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors min-h-[36px] flex items-center ${
-                      isActive ? "text-white" : "text-gray-500 hover:text-gray-700 bg-gray-100"
+                      isActive ? "text-white" : "text-stone-400 hover:text-stone-200 bg-stone-800"
                     }`}
                     style={isActive ? { backgroundColor: activeApp.color } : {}}
                   >
@@ -95,33 +101,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
       </div>
 
       {/* Bottom tab bar — mobile only */}
-      <BottomTabBar activeApp={activeApp} />
-
-      {/* Global "add" modal trigger — pages listen for this via context or URL param */}
-      {showAddModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
-          onClick={() => setShowAddModal(false)}
-        >
-          <div
-            className="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-base font-semibold text-gray-900 mb-2">
-              {activeApp?.actionLabel}
-            </h2>
-            <p className="text-sm text-gray-500 mb-4">
-              Use the form on this page to add a new item.
-            </p>
-            <button
-              onClick={() => setShowAddModal(false)}
-              className="w-full py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+      <BottomTabBar activeApp={activeApp} isSuperAdmin={isSuperAdmin} />
     </div>
   );
 }

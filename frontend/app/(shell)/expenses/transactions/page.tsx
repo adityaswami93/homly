@@ -88,13 +88,13 @@ export default function TransactionsPage() {
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-5">
-        <p className="text-gray-500 text-sm">All recorded weeks</p>
+        <p className="text-stone-500 text-sm">All recorded weeks</p>
         <button
           onClick={() => setShowAll(!showAll)}
           className={`text-xs px-3 py-1.5 rounded-lg border transition-colors min-h-[36px] ${
             showAll
-              ? "border-gray-200 text-gray-500 hover:border-gray-300"
-              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              ? "border-stone-700 text-stone-400 hover:border-stone-600"
+              : "border-emerald-800 bg-emerald-900/30 text-emerald-400"
           }`}
         >
           {showAll ? "All expenses" : "Reimbursable only"}
@@ -102,10 +102,10 @@ export default function TransactionsPage() {
       </div>
 
       {loading ? (
-        <div className="text-gray-400 text-sm py-12 text-center">Loading…</div>
+        <div className="text-stone-500 text-sm py-12 text-center">Loading…</div>
       ) : weeks.length === 0 ? (
-        <div className="bg-white border border-gray-100 rounded-xl p-12 text-center">
-          <p className="text-gray-500 text-sm">No weeks recorded yet.</p>
+        <div className="bg-stone-900 border border-stone-800 rounded-xl p-12 text-center">
+          <p className="text-stone-500 text-sm">No weeks recorded yet.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -115,46 +115,46 @@ export default function TransactionsPage() {
             const detail = details[key];
 
             return (
-              <div key={key} className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+              <div key={key} className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden">
                 <button
                   onClick={() => toggleWeek(week)}
-                  className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left min-h-[64px]"
+                  className="w-full px-4 py-4 flex items-center justify-between hover:bg-stone-800 transition-colors text-left min-h-[64px]"
                 >
                   <div>
-                    <p className="text-gray-900 font-medium text-sm">Week {week.week_number}, {week.year}</p>
-                    <p className="text-gray-400 text-xs mt-0.5">
+                    <p className="text-stone-100 font-medium text-sm">Week {week.week_number}, {week.year}</p>
+                    <p className="text-stone-500 text-xs mt-0.5">
                       {fmtDateRange(week.week_start, week.week_end)}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     {detail && (
-                      <span className="text-gray-900 font-mono text-sm font-semibold">{fmt(detail.total)}</span>
+                      <span className="text-stone-100 font-mono text-sm font-semibold">{fmt(detail.total)}</span>
                     )}
-                    <span className={`text-gray-400 text-sm transition-transform ${isOpen ? "rotate-90" : ""}`}>
+                    <span className={`text-stone-500 text-sm transition-transform ${isOpen ? "rotate-90" : ""}`}>
                       →
                     </span>
                   </div>
                 </button>
 
                 {isOpen && (
-                  <div className="border-t border-gray-100 bg-gray-50 px-4 py-4">
+                  <div className="border-t border-stone-800 bg-stone-950/50 px-4 py-4">
                     {!detail ? (
-                      <p className="text-gray-400 text-sm">Loading…</p>
+                      <p className="text-stone-500 text-sm">Loading…</p>
                     ) : (
                       <>
                         {Object.keys(detail.category_totals).length > 0 && (
                           <div className="mb-4">
-                            <p className="text-gray-400 text-xs uppercase tracking-widest mb-2">By Category</p>
+                            <p className="text-stone-500 text-xs uppercase tracking-widest mb-2">By Category</p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                               {Object.entries(detail.category_totals)
                                 .sort(([, a], [, b]) => b - a)
                                 .map(([cat, amt]) => (
                                   <div
                                     key={cat}
-                                    className="flex items-center justify-between bg-white border border-gray-100 rounded-lg px-3 py-2"
+                                    className="flex items-center justify-between bg-stone-900 border border-stone-800 rounded-lg px-3 py-2"
                                   >
-                                    <span className="text-gray-600 text-xs">{CATEGORY_EMOJI[cat]} {cat}</span>
-                                    <span className="text-gray-900 text-xs font-mono">{fmt(amt)}</span>
+                                    <span className="text-stone-400 text-xs">{CATEGORY_EMOJI[cat]} {cat}</span>
+                                    <span className="text-stone-100 text-xs font-mono">{fmt(amt)}</span>
                                   </div>
                                 ))}
                             </div>
@@ -167,11 +167,11 @@ export default function TransactionsPage() {
                             .map((r: any) => (
                               <div
                                 key={r.id}
-                                className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                                className="flex items-center justify-between py-2 border-b border-stone-800 last:border-0"
                               >
                                 <div>
-                                  <p className="text-gray-800 text-sm">{r.vendor || "Unknown vendor"}</p>
-                                  <p className="text-gray-400 text-xs">
+                                  <p className="text-stone-200 text-sm">{r.vendor || "Unknown vendor"}</p>
+                                  <p className="text-stone-500 text-xs">
                                     {r.date
                                       ? new Date(r.date).toLocaleDateString("en-SG", {
                                           weekday: "short",
@@ -180,24 +180,24 @@ export default function TransactionsPage() {
                                         })
                                       : "—"}
                                     {r.flagged && (
-                                      <span className="text-amber-500 ml-2">⚠ flagged</span>
+                                      <span className="text-amber-400 ml-2">⚠ flagged</span>
                                     )}
                                   </p>
                                 </div>
-                                <span className="text-gray-900 text-sm font-mono">{fmt(r.total)}</span>
+                                <span className="text-stone-100 text-sm font-mono">{fmt(r.total)}</span>
                               </div>
                             ))}
                         </div>
 
-                        <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
-                          <span className="text-gray-500 text-sm">{detail.receipt_count} receipts</span>
-                          <span className="text-gray-900 font-semibold font-mono text-sm">{fmt(detail.total)}</span>
+                        <div className="mt-3 pt-3 border-t border-stone-800 flex justify-between items-center">
+                          <span className="text-stone-500 text-sm">{detail.receipt_count} receipts</span>
+                          <span className="text-stone-100 font-semibold font-mono text-sm">{fmt(detail.total)}</span>
                         </div>
                         {detail.reimbursable_total != null &&
                           detail.reimbursable_total !== detail.total && (
                             <div className="flex justify-between mt-1">
-                              <span className="text-gray-400 text-xs">To reimburse</span>
-                              <span className="text-emerald-600 font-mono text-xs">{fmt(detail.reimbursable_total)}</span>
+                              <span className="text-stone-500 text-xs">To reimburse</span>
+                              <span className="text-emerald-400 font-mono text-xs">{fmt(detail.reimbursable_total)}</span>
                             </div>
                           )}
                       </>

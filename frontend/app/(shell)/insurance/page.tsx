@@ -26,12 +26,12 @@ const COVERAGE_TYPES = ["health", "life", "home", "car", "travel", "other"];
 const PREMIUM_FREQS = ["monthly", "quarterly", "annually"];
 
 const TYPE_COLOR: Record<string, string> = {
-  health: "bg-red-100 text-red-700",
-  life: "bg-blue-100 text-blue-700",
-  home: "bg-emerald-100 text-emerald-700",
-  car: "bg-orange-100 text-orange-700",
-  travel: "bg-purple-100 text-purple-700",
-  other: "bg-gray-100 text-gray-600",
+  health: "bg-red-900/40 text-red-400",
+  life: "bg-blue-900/40 text-blue-400",
+  home: "bg-emerald-900/40 text-emerald-400",
+  car: "bg-orange-900/40 text-orange-400",
+  travel: "bg-purple-900/40 text-purple-400",
+  other: "bg-stone-800 text-stone-400",
 };
 
 const TYPE_EMOJI: Record<string, string> = {
@@ -47,13 +47,13 @@ function daysUntil(dateStr: string | null): number | null {
 }
 
 function RenewalBadge({ days }: { days: number | null }) {
-  if (days == null) return <span className="text-gray-400 text-xs">—</span>;
+  if (days == null) return <span className="text-stone-500 text-xs">—</span>;
   const cls =
     days <= 7
-      ? "bg-red-100 text-red-700"
+      ? "bg-red-900/40 text-red-400"
       : days <= 30
-      ? "bg-amber-100 text-amber-700"
-      : "bg-emerald-100 text-emerald-700";
+      ? "bg-amber-900/40 text-amber-400"
+      : "bg-emerald-900/40 text-emerald-400";
   const label =
     days < 0
       ? `${Math.abs(days)}d overdue`
@@ -123,106 +123,70 @@ function PolicyModal({
     }
   };
 
+  const inputCls = "w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-blue-500 min-h-[44px] text-base";
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60"
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto"
+        className="w-full sm:max-w-lg bg-stone-900 border border-stone-800 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
-          <h2 className="text-base font-semibold text-gray-900">
+        <div className="px-5 py-4 border-b border-stone-800 flex items-center justify-between sticky top-0 bg-stone-900">
+          <h2 className="text-base font-semibold text-stone-100">
             {policy ? "Edit Policy" : "Add Policy"}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center text-xl">×</button>
+          <button onClick={onClose} className="text-stone-500 hover:text-stone-200 w-8 h-8 flex items-center justify-center text-xl">×</button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
-              <label className="text-xs text-gray-500 block mb-1.5">Provider *</label>
-              <input
-                type="text"
-                value={form.provider}
-                onChange={(e) => update("provider", e.target.value)}
-                required
-                placeholder="e.g. AIA, Prudential"
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm placeholder:text-gray-400 focus:outline-none focus:border-blue-400 min-h-[44px] text-base"
-              />
+              <label className="text-xs text-stone-500 block mb-1.5">Provider *</label>
+              <input type="text" value={form.provider} onChange={(e) => update("provider", e.target.value)}
+                required placeholder="e.g. AIA, Prudential" className={inputCls} />
             </div>
 
             <div>
-              <label className="text-xs text-gray-500 block mb-1.5">Coverage Type *</label>
-              <select
-                value={form.coverage_type}
-                onChange={(e) => update("coverage_type", e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-400 min-h-[44px] text-base"
-              >
+              <label className="text-xs text-stone-500 block mb-1.5">Coverage Type *</label>
+              <select value={form.coverage_type} onChange={(e) => update("coverage_type", e.target.value)}
+                className={inputCls}>
                 {COVERAGE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {TYPE_EMOJI[t]} {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </option>
+                  <option key={t} value={t}>{TYPE_EMOJI[t]} {t.charAt(0).toUpperCase() + t.slice(1)}</option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="text-xs text-gray-500 block mb-1.5">Policy Number</label>
-              <input
-                type="text"
-                value={form.policy_number}
-                onChange={(e) => update("policy_number", e.target.value)}
-                placeholder="e.g. H-12345678"
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm placeholder:text-gray-400 focus:outline-none focus:border-blue-400 min-h-[44px] text-base"
-              />
+              <label className="text-xs text-stone-500 block mb-1.5">Policy Number</label>
+              <input type="text" value={form.policy_number} onChange={(e) => update("policy_number", e.target.value)}
+                placeholder="e.g. H-12345678" className={inputCls} />
             </div>
 
             <div>
-              <label className="text-xs text-gray-500 block mb-1.5">Insured Person</label>
-              <input
-                type="text"
-                value={form.insured_person}
-                onChange={(e) => update("insured_person", e.target.value)}
-                placeholder="e.g. John Tan"
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm placeholder:text-gray-400 focus:outline-none focus:border-blue-400 min-h-[44px] text-base"
-              />
+              <label className="text-xs text-stone-500 block mb-1.5">Insured Person</label>
+              <input type="text" value={form.insured_person} onChange={(e) => update("insured_person", e.target.value)}
+                placeholder="e.g. John Tan" className={inputCls} />
             </div>
 
             <div>
-              <label className="text-xs text-gray-500 block mb-1.5">Coverage Amount (SGD)</label>
-              <input
-                type="number"
-                value={form.coverage_amount}
-                onChange={(e) => update("coverage_amount", e.target.value)}
-                placeholder="500000"
-                min="0"
-                step="any"
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm placeholder:text-gray-400 focus:outline-none focus:border-blue-400 min-h-[44px] text-base"
-              />
+              <label className="text-xs text-stone-500 block mb-1.5">Coverage Amount (SGD)</label>
+              <input type="number" value={form.coverage_amount} onChange={(e) => update("coverage_amount", e.target.value)}
+                placeholder="500000" min="0" step="any" className={inputCls} />
             </div>
 
             <div>
-              <label className="text-xs text-gray-500 block mb-1.5">Premium Amount (SGD)</label>
-              <input
-                type="number"
-                value={form.premium_amount}
-                onChange={(e) => update("premium_amount", e.target.value)}
-                placeholder="200"
-                min="0"
-                step="any"
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm placeholder:text-gray-400 focus:outline-none focus:border-blue-400 min-h-[44px] text-base"
-              />
+              <label className="text-xs text-stone-500 block mb-1.5">Premium Amount (SGD)</label>
+              <input type="number" value={form.premium_amount} onChange={(e) => update("premium_amount", e.target.value)}
+                placeholder="200" min="0" step="any" className={inputCls} />
             </div>
 
             <div>
-              <label className="text-xs text-gray-500 block mb-1.5">Premium Frequency</label>
-              <select
-                value={form.premium_frequency}
-                onChange={(e) => update("premium_frequency", e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-400 min-h-[44px] text-base"
-              >
+              <label className="text-xs text-stone-500 block mb-1.5">Premium Frequency</label>
+              <select value={form.premium_frequency} onChange={(e) => update("premium_frequency", e.target.value)}
+                className={inputCls}>
                 {PREMIUM_FREQS.map((f) => (
                   <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>
                 ))}
@@ -230,40 +194,26 @@ function PolicyModal({
             </div>
 
             <div>
-              <label className="text-xs text-gray-500 block mb-1.5">Renewal Date</label>
-              <input
-                type="date"
-                value={form.renewal_date}
-                onChange={(e) => update("renewal_date", e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-blue-400 min-h-[44px] text-base"
-              />
+              <label className="text-xs text-stone-500 block mb-1.5">Renewal Date</label>
+              <input type="date" value={form.renewal_date} onChange={(e) => update("renewal_date", e.target.value)}
+                className={inputCls} />
             </div>
 
             <div className="sm:col-span-2">
-              <label className="text-xs text-gray-500 block mb-1.5">Notes</label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => update("notes", e.target.value)}
-                placeholder="Optional notes…"
-                rows={3}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm placeholder:text-gray-400 focus:outline-none focus:border-blue-400 resize-none text-base"
-              />
+              <label className="text-xs text-stone-500 block mb-1.5">Notes</label>
+              <textarea value={form.notes} onChange={(e) => update("notes", e.target.value)}
+                placeholder="Optional notes…" rows={3}
+                className="w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-blue-500 resize-none text-base" />
             </div>
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors min-h-[44px]"
-            >
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-stone-700 text-stone-300 text-sm font-medium hover:bg-stone-800 transition-colors min-h-[44px]">
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={saving || !form.provider}
-              className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors disabled:opacity-50 min-h-[44px]"
-            >
+            <button type="submit" disabled={saving || !form.provider}
+              className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors disabled:opacity-50 min-h-[44px]">
               {saving ? "Saving…" : policy ? "Save changes" : "Add policy"}
             </button>
           </div>
@@ -309,9 +259,7 @@ export default function InsurancePoliciesPage() {
     }
   };
 
-  useEffect(() => {
-    if (user) loadPolicies();
-  }, [user]);
+  useEffect(() => { if (user) loadPolicies(); }, [user]);
 
   const handleCreate = async (data: any) => {
     try {
@@ -319,9 +267,7 @@ export default function InsurancePoliciesPage() {
       setPolicies((prev) => [res.data, ...prev]);
       setShowModal(false);
       toast.success("Policy added");
-    } catch {
-      toast.error("Failed to add policy");
-    }
+    } catch { toast.error("Failed to add policy"); }
   };
 
   const handleUpdate = async (data: any) => {
@@ -331,9 +277,7 @@ export default function InsurancePoliciesPage() {
       setPolicies((prev) => prev.map((p) => (p.id === editPolicy.id ? res.data : p)));
       setEditPolicy(undefined);
       toast.success("Policy updated");
-    } catch {
-      toast.error("Failed to update policy");
-    }
+    } catch { toast.error("Failed to update policy"); }
   };
 
   const handleDeactivate = async (id: string) => {
@@ -342,25 +286,19 @@ export default function InsurancePoliciesPage() {
       setPolicies((prev) => prev.filter((p) => p.id !== id));
       setConfirmDelete(null);
       toast.success("Policy removed");
-    } catch {
-      toast.error("Failed to remove policy");
-    }
+    } catch { toast.error("Failed to remove policy"); }
   };
 
   if (!user) return null;
 
-  // Stats
   const activeCount = policies.length;
   const renewingSoon = policies.filter((p) => {
     const d = daysUntil(p.renewal_date);
     return d != null && d <= 30 && d >= 0;
   });
   const totalMonthly = policies.reduce(
-    (s, p) => s + monthlyPremium(p.premium_amount, p.premium_frequency),
-    0
+    (s, p) => s + monthlyPremium(p.premium_amount, p.premium_frequency), 0
   );
-
-  // Group by coverage type
   const grouped = COVERAGE_TYPES.map((type) => ({
     type,
     policies: policies.filter((p) => p.coverage_type === type),
@@ -369,14 +307,14 @@ export default function InsurancePoliciesPage() {
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto">
       {loading ? (
-        <div className="text-gray-400 text-sm py-12 text-center">Loading…</div>
+        <div className="text-stone-500 text-sm py-12 text-center">Loading…</div>
       ) : policies.length === 0 ? (
-        <div className="bg-white border border-gray-100 rounded-xl p-16 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-4">
+        <div className="bg-stone-900 border border-stone-800 rounded-xl p-16 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-blue-900/30 flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🛡️</span>
           </div>
-          <h3 className="text-gray-700 font-semibold mb-2">No policies added yet</h3>
-          <p className="text-gray-400 text-sm mb-6">
+          <h3 className="text-stone-200 font-semibold mb-2">No policies added yet</h3>
+          <p className="text-stone-500 text-sm mb-6">
             Add your household insurance policies to track renewals and coverage.
           </p>
           <button
@@ -390,29 +328,33 @@ export default function InsurancePoliciesPage() {
         <>
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3 mb-6">
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
-              <p className="text-xs text-gray-500 font-medium mb-1">Active Policies</p>
-              <p className="text-2xl font-bold text-gray-900">{activeCount}</p>
+            <div className="bg-stone-900 border border-stone-800 rounded-xl p-4">
+              <p className="text-xs text-stone-500 font-medium mb-1">Active Policies</p>
+              <p className="text-2xl font-bold text-stone-100">{activeCount}</p>
             </div>
-            <div
-              className={`border rounded-xl p-4 ${
-                renewingSoon.some((p) => (daysUntil(p.renewal_date) ?? 999) <= 7)
-                  ? "bg-red-50 border-red-200"
-                  : renewingSoon.length > 0
-                  ? "bg-amber-50 border-amber-200"
-                  : "bg-white border-gray-100"
-              }`}
-            >
-              <p className={`text-xs font-medium mb-1 ${renewingSoon.length > 0 ? (renewingSoon.some((p) => (daysUntil(p.renewal_date) ?? 999) <= 7) ? "text-red-600" : "text-amber-600") : "text-gray-500"}`}>
-                Renewing Soon
-              </p>
-              <p className={`text-2xl font-bold ${renewingSoon.length > 0 ? (renewingSoon.some((p) => (daysUntil(p.renewal_date) ?? 999) <= 7) ? "text-red-700" : "text-amber-700") : "text-gray-900"}`}>
-                {renewingSoon.length}
-              </p>
+            <div className={`border rounded-xl p-4 ${
+              renewingSoon.some((p) => (daysUntil(p.renewal_date) ?? 999) <= 7)
+                ? "bg-red-900/20 border-red-800"
+                : renewingSoon.length > 0
+                ? "bg-amber-900/20 border-amber-800"
+                : "bg-stone-900 border-stone-800"
+            }`}>
+              <p className={`text-xs font-medium mb-1 ${
+                renewingSoon.length > 0
+                  ? renewingSoon.some((p) => (daysUntil(p.renewal_date) ?? 999) <= 7)
+                    ? "text-red-400" : "text-amber-400"
+                  : "text-stone-500"
+              }`}>Renewing Soon</p>
+              <p className={`text-2xl font-bold ${
+                renewingSoon.length > 0
+                  ? renewingSoon.some((p) => (daysUntil(p.renewal_date) ?? 999) <= 7)
+                    ? "text-red-300" : "text-amber-300"
+                  : "text-stone-100"
+              }`}>{renewingSoon.length}</p>
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl p-4">
-              <p className="text-xs text-gray-500 font-medium mb-1">Monthly Premium</p>
-              <p className="text-lg font-bold text-gray-900 font-mono">
+            <div className="bg-stone-900 border border-stone-800 rounded-xl p-4">
+              <p className="text-xs text-stone-500 font-medium mb-1">Monthly Premium</p>
+              <p className="text-lg font-bold text-stone-100 font-mono">
                 ${totalMonthly.toFixed(0)}
               </p>
             </div>
@@ -434,19 +376,18 @@ export default function InsurancePoliciesPage() {
           {/* Policies by type */}
           <div className="space-y-4">
             {grouped.map(({ type, policies: typePolicies }) => (
-              <div key={type} className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+              <div key={type} className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-stone-800 flex items-center gap-2">
                   <span className="text-lg">{TYPE_EMOJI[type]}</span>
-                  <span className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                  <span className="text-sm font-semibold text-stone-300 uppercase tracking-wide">
                     {type.charAt(0).toUpperCase() + type.slice(1)}
                   </span>
-                  <span className="ml-auto text-xs text-gray-400">{typePolicies.length} policy</span>
+                  <span className="ml-auto text-xs text-stone-500">{typePolicies.length} {typePolicies.length === 1 ? "policy" : "policies"}</span>
                 </div>
-                {/* Table — scrollable on mobile */}
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[600px]">
                     <thead>
-                      <tr className="text-xs text-gray-400 border-b border-gray-100">
+                      <tr className="text-xs text-stone-500 border-b border-stone-800">
                         <th className="text-left px-5 py-2.5 font-medium">Provider</th>
                         <th className="text-left px-4 py-2.5 font-medium">Insured</th>
                         <th className="text-right px-4 py-2.5 font-medium">Coverage</th>
@@ -455,31 +396,29 @@ export default function InsurancePoliciesPage() {
                         <th className="px-4 py-2.5" />
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-stone-800">
                       {typePolicies.map((policy) => {
                         const days = daysUntil(policy.renewal_date);
                         return (
-                          <tr key={policy.id} className="hover:bg-gray-50 transition-colors">
+                          <tr key={policy.id} className="hover:bg-stone-800/50 transition-colors">
                             <td className="px-5 py-3.5">
-                              <p className="text-sm font-medium text-gray-900">{policy.provider}</p>
+                              <p className="text-sm font-medium text-stone-100">{policy.provider}</p>
                               {policy.policy_number && (
-                                <p className="text-xs text-gray-400 mt-0.5">#{policy.policy_number}</p>
+                                <p className="text-xs text-stone-500 mt-0.5">#{policy.policy_number}</p>
                               )}
                             </td>
                             <td className="px-4 py-3.5">
-                              <p className="text-sm text-gray-600">
-                                {policy.insured_person || "—"}
-                              </p>
+                              <p className="text-sm text-stone-400">{policy.insured_person || "—"}</p>
                             </td>
                             <td className="px-4 py-3.5 text-right">
-                              <p className="text-sm font-mono text-gray-800">
+                              <p className="text-sm font-mono text-stone-200">
                                 {policy.coverage_amount
                                   ? `$${Number(policy.coverage_amount).toLocaleString()}`
                                   : "—"}
                               </p>
                             </td>
                             <td className="px-4 py-3.5 text-right">
-                              <p className="text-sm font-mono text-gray-800">
+                              <p className="text-sm font-mono text-stone-200">
                                 {policy.premium_amount
                                   ? `$${Number(policy.premium_amount).toFixed(0)}/${policy.premium_frequency?.slice(0, 2) ?? "mo"}`
                                   : "—"}
@@ -488,15 +427,13 @@ export default function InsurancePoliciesPage() {
                             <td className="px-4 py-3.5">
                               <div className="flex flex-col gap-1">
                                 {policy.renewal_date ? (
-                                  <span className="text-xs text-gray-600">
+                                  <span className="text-xs text-stone-400">
                                     {new Date(policy.renewal_date).toLocaleDateString("en-SG", {
-                                      day: "numeric",
-                                      month: "short",
-                                      year: "numeric",
+                                      day: "numeric", month: "short", year: "numeric",
                                     })}
                                   </span>
                                 ) : (
-                                  <span className="text-xs text-gray-400">—</span>
+                                  <span className="text-xs text-stone-500">—</span>
                                 )}
                                 <RenewalBadge days={days} />
                               </div>
@@ -504,11 +441,8 @@ export default function InsurancePoliciesPage() {
                             <td className="px-4 py-3.5">
                               <div className="flex items-center gap-1">
                                 <button
-                                  onClick={() => {
-                                    setEditPolicy(policy);
-                                    setShowModal(true);
-                                  }}
-                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                  onClick={() => { setEditPolicy(policy); setShowModal(true); }}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-500 hover:text-blue-400 hover:bg-blue-900/30 transition-colors"
                                   title="Edit"
                                 >
                                   <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
@@ -517,8 +451,8 @@ export default function InsurancePoliciesPage() {
                                 </button>
                                 <button
                                   onClick={() => setConfirmDelete(policy.id)}
-                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                  title="Deactivate"
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-500 hover:text-red-400 hover:bg-red-900/30 transition-colors"
+                                  title="Remove"
                                 >
                                   <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
                                     <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -538,7 +472,6 @@ export default function InsurancePoliciesPage() {
         </>
       )}
 
-      {/* Add/Edit modal */}
       {showModal && (
         <PolicyModal
           policy={editPolicy}
@@ -547,24 +480,23 @@ export default function InsurancePoliciesPage() {
         />
       )}
 
-      {/* Confirm deactivate */}
       {confirmDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60"
           onClick={() => setConfirmDelete(null)}
         >
           <div
-            className="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl"
+            className="w-full sm:max-w-sm bg-stone-900 border border-stone-800 rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-base font-semibold text-gray-900 mb-2">Remove policy?</h2>
-            <p className="text-sm text-gray-500 mb-5">
+            <h2 className="text-base font-semibold text-stone-100 mb-2">Remove policy?</h2>
+            <p className="text-sm text-stone-400 mb-5">
               This policy will be marked as inactive and removed from your dashboard.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDelete(null)}
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium min-h-[44px]"
+                className="flex-1 py-2.5 rounded-xl border border-stone-700 text-stone-300 text-sm font-medium min-h-[44px]"
               >
                 Cancel
               </button>

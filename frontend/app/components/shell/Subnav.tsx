@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { type App } from "@/config/apps";
 import { AppIcon } from "./icons";
 
@@ -15,18 +14,17 @@ export default function Subnav({ activeApp, pathname, connected }: SubnavProps) 
   if (!activeApp) return null;
 
   return (
-    <aside className="hidden lg:flex w-[200px] shrink-0 flex-col bg-white border-r border-gray-100 z-20">
+    <aside className="hidden lg:flex w-[200px] shrink-0 flex-col bg-[#1a1917] border-r border-stone-800 z-20">
       {/* App header */}
-      <div className="h-16 flex items-center gap-3 px-4 border-b border-gray-100">
+      <div className="h-14 flex items-center gap-3 px-4 border-b border-stone-800">
         <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+          className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
           style={{ backgroundColor: activeApp.accent, color: activeApp.color }}
         >
           <AppIcon icon={activeApp.icon} className="w-4 h-4" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">{activeApp.label}</p>
-          <p className="text-xs text-gray-400 truncate">Household</p>
+          <p className="text-sm font-semibold text-stone-100 truncate">{activeApp.label}</p>
         </div>
       </div>
 
@@ -41,7 +39,7 @@ export default function Subnav({ activeApp, pathname, connected }: SubnavProps) 
               className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isActive
                   ? "text-white"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  : "text-stone-400 hover:text-stone-100 hover:bg-stone-800"
               }`}
               style={isActive ? { backgroundColor: activeApp.color } : {}}
             >
@@ -52,14 +50,14 @@ export default function Subnav({ activeApp, pathname, connected }: SubnavProps) 
       </nav>
 
       {/* WhatsApp connection status */}
-      <div className="p-3 border-t border-gray-100">
+      <div className="p-3 border-t border-stone-800">
         <div
           className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ${
             connected === true
-              ? "bg-emerald-50 text-emerald-700"
+              ? "bg-emerald-900/40 text-emerald-400"
               : connected === false
-              ? "bg-red-50 text-red-600"
-              : "bg-gray-50 text-gray-500"
+              ? "bg-red-900/40 text-red-400"
+              : "bg-stone-800 text-stone-500"
           }`}
         >
           <div
@@ -67,8 +65,8 @@ export default function Subnav({ activeApp, pathname, connected }: SubnavProps) 
               connected === true
                 ? "bg-emerald-500"
                 : connected === false
-                ? "bg-red-400"
-                : "bg-gray-300"
+                ? "bg-red-500"
+                : "bg-stone-600"
             }`}
           />
           {connected === true

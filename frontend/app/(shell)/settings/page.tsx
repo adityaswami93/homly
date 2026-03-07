@@ -88,15 +88,15 @@ export default function SettingsPage() {
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">
       {/* Tab bar */}
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1">
+      <div className="flex gap-1 mb-6 bg-stone-800 rounded-xl p-1">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
               activeTab === tab.key
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-stone-700 text-stone-100 shadow-sm"
+                : "text-stone-500 hover:text-stone-300"
             }`}
           >
             {tab.label}
@@ -105,15 +105,15 @@ export default function SettingsPage() {
       </div>
 
       {loading ? (
-        <div className="text-gray-400 text-sm py-12 text-center">Loading…</div>
+        <div className="text-stone-500 text-sm py-12 text-center">Loading…</div>
       ) : (
         <>
           {activeTab === "general" && (
             <div className="space-y-4">
-              <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4">
-                <h2 className="text-sm font-semibold text-gray-700">Summary Schedule</h2>
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 space-y-4">
+                <h2 className="text-sm font-semibold text-stone-300">Summary Schedule</h2>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-2">Send summary on</label>
+                  <label className="text-xs text-stone-500 block mb-2">Send summary on</label>
                   <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
                     {DAYS.map((day, i) => (
                       <button
@@ -122,7 +122,7 @@ export default function SettingsPage() {
                         className={`py-2 rounded-lg text-xs font-medium transition-colors border min-h-[44px] ${
                           form.summary_day === i
                             ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "border-gray-200 text-gray-500 hover:border-gray-300"
+                            : "border-stone-700 text-stone-400 hover:border-stone-600"
                         }`}
                       >
                         {day.slice(0, 3)}
@@ -131,11 +131,11 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-2">At time</label>
+                  <label className="text-xs text-stone-500 block mb-2">At time</label>
                   <select
                     value={form.summary_hour}
                     onChange={(e) => update("summary_hour", Number(e.target.value))}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-emerald-400 min-h-[44px] text-base"
+                    className="w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-emerald-600 min-h-[44px] text-base"
                   >
                     {HOURS.map((h) => (
                       <option key={h.value} value={h.value}>{h.label}</option>
@@ -143,11 +143,11 @@ export default function SettingsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-2">Timezone</label>
+                  <label className="text-xs text-stone-500 block mb-2">Timezone</label>
                   <select
                     value={form.summary_timezone}
                     onChange={(e) => update("summary_timezone", e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm focus:outline-none focus:border-emerald-400 min-h-[44px] text-base"
+                    className="w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-emerald-600 min-h-[44px] text-base"
                   >
                     {TIMEZONES.map((tz) => (
                       <option key={tz} value={tz}>{tz}</option>
@@ -156,9 +156,9 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-3">
-                <h2 className="text-sm font-semibold text-gray-700">Summary Period</h2>
-                <p className="text-xs text-gray-400">Which receipts to include in the summary</p>
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-stone-300">Summary Period</h2>
+                <p className="text-xs text-stone-500">Which receipts to include in the summary</p>
                 <div className="space-y-2">
                   {[
                     { value: "last7days", label: "Last 7 days", desc: "Includes receipts from the past 7 days regardless of week boundary" },
@@ -169,8 +169,8 @@ export default function SettingsPage() {
                       onClick={() => update("cutoff_mode", opt.value)}
                       className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-colors min-h-[60px] ${
                         form.cutoff_mode === opt.value
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                          : "border-gray-200 text-gray-600 hover:border-gray-300"
+                          ? "border-emerald-700 bg-emerald-900/30 text-emerald-300"
+                          : "border-stone-700 text-stone-400 hover:border-stone-600"
                       }`}
                     >
                       <p className="font-medium">{opt.label}</p>
@@ -194,9 +194,9 @@ export default function SettingsPage() {
 
           {activeTab === "reimbursement" && (
             <div className="space-y-4">
-              <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-3">
-                <h2 className="text-sm font-semibold text-gray-700">Reimbursement Mode</h2>
-                <p className="text-xs text-gray-400">Which receipts count as reimbursable expenses</p>
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-stone-300">Reimbursement Mode</h2>
+                <p className="text-xs text-stone-500">Which receipts count as reimbursable expenses</p>
                 <div className="space-y-2">
                   {[
                     { value: "all", label: "Reimburse all", desc: "Every receipt is reimbursable by default" },
@@ -209,8 +209,8 @@ export default function SettingsPage() {
                       disabled={!isAdmin}
                       className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-colors min-h-[60px] disabled:opacity-50 ${
                         form.reimbursement_mode === opt.value
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                          : "border-gray-200 text-gray-600 hover:border-gray-300"
+                          ? "border-emerald-700 bg-emerald-900/30 text-emerald-300"
+                          : "border-stone-700 text-stone-400 hover:border-stone-600"
                       }`}
                     >
                       <p className="font-medium">{opt.label}</p>
@@ -221,9 +221,9 @@ export default function SettingsPage() {
               </div>
 
               {form.reimbursement_mode === "helpers_only" && (
-                <div className="bg-white border border-gray-100 rounded-xl p-5">
-                  <h2 className="text-sm font-semibold text-gray-700 mb-1">Helper identifiers</h2>
-                  <p className="text-xs text-gray-400 mb-3">
+                <div className="bg-stone-900 border border-stone-800 rounded-xl p-5">
+                  <h2 className="text-sm font-semibold text-stone-300 mb-1">Helper identifiers</h2>
+                  <p className="text-xs text-stone-500 mb-3">
                     Comma-separated names or phone numbers. Receipts from these senders will be marked reimbursable.
                   </p>
                   <input
@@ -232,7 +232,7 @@ export default function SettingsPage() {
                     onChange={(e) => update("helper_identifiers", e.target.value)}
                     placeholder="e.g. Maria, +6591234567"
                     disabled={!isAdmin}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm placeholder:text-gray-400 focus:outline-none focus:border-emerald-400 disabled:opacity-50 min-h-[44px] text-base"
+                    className="w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-600 disabled:opacity-50 min-h-[44px] text-base"
                   />
                 </div>
               )}
@@ -251,9 +251,9 @@ export default function SettingsPage() {
 
           {activeTab === "whatsapp" && (
             <div className="space-y-4">
-              <div className="bg-white border border-gray-100 rounded-xl p-5">
-                <h2 className="text-sm font-semibold text-gray-700 mb-1">WhatsApp Group</h2>
-                <p className="text-xs text-gray-400 mb-3">
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5">
+                <h2 className="text-sm font-semibold text-stone-300 mb-1">WhatsApp Group</h2>
+                <p className="text-xs text-stone-500 mb-3">
                   Display name of the connected WhatsApp group
                 </p>
                 <input
@@ -261,11 +261,11 @@ export default function SettingsPage() {
                   value={form.group_name || ""}
                   onChange={(e) => update("group_name", e.target.value || null)}
                   placeholder="e.g. Household Expenses"
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 text-sm placeholder:text-gray-400 focus:outline-none focus:border-emerald-400 min-h-[44px] text-base mb-3"
+                  className="w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-600 min-h-[44px] text-base mb-3"
                 />
                 <Link
                   href="/setup"
-                  className="block w-full text-center py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors min-h-[44px] flex items-center justify-center"
+                  className="block w-full text-center py-2.5 rounded-xl border border-stone-700 text-stone-300 text-sm font-medium hover:bg-stone-800 transition-colors min-h-[44px] flex items-center justify-center"
                 >
                   Manage WhatsApp connection →
                 </Link>

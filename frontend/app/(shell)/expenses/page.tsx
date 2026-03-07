@@ -59,12 +59,12 @@ const CATEGORY_EMOJI: Record<string, string> = {
 };
 
 const CATEGORY_COLOR: Record<string, string> = {
-  groceries: "bg-emerald-100 text-emerald-700",
-  household: "bg-blue-100 text-blue-700",
-  "personal care": "bg-purple-100 text-purple-700",
-  "food & beverage": "bg-orange-100 text-orange-700",
-  transport: "bg-cyan-100 text-cyan-700",
-  other: "bg-gray-100 text-gray-600",
+  groceries: "bg-emerald-900/40 text-emerald-400",
+  household: "bg-blue-900/40 text-blue-400",
+  "personal care": "bg-purple-900/40 text-purple-400",
+  "food & beverage": "bg-orange-900/40 text-orange-400",
+  transport: "bg-cyan-900/40 text-cyan-400",
+  other: "bg-stone-800 text-stone-400",
 };
 
 const CATEGORY_BAR: Record<string, string> = {
@@ -77,9 +77,9 @@ const CATEGORY_BAR: Record<string, string> = {
 };
 
 const CONFIDENCE_STYLE: Record<string, string> = {
-  high: "text-emerald-600",
-  medium: "text-amber-600",
-  low: "text-red-500",
+  high: "text-emerald-400",
+  medium: "text-amber-400",
+  low: "text-red-400",
 };
 
 function fmt(amount: number | null, currency = "SGD") {
@@ -218,12 +218,12 @@ function ReceiptDrawer({
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md h-[88vh] sm:h-full bg-white border-t sm:border-t-0 sm:border-l border-gray-200 overflow-y-auto rounded-t-2xl sm:rounded-none shadow-2xl"
+        className="w-full sm:max-w-md h-[88vh] sm:h-full bg-stone-900 border-t sm:border-t-0 sm:border-l border-stone-800 overflow-y-auto rounded-t-2xl sm:rounded-none shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-5 border-b border-gray-100 flex items-start justify-between">
+        <div className="p-5 border-b border-stone-800 flex items-start justify-between">
           <div>
-            <h2 className="font-semibold text-gray-900 text-lg">
+            <h2 className="font-semibold text-stone-100 text-lg">
               {receipt.vendor || "Unknown vendor"}
             </h2>
             {editingDate ? (
@@ -232,12 +232,12 @@ function ReceiptDrawer({
                   type="date"
                   value={dateValue}
                   onChange={(e) => setDateValue(e.target.value)}
-                  className="border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-700 focus:outline-none focus:border-emerald-400 text-base"
+                  className="border border-stone-700 rounded-lg px-2 py-1 text-xs text-stone-300 focus:outline-none focus:border-emerald-400 text-base bg-stone-800"
                 />
                 <button
                   onClick={handleSaveDate}
                   disabled={savingDate}
-                  className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                  className="text-xs text-emerald-400 hover:text-emerald-400 font-medium"
                 >
                   {savingDate ? "Saving…" : "Save"}
                 </button>
@@ -246,21 +246,21 @@ function ReceiptDrawer({
                     setEditingDate(false);
                     setDateValue(receipt.date?.slice(0, 10) ?? "");
                   }}
-                  className="text-xs text-gray-400 hover:text-gray-600"
+                  className="text-xs text-stone-500 hover:text-stone-400"
                 >
                   Cancel
                 </button>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 mt-0.5">
-                <p className="text-gray-500 text-sm">{fmtDate(receipt.date)}</p>
+                <p className="text-stone-500 text-sm">{fmtDate(receipt.date)}</p>
                 {isAdmin && (
                   <button
                     onClick={() => {
                       setDateValue(receipt.date?.slice(0, 10) ?? "");
                       setEditingDate(true);
                     }}
-                    className="text-gray-300 hover:text-gray-500 text-xs"
+                    className="text-stone-600 hover:text-stone-500 text-xs"
                   >
                     Edit
                   </button>
@@ -268,21 +268,21 @@ function ReceiptDrawer({
               </div>
             )}
             {receipt.sender_name && (
-              <p className="text-gray-400 text-xs mt-0.5">Posted by {receipt.sender_name}</p>
+              <p className="text-stone-500 text-xs mt-0.5">Posted by {receipt.sender_name}</p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none w-8 h-8 flex items-center justify-center"
+            className="text-stone-500 hover:text-stone-400 text-2xl leading-none w-8 h-8 flex items-center justify-center"
           >
             ×
           </button>
         </div>
 
         {receipt.image_path && (
-          <div className="border-b border-gray-100">
+          <div className="border-b border-stone-800">
             {imageLoading ? (
-              <div className="h-48 flex items-center justify-center bg-gray-50">
+              <div className="h-48 flex items-center justify-center bg-stone-900/50">
                 <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : imageUrl ? (
@@ -290,63 +290,63 @@ function ReceiptDrawer({
                 <img
                   src={imageUrl}
                   alt="Receipt"
-                  className="w-full max-h-72 object-contain bg-gray-50"
+                  className="w-full max-h-72 object-contain bg-stone-900/50"
                 />
                 <a
                   href={imageUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="absolute top-2 right-2 bg-white/90 border border-gray-200 text-gray-600 text-xs px-2.5 py-1.5 rounded-lg shadow-sm"
+                  className="absolute top-2 right-2 bg-stone-900/90 border border-stone-700 text-stone-400 text-xs px-2.5 py-1.5 rounded-lg"
                 >
                   View full ↗
                 </a>
               </div>
             ) : (
-              <div className="h-20 flex items-center justify-center bg-gray-50">
-                <p className="text-gray-400 text-xs">Image unavailable</p>
+              <div className="h-20 flex items-center justify-center bg-stone-900/50">
+                <p className="text-stone-500 text-xs">Image unavailable</p>
               </div>
             )}
           </div>
         )}
 
-        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+        <div className="p-5 border-b border-stone-800 flex items-center justify-between">
           <div>
-            <p className="text-3xl font-semibold text-gray-900 font-mono">
+            <p className="text-3xl font-semibold text-stone-100 font-mono">
               {fmt(receipt.total, receipt.currency)}
             </p>
             {receipt.tax != null && receipt.tax > 0 && (
-              <p className="text-gray-400 text-xs mt-1">
+              <p className="text-stone-500 text-xs mt-1">
                 Subtotal {fmt(receipt.subtotal)} + GST {fmt(receipt.tax)}
               </p>
             )}
           </div>
           <div className="text-right">
             <span
-              className={`text-xs font-medium ${CONFIDENCE_STYLE[receipt.confidence] || "text-gray-400"}`}
+              className={`text-xs font-medium ${CONFIDENCE_STYLE[receipt.confidence] || "text-stone-500"}`}
             >
               {receipt.confidence} confidence
             </span>
             {receipt.notes && (
-              <p className="text-gray-400 text-xs mt-1 max-w-[140px] text-right">{receipt.notes}</p>
+              <p className="text-stone-500 text-xs mt-1 max-w-[140px] text-right">{receipt.notes}</p>
             )}
           </div>
         </div>
 
         <div className="p-5">
-          <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-3">Line Items</h3>
+          <h3 className="text-stone-500 text-xs uppercase tracking-widest mb-3">Line Items</h3>
           {loading ? (
-            <p className="text-gray-400 text-sm">Loading items…</p>
+            <p className="text-stone-500 text-sm">Loading items…</p>
           ) : items.length === 0 ? (
-            <p className="text-gray-400 text-sm italic">No items extracted</p>
+            <p className="text-stone-500 text-sm italic">No items extracted</p>
           ) : (
             <div className="space-y-2">
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                  className="flex items-center justify-between py-2 border-b border-stone-800 last:border-0"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-gray-800 text-sm truncate">{item.name}</p>
+                    <p className="text-stone-200 text-sm truncate">{item.name}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span
                         className={`text-xs px-1.5 py-0.5 rounded ${
@@ -356,11 +356,11 @@ function ReceiptDrawer({
                         {CATEGORY_EMOJI[item.category]} {item.category}
                       </span>
                       {item.qty !== 1 && (
-                        <span className="text-gray-400 text-xs">×{item.qty}</span>
+                        <span className="text-stone-500 text-xs">×{item.qty}</span>
                       )}
                     </div>
                   </div>
-                  <span className="text-gray-800 text-sm font-mono ml-4 shrink-0">
+                  <span className="text-stone-200 text-sm font-mono ml-4 shrink-0">
                     {fmt(item.line_total)}
                   </span>
                 </div>
@@ -369,14 +369,14 @@ function ReceiptDrawer({
           )}
         </div>
 
-        <div className="p-5 border-t border-gray-100 space-y-2">
+        <div className="p-5 border-t border-stone-800 space-y-2">
           <button
             onClick={handleFlag}
             disabled={toggling}
             className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors border min-h-[44px] ${
               receipt.flagged
-                ? "border-gray-200 text-gray-500 hover:border-gray-300"
-                : "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100"
+                ? "border-stone-700 text-stone-400 hover:border-stone-600"
+                : "border-amber-700 text-amber-300 bg-amber-900/30 hover:bg-amber-900/50"
             }`}
           >
             {toggling ? "…" : receipt.flagged ? "✓ Mark as reviewed" : "⚠ Flag for review"}
@@ -390,8 +390,8 @@ function ReceiptDrawer({
             }}
             className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors border min-h-[44px] ${
               receipt.reimbursable
-                ? "border-gray-200 text-gray-500 hover:border-gray-300"
-                : "border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                ? "border-stone-700 text-stone-400 hover:border-stone-600"
+                : "border-emerald-800 text-emerald-400 bg-emerald-900/30 hover:bg-emerald-900/50"
             }`}
           >
             {receipt.reimbursable ? "Remove from reimbursement" : "Add to reimbursement"}
@@ -399,7 +399,7 @@ function ReceiptDrawer({
           <button
             onClick={handleDelete}
             disabled={deleting}
-            className="w-full py-2.5 rounded-xl text-sm font-medium border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 transition-colors min-h-[44px]"
+            className="w-full py-2.5 rounded-xl text-sm font-medium border border-red-800 text-red-400 bg-red-900/30 hover:bg-red-900/50 transition-colors min-h-[44px]"
           >
             {deleting ? "Removing…" : "Remove receipt"}
           </button>
@@ -422,24 +422,24 @@ function StatCard({
 }) {
   return (
     <div
-      className={`rounded-xl border p-4 bg-white ${
+      className={`rounded-xl border p-4 bg-stone-900 ${
         accent
-          ? "border-emerald-200"
+          ? "border-emerald-800"
           : warn
-          ? "border-red-200"
-          : "border-gray-100"
+          ? "border-red-800"
+          : "border-stone-800"
       }`}
     >
       <p
         className={`text-xs mb-1 font-medium ${
-          accent ? "text-emerald-600" : warn ? "text-red-500" : "text-gray-500"
+          accent ? "text-emerald-400" : warn ? "text-red-400" : "text-stone-500"
         }`}
       >
         {label}
       </p>
       <p
         className={`text-lg font-semibold font-mono ${
-          accent ? "text-emerald-700" : warn ? "text-red-600" : "text-gray-900"
+          accent ? "text-emerald-400" : warn ? "text-red-400" : "text-stone-100"
         }`}
       >
         {value}
@@ -638,7 +638,7 @@ export default function ExpensesOverview() {
       {/* Week navigator */}
       <div className="flex items-start justify-between mb-6 gap-3">
         <div>
-          <p className="text-gray-500 text-sm">
+          <p className="text-stone-500 text-sm">
             {formatWeekRange(currentWeek.year, currentWeek.week)}
           </p>
         </div>
@@ -646,7 +646,7 @@ export default function ExpensesOverview() {
           <button
             onClick={handleSendTotal}
             disabled={sending || !week || week.receipt_count === 0}
-            className="flex items-center gap-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 min-h-[36px]"
+            className="flex items-center gap-1.5 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-800 text-emerald-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 min-h-[36px]"
           >
             <span className="hidden sm:inline">📤 Send to group</span>
             <span className="sm:hidden">📤</span>
@@ -654,14 +654,14 @@ export default function ExpensesOverview() {
           <div className="flex items-center gap-1">
             <button
               onClick={() => navigate(-1)}
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:border-gray-300 text-gray-500 hover:text-gray-700 transition-colors min-w-[32px]"
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-700 hover:border-stone-600 text-stone-400 hover:text-stone-200 transition-colors min-w-[32px]"
             >
               ←
             </button>
             {!isCurrentWeek && (
               <button
                 onClick={goToCurrentWeek}
-                className="px-3 h-8 text-xs rounded-lg border border-gray-200 hover:border-gray-300 text-gray-500 hover:text-gray-700 transition-colors"
+                className="px-3 h-8 text-xs rounded-lg border border-stone-700 hover:border-stone-600 text-stone-400 hover:text-stone-200 transition-colors"
               >
                 Today
               </button>
@@ -669,7 +669,7 @@ export default function ExpensesOverview() {
             <button
               onClick={() => navigate(1)}
               disabled={isCurrentWeek}
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:border-gray-300 text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-30 min-w-[32px]"
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-700 hover:border-stone-600 text-stone-400 hover:text-stone-200 transition-colors disabled:opacity-30 min-w-[32px]"
             >
               →
             </button>
@@ -678,16 +678,16 @@ export default function ExpensesOverview() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
+        <div className="flex items-center justify-center py-16 text-stone-500 text-sm">
           Loading…
         </div>
       ) : !week || week.receipt_count === 0 ? (
-        <div className="bg-white border border-gray-100 rounded-xl p-12 text-center">
-          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+        <div className="bg-stone-900 border border-stone-800 rounded-xl p-12 text-center">
+          <div className="w-12 h-12 rounded-full bg-stone-800 flex items-center justify-center mx-auto mb-4">
             <span className="text-xl">🧾</span>
           </div>
-          <h3 className="text-gray-700 font-medium mb-2">No receipts this week</h3>
-          <p className="text-gray-400 text-sm">
+          <h3 className="text-stone-300 font-medium mb-2">No receipts this week</h3>
+          <p className="text-stone-500 text-sm">
             Send receipt photos to the WhatsApp group and they will appear here automatically.
           </p>
         </div>
@@ -705,12 +705,12 @@ export default function ExpensesOverview() {
           </div>
 
           {week.reimbursable_total > 0 && (
-            <div className="flex items-center justify-between bg-white border border-emerald-100 rounded-xl px-4 py-3.5 mb-6">
+            <div className="flex items-center justify-between bg-stone-900 border border-emerald-900 rounded-xl px-4 py-3.5 mb-6">
               <div>
-                <p className="text-gray-900 text-sm font-medium">
+                <p className="text-stone-100 text-sm font-medium">
                   SGD {week.reimbursable_total.toFixed(2)} to reimburse
                 </p>
-                <p className="text-gray-400 text-xs mt-0.5">
+                <p className="text-stone-500 text-xs mt-0.5">
                   {week.receipts.filter((r) => r.reimbursable).length} reimbursable receipts
                 </p>
               </div>
@@ -727,8 +727,8 @@ export default function ExpensesOverview() {
           <div className="grid lg:grid-cols-2 gap-4">
             {/* Category breakdown */}
             {Object.keys(week.category_totals).length > 0 && (
-              <div className="bg-white border border-gray-100 rounded-xl p-5">
-                <h2 className="text-gray-400 text-xs uppercase tracking-widest mb-4">
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5">
+                <h2 className="text-stone-500 text-xs uppercase tracking-widest mb-4">
                   By Category
                 </h2>
                 <div className="space-y-3">
@@ -742,18 +742,18 @@ export default function ExpensesOverview() {
                       return (
                         <div key={cat}>
                           <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-gray-700 text-sm">
+                            <span className="text-stone-300 text-sm">
                               {CATEGORY_EMOJI[cat]}{" "}
                               {cat.charAt(0).toUpperCase() + cat.slice(1)}
                             </span>
                             <div className="flex items-center gap-3">
-                              <span className="text-gray-400 text-xs">{pct}%</span>
-                              <span className="text-gray-900 text-sm font-mono">
+                              <span className="text-stone-500 text-xs">{pct}%</span>
+                              <span className="text-stone-100 text-sm font-mono">
                                 {fmt(amount)}
                               </span>
                             </div>
                           </div>
-                          <div className="h-1.5 bg-gray-100 rounded-full">
+                          <div className="h-1.5 bg-stone-800 rounded-full">
                             <div
                               className="h-1.5 rounded-full transition-all"
                               style={{
@@ -771,21 +771,21 @@ export default function ExpensesOverview() {
 
             {/* Receipts list */}
             <div>
-              <h2 className="text-gray-400 text-xs uppercase tracking-widest mb-3">Receipts</h2>
+              <h2 className="text-stone-500 text-xs uppercase tracking-widest mb-3">Receipts</h2>
               <div className="space-y-2">
                 {week.receipts.map((receipt) => (
                   <button
                     key={receipt.id}
                     onClick={() => setSelectedReceipt(receipt)}
-                    className="w-full bg-white border border-gray-100 hover:border-gray-200 hover:shadow-sm rounded-xl px-4 py-3.5 flex items-center justify-between transition-all group text-left min-h-[64px]"
+                    className="w-full bg-stone-900 border border-stone-800 hover:border-stone-700 hover:bg-stone-800 rounded-xl px-4 py-3.5 flex items-center justify-between transition-all group text-left min-h-[64px]"
                   >
                     <div className="flex items-center gap-3">
-                      {receipt.flagged && <span className="text-amber-500 text-sm">⚠</span>}
+                      {receipt.flagged && <span className="text-amber-400 text-sm">⚠</span>}
                       <div>
-                        <p className="text-gray-900 font-medium text-sm">
+                        <p className="text-stone-100 font-medium text-sm">
                           {receipt.vendor || "Unknown vendor"}
                         </p>
-                        <p className="text-gray-400 text-xs mt-0.5">
+                        <p className="text-stone-500 text-xs mt-0.5">
                           {fmtDate(receipt.date)}
                           {receipt.sender_name && (
                             <span> · {receipt.sender_name}</span>
@@ -796,18 +796,18 @@ export default function ExpensesOverview() {
                     <div className="flex items-center gap-2 shrink-0">
                       <span
                         className={`hidden sm:inline text-xs ${
-                          CONFIDENCE_STYLE[receipt.confidence] || "text-gray-400"
+                          CONFIDENCE_STYLE[receipt.confidence] || "text-stone-500"
                         }`}
                       >
                         {receipt.confidence}
                       </span>
                       {!receipt.reimbursable && (
-                        <span className="hidden sm:inline text-xs text-gray-300">own</span>
+                        <span className="hidden sm:inline text-xs text-stone-600">own</span>
                       )}
-                      <span className="text-gray-900 font-mono text-sm">
+                      <span className="text-stone-100 font-mono text-sm">
                         {fmt(receipt.total, receipt.currency)}
                       </span>
-                      <span className="text-gray-300 group-hover:text-gray-500 transition-colors">
+                      <span className="text-stone-600 group-hover:text-stone-400 transition-colors">
                         →
                       </span>
                     </div>

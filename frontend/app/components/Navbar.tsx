@@ -42,8 +42,8 @@ export default function Navbar({ user }: NavbarProps) {
         {/* Logo + Desktop nav */}
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2.5 shrink-0">
-            <div className="w-6 h-6 rounded-md bg-amber-400 flex items-center justify-center">
-              <span className="text-[11px] font-bold text-stone-900">H</span>
+            <div className="w-6 h-6 rounded-md bg-emerald-500 flex items-center justify-center">
+              <span className="text-[11px] font-bold text-white">H</span>
             </div>
             <span className="font-semibold tracking-tight text-stone-100">
               {config.appName}

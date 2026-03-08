@@ -18,7 +18,7 @@ export default function Rail({ activeApp, isSuperAdmin }: RailProps) {
     <aside className="hidden md:flex w-16 flex-col bg-[#111827] border-r border-stone-800 z-30 shrink-0">
       {/* Logo */}
       <div className="h-14 flex items-center justify-center shrink-0">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg">
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-lg">
           <span className="text-sm font-bold text-gray-900">H</span>
         </div>
       </div>

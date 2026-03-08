@@ -124,12 +124,12 @@ function WaitlistForm() {
         value={email}
         onChange={(e) => { setEmail(e.target.value); setError(""); }}
         onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-        className="flex-1 bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-400/60 transition text-sm"
+        className="flex-1 bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-emerald-500/60 transition text-sm"
       />
       <button
         onClick={handleSubmit}
         disabled={loading}
-        className="bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-stone-900 font-semibold px-6 py-3 rounded-xl transition text-sm whitespace-nowrap"
+        className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold px-6 py-3 rounded-xl transition text-sm whitespace-nowrap"
       >
         {loading ? "Joining..." : "Join waitlist"}
       </button>
@@ -169,8 +169,8 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="max-w-5xl mx-auto px-4 md:px-6 py-5 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-amber-400 flex items-center justify-center">
-            <span className="text-xs font-bold text-stone-900">H</span>
+          <div className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center">
+            <span className="text-xs font-bold text-white">H</span>
           </div>
           <span className="font-semibold tracking-tight">{config.appName}</span>
         </div>
@@ -184,14 +184,14 @@ export default function LandingPage() {
 
       {/* Hero */}
       <section className="max-w-3xl mx-auto px-4 md:px-6 pt-20 pb-24 text-center">
-        <div className="inline-flex items-center gap-2 bg-amber-400/10 border border-amber-400/20 rounded-full px-3 py-1.5 mb-8">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-          <span className="text-amber-300 text-xs font-medium">Early access — Singapore</span>
+        <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1.5 mb-8">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-emerald-300 text-xs font-medium">Early access — Singapore</span>
         </div>
 
         <h1 className="text-4xl md:text-6xl font-bold tracking-tight leading-tight mb-6">
           Household expenses,{" "}
-          <span className="text-amber-400">tracked automatically</span>
+          <span className="text-emerald-400">tracked automatically</span>
         </h1>
 
         <p className="text-stone-400 text-lg md:text-xl leading-relaxed mb-10 max-w-2xl mx-auto">
@@ -220,7 +220,7 @@ export default function LandingPage() {
           {STEPS.map((step) => (
             <div key={step.number} className="relative">
               <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-6 h-full">
-                <p className="text-amber-400/60 text-xs font-mono font-bold mb-4 tracking-widest">
+                <p className="text-emerald-400/60 text-xs font-mono font-bold mb-4 tracking-widest">
                   {step.number}
                 </p>
                 <h3 className="text-stone-100 font-semibold mb-2">{step.title}</h3>
@@ -282,7 +282,7 @@ export default function LandingPage() {
                 "Up to 2 household members",
               ].map((f) => (
                 <li key={f} className="flex items-center gap-2">
-                  <span className="text-amber-400 text-xs">✓</span> {f}
+                  <span className="text-emerald-400 text-xs">✓</span> {f}
                 </li>
               ))}
             </ul>
@@ -292,8 +292,8 @@ export default function LandingPage() {
           </div>
 
           {/* Paid */}
-          <div className="bg-amber-400/5 border border-amber-400/20 rounded-2xl p-6">
-            <p className="text-amber-400/70 text-sm mb-2">Coming soon</p>
+          <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6">
+            <p className="text-emerald-400/70 text-sm mb-2">Coming soon</p>
             <div className="flex items-end gap-1 mb-1">
               <p className="text-3xl font-bold">SGD 9.99</p>
               <p className="text-stone-400 text-sm mb-1">/month</p>
@@ -308,7 +308,7 @@ export default function LandingPage() {
                 "Priority support",
               ].map((f) => (
                 <li key={f} className="flex items-center gap-2">
-                  <span className="text-amber-400 text-xs">✓</span> {f}
+                  <span className="text-emerald-400 text-xs">✓</span> {f}
                 </li>
               ))}
             </ul>
@@ -347,8 +347,8 @@ export default function LandingPage() {
       <footer className="border-t border-stone-800/40 py-8">
         <div className="max-w-5xl mx-auto px-4 md:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-md bg-amber-400 flex items-center justify-center">
-              <span className="text-[9px] font-bold text-stone-900">H</span>
+            <div className="w-5 h-5 rounded-md bg-emerald-500 flex items-center justify-center">
+              <span className="text-[9px] font-bold text-white">H</span>
             </div>
             <span className="text-stone-400 text-sm">{config.appName}</span>
           </div>

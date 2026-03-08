@@ -84,8 +84,8 @@ export default function Login() {
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-2.5 mb-10">
-          <div className="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center">
-            <span className="text-sm font-bold text-stone-900">H</span>
+          <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center">
+            <span className="text-sm font-bold text-white">H</span>
           </div>
           <span className="font-semibold tracking-tight text-lg">Homly</span>
         </div>
@@ -101,7 +101,7 @@ export default function Login() {
                 placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-400/60 transition text-sm"
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-emerald-500/60 transition text-sm"
               />
               <input
                 type="password"
@@ -109,13 +109,13 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-400/60 transition text-sm"
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-emerald-500/60 transition text-sm"
               />
               {error && <p className="text-red-400 text-sm">{error}</p>}
               <button
                 onClick={handleLogin}
                 disabled={loading}
-                className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-900 font-semibold py-3 rounded-xl transition text-sm"
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition text-sm"
               >
                 {loading ? "Signing in..." : "Sign in"}
               </button>
@@ -177,13 +177,13 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleForgotPassword()}
-                  className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-400/60 transition text-sm"
+                  className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-emerald-500/60 transition text-sm"
                 />
                 {error && <p className="text-red-400 text-sm">{error}</p>}
                 <button
                   onClick={handleForgotPassword}
                   disabled={loading}
-                  className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-900 font-semibold py-3 rounded-xl transition text-sm"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition text-sm"
                 >
                   {loading ? "Sending..." : "Send reset link"}
                 </button>
@@ -227,13 +227,13 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleMagicLink()}
-                  className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-400/60 transition text-sm"
+                  className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-emerald-500/60 transition text-sm"
                 />
                 {error && <p className="text-red-400 text-sm">{error}</p>}
                 <button
                   onClick={handleMagicLink}
                   disabled={loading}
-                  className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-900 font-semibold py-3 rounded-xl transition text-sm"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition text-sm"
                 >
                   {loading ? "Sending..." : "Send magic link"}
                 </button>

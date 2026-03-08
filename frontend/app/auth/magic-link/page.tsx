@@ -43,15 +43,15 @@ function MagicLinkHandler() {
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100 flex items-center justify-center px-4">
       <div className="w-full max-w-sm text-center">
         <div className="flex items-center justify-center gap-2.5 mb-10">
-          <div className="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center">
-            <span className="text-sm font-bold text-stone-900">H</span>
+          <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center">
+            <span className="text-sm font-bold text-white">H</span>
           </div>
           <span className="font-semibold tracking-tight text-lg">Homly</span>
         </div>
 
         {status === "loading" && (
           <>
-            <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-stone-400 text-sm">Signing you in...</p>
           </>
         )}
@@ -69,7 +69,7 @@ function MagicLinkHandler() {
             <p className="text-stone-500 text-sm mb-6">Magic links expire after 1 hour.</p>
             <button
               onClick={() => router.push("/login")}
-              className="bg-amber-400 hover:bg-amber-300 text-stone-900 font-semibold px-6 py-2.5 rounded-xl transition text-sm"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-6 py-2.5 rounded-xl transition text-sm"
             >
               Back to login
             </button>

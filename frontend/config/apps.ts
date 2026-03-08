@@ -34,10 +34,11 @@ export const apps: App[] = [
     href: "/expenses",
     nav: [
       { label: "Overview", href: "/expenses" },
-      { label: "Transactions", href: "/expenses/transactions" },
+      { label: "History", href: "/expenses/history" },
       { label: "Members", href: "/expenses/members" },
-      { label: "Summary", href: "/expenses/summary" },
-      { label: "Insights", href: "/expenses/insights" },
+      { label: "Analytics", href: "/expenses/analytics" },
+      { label: "Price Intelligence", href: "/expenses/price-intelligence" },
+      { label: "Reimburse", href: "/expenses/reimburse" },
     ],
   },
   {
@@ -62,7 +63,6 @@ export const apps: App[] = [
     href: "/admin",
     nav: [
       { label: "Overview", href: "/admin" },
-      { label: "Price Intelligence", href: "/admin/price-intelligence" },
     ],
     superAdminOnly: true,
   },

@@ -15,17 +15,27 @@ function fmt(amount: number | null) {
   return `SGD ${Number(amount).toFixed(2)}`;
 }
 
-function fmtDateRange(start: string, end: string) {
-  const s = new Date(start).toLocaleDateString("en-SG", { day: "numeric", month: "short" });
-  const e = new Date(end).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" });
+function getWeekRange(year: number, week: number) {
+  const jan4 = new Date(year, 0, 4);
+  const startOfWeek1 = new Date(jan4);
+  startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+  const start = new Date(startOfWeek1);
+  start.setDate(startOfWeek1.getDate() + (week - 1) * 7);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return { start, end };
+}
+
+function fmtDateRange(year: number, week: number) {
+  const { start, end } = getWeekRange(year, week);
+  const s = start.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
+  const e = end.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" });
   return `${s} – ${e}`;
 }
 
 interface WeekSummary {
   year: number;
   week_number: number;
-  week_start: string;
-  week_end: string;
 }
 
 interface WeekDetail {
@@ -39,7 +49,7 @@ interface WeekDetail {
   category_totals: Record<string, number>;
 }
 
-export default function TransactionsPage() {
+export default function HistoryPage() {
   const [user, setUser] = useState<any>(null);
   const [weeks, setWeeks] = useState<WeekSummary[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -123,7 +133,7 @@ export default function TransactionsPage() {
                   <div>
                     <p className="text-stone-100 font-medium text-sm">Week {week.week_number}, {week.year}</p>
                     <p className="text-stone-500 text-xs mt-0.5">
-                      {fmtDateRange(week.week_start, week.week_end)}
+                      {fmtDateRange(week.year, week.week_number)}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

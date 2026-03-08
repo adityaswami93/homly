@@ -121,7 +121,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
-export default function SummaryPage() {
+export default function AnalyticsPage() {
   const [user, setUser] = useState<any>(null);
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);

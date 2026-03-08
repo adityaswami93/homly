@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import api from "@/lib/axios";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
 
@@ -32,8 +33,14 @@ export default function Login() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setError(error.message);
-    } else {
-      router.push("/dashboard");
+      setLoading(false);
+      return;
+    }
+    try {
+      const res = await api.get("/household");
+      router.push(res.data?.id ? "/expenses" : "/onboarding");
+    } catch {
+      router.push("/expenses");
     }
     setLoading(false);
   };

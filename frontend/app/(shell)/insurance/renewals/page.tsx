@@ -84,7 +84,7 @@ export default function RenewalsPage() {
         <div className="text-stone-500 text-sm py-12 text-center">Loading…</div>
       ) : policies.length === 0 ? (
         <div className="bg-stone-900 border border-stone-800 rounded-xl p-16 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-blue-900/30 flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-900/30 flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">📅</span>
           </div>
           <h3 className="text-stone-200 font-semibold mb-2">No renewals to track</h3>

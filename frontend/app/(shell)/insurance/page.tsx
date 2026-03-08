@@ -123,7 +123,7 @@ function PolicyModal({
     }
   };
 
-  const inputCls = "w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-blue-500 min-h-[44px] text-base";
+  const inputCls = "w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-600 min-h-[44px] text-base";
 
   return (
     <div
@@ -203,7 +203,7 @@ function PolicyModal({
               <label className="text-xs text-stone-500 block mb-1.5">Notes</label>
               <textarea value={form.notes} onChange={(e) => update("notes", e.target.value)}
                 placeholder="Optional notes…" rows={3}
-                className="w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-blue-500 resize-none text-base" />
+                className="w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-600 resize-none text-base" />
             </div>
           </div>
 
@@ -213,7 +213,7 @@ function PolicyModal({
               Cancel
             </button>
             <button type="submit" disabled={saving || !form.provider}
-              className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors disabled:opacity-50 min-h-[44px]">
+              className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors disabled:opacity-50 min-h-[44px]">
               {saving ? "Saving…" : policy ? "Save changes" : "Add policy"}
             </button>
           </div>
@@ -310,7 +310,7 @@ export default function InsurancePoliciesPage() {
         <div className="text-stone-500 text-sm py-12 text-center">Loading…</div>
       ) : policies.length === 0 ? (
         <div className="bg-stone-900 border border-stone-800 rounded-xl p-16 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-blue-900/30 flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-900/30 flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🛡️</span>
           </div>
           <h3 className="text-stone-200 font-semibold mb-2">No policies added yet</h3>
@@ -319,7 +319,7 @@ export default function InsurancePoliciesPage() {
           </p>
           <button
             onClick={() => setShowModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-6 py-2.5 rounded-xl transition-colors min-h-[44px]"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-6 py-2.5 rounded-xl transition-colors min-h-[44px]"
           >
             Add your first policy
           </button>
@@ -364,7 +364,7 @@ export default function InsurancePoliciesPage() {
           <div className="flex justify-end mb-4">
             <button
               onClick={() => { setEditPolicy(undefined); setShowModal(true); }}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors min-h-[44px]"
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors min-h-[44px]"
             >
               <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
@@ -442,7 +442,7 @@ export default function InsurancePoliciesPage() {
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => { setEditPolicy(policy); setShowModal(true); }}
-                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-500 hover:text-blue-400 hover:bg-blue-900/30 transition-colors"
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-500 hover:text-emerald-400 hover:bg-emerald-900/30 transition-colors"
                                   title="Edit"
                                 >
                                   <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">

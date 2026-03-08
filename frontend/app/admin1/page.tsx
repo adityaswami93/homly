@@ -222,7 +222,7 @@ function PriceIntelligenceTab() {
             placeholder="Search by item..."
             value={searchComparison}
             onChange={(e) => setSearchComparison(e.target.value)}
-            className="flex-1 bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-amber-400/60"
+            className="flex-1 bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-emerald-500/60"
           />
           <div className="flex items-center gap-2">
             <span className="text-stone-500 text-xs shrink-0">Min purchases:</span>
@@ -232,7 +232,7 @@ function PriceIntelligenceTab() {
                 onClick={() => setMinCount(n)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                   minCount === n
-                    ? "border-amber-400/50 bg-amber-400/10 text-amber-300"
+                    ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
                     : "border-stone-800 text-stone-500 hover:text-stone-300"
                 }`}
               >
@@ -315,7 +315,7 @@ function PriceIntelligenceTab() {
                   <span className="text-lg">{CATEGORY_EMOJI[row.category] ?? "📦"}</span>
                   <span className="text-stone-300 text-sm font-medium capitalize">{row.category}</span>
                 </div>
-                <p className="text-amber-300 font-semibold text-sm">{row.vendor || "—"}</p>
+                <p className="text-emerald-300 font-semibold text-sm">{row.vendor || "—"}</p>
                 <div className="flex items-center gap-3 mt-1.5 text-xs text-stone-500">
                   {row.wins > 0 && (
                     <span>{row.wins} item win{row.wins !== 1 ? "s" : ""}</span>
@@ -339,7 +339,7 @@ function PriceIntelligenceTab() {
             <select
               value={activeTrendItem}
               onChange={(e) => setSelectedItem(e.target.value)}
-              className="bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-amber-400/60"
+              className="bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-emerald-500/60"
             >
               {trendItems.map((item) => (
                 <option key={item} value={item}>{item}</option>
@@ -481,7 +481,7 @@ export default function AdminPage() {
       <div className="max-w-6xl mx-auto px-4 md:px-8 lg:px-10 py-8 pb-24 sm:pb-8">
         <div className="flex items-center gap-3 mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">Super Admin</h1>
-          <span className="text-xs bg-amber-400/15 border border-amber-400/30 text-amber-300 px-2 py-0.5 rounded-full">
+          <span className="text-xs bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 px-2 py-0.5 rounded-full">
             Platform view
           </span>
         </div>
@@ -494,7 +494,7 @@ export default function AdminPage() {
               onClick={() => setActiveTab(tab.key)}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 activeTab === tab.key
-                  ? "border-amber-400 text-amber-300"
+                  ? "border-emerald-500 text-emerald-300"
                   : "border-transparent text-stone-500 hover:text-stone-300"
               }`}
             >
@@ -515,12 +515,12 @@ export default function AdminPage() {
                   placeholder="Email address"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  className="w-full sm:flex-1 sm:min-w-48 bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-amber-400/60"
+                  className="w-full sm:flex-1 sm:min-w-48 bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-500/60"
                 />
                 <select
                   value={inviteHousehold}
                   onChange={(e) => setInviteHousehold(e.target.value)}
-                  className="w-full sm:w-auto bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-amber-400/60"
+                  className="w-full sm:w-auto bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-emerald-500/60"
                 >
                   <option value="">New household</option>
                   {households.map((h) => (
@@ -530,7 +530,7 @@ export default function AdminPage() {
                 <select
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value)}
-                  className="w-full sm:w-auto bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-amber-400/60"
+                  className="w-full sm:w-auto bg-stone-900 border border-stone-700 rounded-xl px-4 py-2.5 text-stone-200 text-sm focus:outline-none focus:border-emerald-500/60"
                 >
                   <option value="admin">Admin</option>
                   <option value="member">Member</option>
@@ -538,7 +538,7 @@ export default function AdminPage() {
                 <button
                   onClick={handleInvite}
                   disabled={sending || !inviteEmail}
-                  className="w-full sm:w-auto bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-900 font-semibold px-5 py-2.5 rounded-xl transition text-sm"
+                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold px-5 py-2.5 rounded-xl transition text-sm"
                 >
                   {inviteSent ? "✓ Sent" : sending ? "Sending..." : "Send invite"}
                 </button>

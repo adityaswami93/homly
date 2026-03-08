@@ -118,7 +118,7 @@ export default function InsightsPage() {
     return (
       <div className="p-4 sm:p-6 max-w-5xl mx-auto">
         <div className="bg-stone-900 border border-stone-800 rounded-xl p-16 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-amber-900/30 flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-900/30 flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">📊</span>
           </div>
           <h3 className="text-stone-200 font-semibold mb-2">Not enough data yet</h3>
@@ -188,7 +188,7 @@ export default function InsightsPage() {
           placeholder="Search item..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full sm:w-72 bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-amber-400/60 mb-4"
+          className="w-full sm:w-72 bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-emerald-500/60 mb-4"
         />
         {filtered.length === 0 ? (
           <p className="text-stone-600 text-sm">No items match.</p>
@@ -247,7 +247,7 @@ export default function InsightsPage() {
                   <span className="text-lg">{CATEGORY_EMOJI[row.category] ?? "📦"}</span>
                   <span className="text-stone-300 text-sm font-medium capitalize">{row.category}</span>
                 </div>
-                <p className="text-amber-300 font-semibold text-sm">{row.vendor || "—"}</p>
+                <p className="text-emerald-300 font-semibold text-sm">{row.vendor || "—"}</p>
                 {row.avg_saving_vs_most_expensive > 0 && (
                   <p className="text-emerald-400/80 text-xs mt-1">
                     saves ~{fmtPrice(row.avg_saving_vs_most_expensive)} avg
@@ -266,7 +266,7 @@ export default function InsightsPage() {
           <select
             value={activeTrendItem}
             onChange={(e) => setSelectedItem(e.target.value)}
-            className="bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-amber-400/60 mb-4"
+            className="bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-emerald-500/60 mb-4"
           >
             {trendItems.map((item) => (
               <option key={item} value={item}>{item}</option>

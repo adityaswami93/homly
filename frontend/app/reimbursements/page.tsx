@@ -67,7 +67,7 @@ function StatusBadge({ outstanding, paid }: { outstanding: number; paid: number 
   }
   if (paid > 0) {
     return (
-      <span className="text-xs bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">
+      <span className="text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">
         Partial
       </span>
     );
@@ -374,7 +374,7 @@ export default function ReimbursementsPage() {
                               onChange={(e) =>
                                 setCustomAmount((prev) => ({ ...prev, [key]: e.target.value }))
                               }
-                              className="flex-1 bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-amber-400/60"
+                              className="flex-1 bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-500/60"
                             />
                             <button
                               onClick={() => {

@@ -66,7 +66,7 @@ function StatusBadge({ outstanding, paid }: { outstanding: number; paid: number 
   }
   if (paid > 0) {
     return (
-      <span className="text-xs bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">
+      <span className="text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">
         Partial
       </span>
     );

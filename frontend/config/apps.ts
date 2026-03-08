@@ -45,8 +45,8 @@ export const apps: App[] = [
     id: "insurance",
     label: "Insurance",
     icon: "shield",
-    color: "#3B82F6",
-    accent: "#1E3A5F",
+    color: "#10B981",
+    accent: "#064E3B",
     href: "/insurance",
     nav: [
       { label: "Policies", href: "/insurance" },
@@ -58,8 +58,8 @@ export const apps: App[] = [
     id: "admin",
     label: "Admin",
     icon: "admin",
-    color: "#F59E0B",
-    accent: "#451A03",
+    color: "#10B981",
+    accent: "#064E3B",
     href: "/admin",
     nav: [
       { label: "Overview", href: "/admin" },

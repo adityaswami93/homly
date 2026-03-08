@@ -72,6 +72,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 signing_key.key,
                 algorithms=["ES256", "HS256"],
                 audience="authenticated",
+                leeway=30,  # tolerate up to 30s clock skew between Supabase and this server
             )
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"detail": "Token expired"})

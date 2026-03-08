@@ -117,7 +117,14 @@ def get_my_household(request: Request):
         .select("user_id, role, joined_at")\
         .eq("household_id", household_id)\
         .execute()
-    return {**household.data[0], "members": members.data}
+    # Enrich members with email from auth
+    try:
+        all_users = supabase.auth.admin.list_users()
+        email_map = {u.id: u.email for u in all_users}
+        enriched = [{**m, "email": email_map.get(m["user_id"])} for m in members.data]
+    except Exception:
+        enriched = members.data
+    return {**household.data[0], "members": enriched}
 
 
 @router.post("/household")

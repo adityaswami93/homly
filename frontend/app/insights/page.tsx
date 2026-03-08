@@ -70,7 +70,7 @@ function UrgencyBadge({ urgency, daysUntil }: { urgency: string; daysUntil: numb
     );
   }
   return (
-    <span className="text-xs bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">
+    <span className="text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">
       Due in {daysUntil}d
     </span>
   );
@@ -217,7 +217,7 @@ export default function InsightsPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-24">
-            <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
           <>
@@ -238,12 +238,12 @@ export default function InsightsPage() {
                       value={newItem}
                       onChange={(e) => setNewItem(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleAddItem()}
-                      className="flex-1 bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-amber-400/60"
+                      className="flex-1 bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-500/60"
                     />
                     <button
                       onClick={handleAddItem}
                       disabled={adding || !newItem.trim()}
-                      className="bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-900 font-semibold px-4 py-2 rounded-xl transition text-sm"
+                      className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold px-4 py-2 rounded-xl transition text-sm"
                     >
                       Add
                     </button>

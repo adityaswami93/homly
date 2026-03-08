@@ -408,6 +408,13 @@ async function startSock() {
         continue;
       }
 
+      // Insurance query command
+      if (groupMap.has(remoteJid) && isInsuranceQuery(text)) {
+        const { household_id } = groupMap.get(remoteJid);
+        await handleInsuranceQuery(sock, remoteJid, household_id, text);
+        continue;
+      }
+
       // Receipt image handling — must be a mapped group
       if (!groupMap.has(remoteJid)) continue;
       if (!msg.message?.imageMessage &&
@@ -419,6 +426,134 @@ async function startSock() {
 
   return sock;
 }
+
+// ── Insurance query handler ──────────────────────────────────
+const INSURANCE_KEYWORDS = [
+  "insurance", "policy", "policies", "health insurance", "life insurance",
+  "car insurance", "home insurance", "travel insurance"
+];
+
+function isInsuranceQuery(text) {
+  return INSURANCE_KEYWORDS.some((kw) => text.includes(kw));
+}
+
+function detectCoverageTypeFilter(text) {
+  const types = ["health", "life", "home", "car", "travel"];
+  return types.find((t) => text.includes(t)) || null;
+}
+
+async function handleInsuranceQuery(sock, jid, householdId, text) {
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/insurance`, {
+      headers: { Authorization: `Bearer ${SERVICE_KEY}` },
+      params: { household_id: householdId }
+    });
+    const all = res.data || [];
+    const typeFilter = detectCoverageTypeFilter(text);
+    const policies = typeFilter ? all.filter((p) => p.coverage_type === typeFilter) : all;
+
+    if (policies.length === 0) {
+      await sock.sendMessage(jid, {
+        text: "No insurance policies added yet. Visit the Homly dashboard to add your policies."
+      });
+      return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Group by coverage type
+    const grouped = {};
+    for (const p of policies) {
+      if (!grouped[p.coverage_type]) grouped[p.coverage_type] = [];
+      grouped[p.coverage_type].push(p);
+    }
+
+    const lines = ["🛡️ *Household Insurance Policies*", ""];
+    for (const [type, items] of Object.entries(grouped)) {
+      lines.push(`*${type.toUpperCase()}*`);
+      for (const p of items) {
+        lines.push(`- ${p.provider}${p.insured_person ? ` (${p.insured_person})` : ""}`);
+        if (p.policy_number) lines.push(`  Policy #: ${p.policy_number}`);
+        const coverage = p.coverage_amount ? `$${Number(p.coverage_amount).toLocaleString()}` : "—";
+        const premium = p.premium_amount
+          ? `$${Number(p.premium_amount).toFixed(0)}/${p.premium_frequency ?? "mo"}`
+          : "—";
+        lines.push(`  Coverage: ${coverage} | Premium: ${premium}`);
+        if (p.renewal_date) {
+          const renewal = new Date(p.renewal_date);
+          const days = Math.ceil((renewal.getTime() - today.getTime()) / 86400000);
+          const dateStr = renewal.toLocaleDateString("en-SG", {
+            day: "numeric", month: "short", year: "numeric"
+          });
+          lines.push(`  Renews: ${dateStr} (${days > 0 ? `${days} days` : "overdue"})`);
+        }
+      }
+      lines.push("");
+    }
+
+    if (!typeFilter) {
+      lines.push('Reply with a type to filter, e.g. "health insurance"');
+    }
+
+    await sock.sendMessage(jid, { text: lines.join("\n").trim() });
+  } catch (e) {
+    console.error("Insurance query failed:", e.message);
+  }
+}
+
+// ── Insurance renewal reminder (daily at 09:00 SGT) ─────────
+cron.schedule("0 9 * * *", async () => {
+  console.log("[renewal-reminder] Running daily insurance renewal check...");
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/internal/insurance/renewals`, {
+      headers: { "X-Internal-Key": INTERNAL_KEY }
+    });
+    const renewals = res.data || [];
+    if (renewals.length === 0) return;
+
+    // Send reminder to each household's group
+    for (const policy of renewals) {
+      const entry = [...groupMap.values()].find(
+        (e) => e.household_id === policy.household_id
+      );
+      if (!entry || !entry.settings?.group_jid) continue;
+
+      const groupJid = entry.settings.group_jid;
+      const days = policy.days_until_renewal;
+      const renewalDate = policy.renewal_date
+        ? new Date(policy.renewal_date).toLocaleDateString("en-SG", {
+            day: "numeric", month: "short", year: "numeric"
+          })
+        : "—";
+      const premium = policy.premium_amount
+        ? `$${Number(policy.premium_amount).toFixed(2)} / ${policy.premium_frequency ?? "period"}`
+        : "—";
+
+      const msg = [
+        "🔔 *Insurance Renewal Reminder*",
+        "",
+        `Your *${policy.coverage_type}* insurance with *${policy.provider}* renews in *${days} days* (${renewalDate}).`,
+        "",
+        `Policy #: ${policy.policy_number || "—"}`,
+        `Premium: ${premium}`,
+        "",
+        "Make sure your payment is up to date!"
+      ].join("\n");
+
+      try {
+        if (currentSock) {
+          await currentSock.sendMessage(groupJid, { text: msg });
+          console.log(`[renewal-reminder] Sent reminder for policy ${policy.id} to ${groupJid}`);
+        }
+      } catch (e) {
+        console.error(`[renewal-reminder] Failed to send to ${groupJid}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.error("[renewal-reminder] Failed to fetch renewals:", e.message);
+  }
+}, { timezone: "Asia/Singapore" });
 
 // ── QR regeneration request polling ─────────────────────────
 // Runs independently of connection state so the button always works

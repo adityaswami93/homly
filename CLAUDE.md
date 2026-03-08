@@ -8,6 +8,16 @@ The platform is **multi-tenant**: one backend and one WhatsApp bot instance serv
 
 ---
 
+## Task ID & Branch Naming Convention
+
+All work is tracked by task IDs (e.g. `010`, `011`). Use the format:
+
+- **Branch**: `claude/task-<ID>-short-description` (e.g. `claude/task-010-platform-shell`)
+- **PR title**: `[Task 010] Platform Shell + Insurance App`
+- **Commit prefix**: `[010]` (e.g. `[010] Add insurance router`)
+
+---
+
 ## Stack
 
 | Layer | Technology | Where it runs |
@@ -39,7 +49,8 @@ homly/
 │   │       ├── settings.py          # GET/PATCH /settings, GET /internal/settings (bot)
 │   │       ├── messages.py          # POST /messages/send, GET /internal/messages (bot polling)
 │   │       ├── internal.py          # POST /internal/qr, /internal/connected, GET /internal/qr-status
-│   │       └── setup.py             # GET /setup/state, POST /setup/group, /setup/reset-qr, SSE /setup/qr-stream
+│   │       ├── setup.py             # GET /setup/state, POST /setup/group, /setup/reset-qr, SSE /setup/qr-stream
+│   │       └── insurance.py         # GET/POST/PUT/DELETE /insurance, GET /internal/insurance/renewals
 │   ├── agents/
 │   │   └── receipt_agent.py        # Vision LLM call → structured JSON receipt data
 │   ├── services/
@@ -50,27 +61,51 @@ homly/
 │   │   ├── 003_settings.sql        # settings table per household
 │   │   ├── 004_sender.sql          # sender_name, sender_phone on receipts
 │   │   ├── 006_multi_tenant.sql    # households, household_members, invites tables
-│   │   └── 007_group_jid.sql       # group_jid on settings, user_id nullable on receipts
+│   │   ├── 007_group_jid.sql       # group_jid on settings, user_id nullable on receipts
+│   │   ├── 013_reimbursement.sql   # reimbursable flag on receipts, reimbursements table, settings columns
+│   │   ├── 014_image_storage.sql   # image_path on receipts, Supabase Storage
+│   │   └── 015_insurance_policies.sql  # insurance_policies table with RLS
 │   └── requirements.txt
 ├── frontend/
+│   ├── config/
+│   │   └── apps.ts                 # Central app/nav config (single source of truth for shell nav)
 │   ├── app/
 │   │   ├── page.tsx                # Landing page
 │   │   ├── login/page.tsx          # Login
 │   │   ├── onboarding/page.tsx     # Household creation / invite acceptance
-│   │   ├── dashboard/page.tsx      # Expense dashboard — weekly view, receipts list
-│   │   ├── history/page.tsx        # Past weeks navigator
-│   │   ├── settings/page.tsx       # Household settings — summary schedule, group selection
-│   │   ├── setup/page.tsx          # WhatsApp bot setup — QR scan, group picker
-│   │   ├── admin/page.tsx          # Super-admin panel
+│   │   ├── dashboard/page.tsx      # → redirects to /expenses
+│   │   ├── history/page.tsx        # → redirects to /expenses/transactions
+│   │   ├── analytics/page.tsx      # → redirects to /expenses/summary
+│   │   ├── admin/page.tsx          # → redirects to /admin (legacy, kept for backwards compat)
+│   │   ├── (shell)/                # Route group: platform shell layout (no URL prefix)
+│   │   │   ├── layout.tsx          # Shell: auth guard, Rail + Subnav + Topbar + BottomTabBar
+│   │   │   ├── expenses/
+│   │   │   │   ├── page.tsx        # Weekly expense overview, ReceiptDrawer
+│   │   │   │   ├── transactions/page.tsx  # Accordion week history
+│   │   │   │   ├── members/page.tsx       # Household members + invite
+│   │   │   │   ├── summary/page.tsx       # Analytics: charts, categories, vendors
+│   │   │   │   └── insights/page.tsx      # Price intelligence: comparison, trends
+│   │   │   ├── insurance/
+│   │   │   │   ├── page.tsx        # Policies list + add/edit modal
+│   │   │   │   └── renewals/page.tsx  # Renewal countdown sorted by date
+│   │   │   ├── admin/page.tsx      # Super-admin: households, invites, price intelligence
+│   │   │   ├── settings/page.tsx   # Household settings (schedule, reimbursement, WhatsApp)
+│   │   │   └── setup/page.tsx      # WhatsApp QR scan + group selection
 │   │   └── components/
-│   │       ├── Navbar.tsx
-│   │       └── Toast.tsx
+│   │       ├── Navbar.tsx          # Legacy navbar (landing/login pages only)
+│   │       ├── Toast.tsx
+│   │       └── shell/
+│   │           ├── Rail.tsx        # 64px dark icon rail (md+), shows admin icon for super admins
+│   │           ├── Subnav.tsx      # 200px dark subnav (lg+), WhatsApp status badge
+│   │           ├── Topbar.tsx      # 56px dark topbar with page title + sign out button
+│   │           ├── BottomTabBar.tsx # Fixed bottom nav (mobile only)
+│   │           └── icons.tsx       # SVG icon components (AppIcon, AdminIcon, etc.)
 │   └── lib/
 │       ├── supabase.ts             # Supabase browser client
 │       ├── axios.ts                # Shared axios instance with auth interceptor
 │       └── toast.ts                # useToast hook
 └── whatsapp/                       # Standalone Node.js WhatsApp bot
-    ├── index.js                    # Main bot: QR connect, receipt processing, weekly summaries
+    ├── index.js                    # Main bot: QR connect, receipt processing, weekly summaries, insurance queries
     ├── package.json
     └── .env                        # FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
 ```
@@ -79,14 +114,62 @@ homly/
 
 ## Architecture
 
+### Platform Shell
+
+The frontend uses a **two-level shell** layout for all authenticated pages:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Rail (64px)  │  Subnav (200px)  │  Topbar (56px)   │
+│  dark icons   │  dark list       │  title + signout  │
+│  md+          │  lg+             │  always visible   │
+├───────────────┴──────────────────┴───────────────────┤
+│                   Page content                        │
+├──────────────────────────────────────────────────────┤
+│           BottomTabBar (mobile, md:hidden)            │
+└──────────────────────────────────────────────────────┘
+```
+
+- **Rail** (`app/components/shell/Rail.tsx`): 64px dark rail. Shows app icons from `config/apps.ts`. Admin icon only shown to `is_super_admin` users.
+- **Subnav** (`app/components/shell/Subnav.tsx`): 200px dark sidebar, visible lg+. Per-app nav items, WhatsApp connection badge.
+- **Topbar** (`app/components/shell/Topbar.tsx`): 56px dark header. Shows page title + user email + Sign Out button (top-right).
+- **BottomTabBar** (`app/components/shell/BottomTabBar.tsx`): Fixed bottom nav on mobile. Shows admin tab for super admins.
+- **Mobile pills**: Horizontal scrollable sub-nav pills appear below topbar on md- (hidden on lg+).
+
+All shell pages use **dark stone theme**: `bg-[#0f0e0c]` body, `bg-stone-900` cards, `border-stone-800` borders, `text-stone-100/300/400/500` text hierarchy.
+
+### Apps Config (`config/apps.ts`)
+
+Single source of truth for shell navigation. Each `App` has: `id`, `label`, `icon`, `color`, `accent`, `href`, `nav[]`, `actionLabel?`, `superAdminOnly?`.
+
+Current apps:
+- `expenses` — color `#10B981`, nav: Overview, Transactions, Members, Summary, Insights
+- `insurance` — color `#3B82F6`, nav: Policies, Renewals
+- `admin` — color `#F59E0B`, nav: Overview, Price Intelligence; `superAdminOnly: true`
+
 ### Multi-Tenancy Model
 
 All data is scoped by `household_id`. A household has:
 - One or more **members** (via `household_members` table, roles: `admin` / `member`)
 - One **settings** row (summary schedule, WhatsApp group JID)
-- Many **receipts** and **items**
+- Many **receipts**, **items**, and **insurance_policies**
 
 The WhatsApp bot authenticates with the **Supabase service role key** (never expires) instead of per-user JWTs. The bot identifies which household to write to by looking up the incoming group's JID in the `settings.group_jid` column.
+
+### Insurance Flow
+
+```
+User adds policy via /insurance page
+    ↓
+POST /insurance (JWT auth) → inserted with household_id + created_by
+    ↓
+GET /insurance → list active policies for household
+
+Daily 09:00 SGT cron in WhatsApp bot:
+    GET /internal/insurance/renewals (X-Internal-Key)
+    → returns policies renewing in 7 or 30 days
+    → sends reminder to household group JID
+```
 
 ### Receipt Flow
 
@@ -114,22 +197,6 @@ GET /summary/last7days?household_id=... (service key auth)
 Format message with receipts, category totals, flagged count
     ↓
 sock.sendMessage(groupJid, { text: ... })
-```
-
-### WhatsApp Bot → Household Mapping
-
-```
-On connect:
-  GET /internal/settings  →  array of all households' settings
-  Build groupMap: groupJid → { household_id, settings }
-  Schedule one cron per household (different days/times/timezones)
-
-Every 5 min:
-  Re-fetch settings → rebuild map if changed (e.g. new group assigned)
-
-On receipt image in group X:
-  groupMap.get(X.remoteJid) → household_id
-  POST /process-receipt with household_id in form
 ```
 
 ### QR Code Regeneration Flow
@@ -190,7 +257,7 @@ Frontend polling picks up new QR within 3s
 | whatsapp_message_id | TEXT (UNIQUE) | dedup key |
 | sender_name / sender_phone | TEXT | who submitted via WhatsApp |
 | week_number / year | INT | ISO week |
-| image_filename | TEXT | |
+| image_path | TEXT | Supabase Storage path |
 
 ### `items`
 | Column | Type | Notes |
@@ -228,6 +295,24 @@ Frontend polling picks up new QR within 3s
 | accepted | BOOLEAN | |
 | expires_at | TIMESTAMPTZ | NOW() + 7 days |
 
+### `insurance_policies`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| provider | TEXT (NOT NULL) | |
+| policy_number | TEXT | |
+| coverage_type | TEXT | health / life / home / car / travel / other |
+| insured_person | TEXT | |
+| coverage_amount | NUMERIC | |
+| premium_amount | NUMERIC | |
+| premium_frequency | TEXT | monthly / quarterly / annually |
+| renewal_date | DATE | |
+| notes | TEXT | |
+| is_active | BOOLEAN | DEFAULT true, soft-delete |
+| created_by | UUID (FK → auth.users) | |
+| created_at / updated_at | TIMESTAMPTZ | |
+
 ---
 
 ## API Endpoints
@@ -236,7 +321,7 @@ Frontend polling picks up new QR within 3s
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/household` | Get own household + members |
+| GET | `/household` | Get own household + members (includes email from auth) |
 | POST | `/household` | Create household (first-time) |
 | POST | `/household/members` | Invite member by email |
 | PATCH | `/household/members/{user_id}` | Change member role |
@@ -252,6 +337,21 @@ Frontend polling picks up new QR within 3s
 | GET | `/settings` | Get household settings |
 | PATCH | `/settings` | Update settings (incl. `group_jid`) |
 | POST | `/messages/send` | Queue a WhatsApp message to household group |
+| GET | `/insurance` | List active insurance policies |
+| POST | `/insurance` | Create insurance policy |
+| PUT | `/insurance/{id}` | Update insurance policy |
+| DELETE | `/insurance/{id}` | Soft-delete (is_active = false) |
+
+### Super-admin (JWT required, `is_super_admin = true`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/admin/households` | List all households with member + receipt counts |
+| PATCH | `/admin/households/{id}` | Update household (name, plan, active) |
+| POST | `/admin/invite` | Send invite email |
+| GET | `/admin/invites` | List all invites |
+| DELETE | `/admin/invites/{id}` | Revoke invite |
+| GET | `/admin/price-intelligence` | Cross-household price comparison + trends |
 
 ### Internal (service key or `X-Internal-Key` header — not JWT)
 
@@ -262,14 +362,14 @@ Frontend polling picks up new QR within 3s
 | POST | `/internal/connected` | Bot | Signal connected + push group list |
 | GET | `/internal/qr-status` | Bot | Check/clear QR regeneration flag |
 | GET | `/internal/messages` | Bot | Pop queued messages (clears queue) |
+| GET | `/internal/insurance/renewals` | Bot | Policies renewing in 7 or 30 days |
 
-### Setup (no auth — unauthenticated setup flow)
+### Setup (no auth)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/setup/state` | Current WhatsApp connection state |
 | POST | `/setup/reset-qr` | Request QR regeneration |
-| POST | `/setup/group` | Set group name (legacy, prefer PATCH /settings) |
 | GET | `/setup/qr-stream` | SSE stream for QR / connected events |
 
 ### Auth
@@ -300,7 +400,7 @@ request.state.user = {
     "is_service_key": True,
 }
 ```
-Endpoints that accept service key calls read `household_id` from the form field (`process-receipt`) or query param (`/summary/last7days`, `/this-week`).
+Endpoints that accept service key calls read `household_id` from the form field (`process-receipt`) or query param (`/summary/last7days`, `/this-week`, `/insurance`).
 
 ### Internal Key Auth (bot ↔ backend internal endpoints)
 
@@ -316,6 +416,8 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 - **`cronJobs`** — `Map<household_id, CronJob>` — one cron per household, rescheduled when settings change
 - **`currentSock`** — module-level reference to the active Baileys socket, used by QR regeneration poller
 - **`SERVICE_KEY`** — `SUPABASE_KEY` value used as bearer for all backend API calls
+- **Insurance query handling** — `isInsuranceQuery(text)` detects keywords; `handleInsuranceQuery()` formats a reply
+- **Daily renewal cron** — 09:00 SGT cron hits `/internal/insurance/renewals` and sends reminders to household groups
 
 ### Env vars (`backend/whatsapp/.env`)
 
@@ -324,15 +426,6 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 | `FASTAPI_URL` | Backend URL (e.g. `http://localhost:8000`) |
 | `SUPABASE_KEY` | Supabase service role key (never expires — no refresh needed) |
 | `INTERNAL_KEY` | Shared secret for `/internal/*` endpoints (default: `homly-internal`) |
-
-### Local development
-
-```bash
-cd backend/whatsapp
-npm run dev          # node --watch index.js (auto-restart)
-# or
-npm start            # node index.js
-```
 
 ---
 
@@ -365,8 +458,6 @@ cd backend/whatsapp
 npm run dev
 ```
 
-On first run (no `auth_state/`), the bot generates a QR and pushes it to the backend. Open `http://localhost:3000/setup` and scan it. Once connected, go to **Settings** and select your WhatsApp group — this saves `group_jid` to the `settings` table, and the bot picks it up within 5 minutes.
-
 ---
 
 ## Key Patterns & Conventions
@@ -382,51 +473,37 @@ if not resolved:
     raise HTTPException(403, "No household found")
 ```
 
-### Setting `group_jid`
+### Dark theme
 
-Household admins save their WhatsApp group JID via `PATCH /settings` with `{group_jid: "120363...@g.us", group_name: "..."}`. The bot's 5-minute settings poll picks it up automatically. The group list is available in `/setup/state` after the bot connects.
+All shell pages use **dark stone theme** matching the landing page (`bg-[#0f0e0c]`):
+- Cards: `bg-stone-900 border border-stone-800`
+- Text: `text-stone-100` (primary), `text-stone-300/400` (secondary), `text-stone-500` (muted)
+- Inputs: `bg-stone-800 border border-stone-700 text-stone-200 placeholder:text-stone-600`
+- Active states: use app color directly (e.g. `bg-emerald-600`, `bg-blue-600`)
+- Accent hover states (dark): `hover:bg-stone-800`, `hover:border-stone-600`
 
-### QR regeneration
+### Shell layout — key props
 
-`POST /setup/reset-qr` sets `whatsapp_state["qr_requested"] = True`. The bot's 5-second poller calls `GET /internal/qr-status`, sees the flag, calls `currentSock.end()`, triggering Baileys to reconnect and generate a new QR. The frontend polls `/setup/state` every 3 seconds to display it.
-
-### Receipt deduplication
-
-`whatsapp_message_id` is unique on the `receipts` table. The `process-receipt` endpoint checks for an existing row before OCR, returning `{"status": "duplicate"}` if found. This prevents double-processing if the bot retries.
-
-### Soft deletes
-
-Receipts use `deleted: boolean` (not hard delete). All queries filter `.eq("deleted", False)`.
-
-### Frontend conventions
-
-- All pages are `"use client"` — no server components in use
-- API calls always go through `lib/axios.ts` (`api` import), never raw axios
-- Dark stone theme: `bg-[#0f0e0c]`, amber accent (`amber-400`), stone neutrals
-- Toast notifications via `useToast` hook + `<ToastContainer />`
+`ShellLayout` passes to each component:
+- `Rail`: `activeApp`, `isSuperAdmin` — controls which app icons and admin icon are shown
+- `Topbar`: `pageTitle`, `activeApp`, `user`, `onSignOut` — displays title and sign-out button
+- `Subnav`: `activeApp`, `pathname`, `connected` — shows per-app nav + WhatsApp status
 
 ### Mobile responsiveness
 
-**Navigation** — desktop nav links are `hidden sm:flex` in the header. A fixed bottom nav (`sm:hidden`) in `Navbar.tsx` handles mobile. All pages must add `pb-24 sm:pb-8` (or similar) to their content container to prevent content going under the bottom nav.
+- Shell uses `h-[100dvh]` to account for mobile browser chrome
+- `BottomTabBar` uses `padding-bottom: env(safe-area-inset-bottom)` for iPhone notch
+- Touch targets: minimum `min-h-[44px]` on all tappable elements
+- Form inputs: `text-base` (16px) to prevent iOS zoom on focus
+- Bottom sheets: `items-end sm:items-center` + `rounded-t-2xl sm:rounded-2xl`
 
-**Bottom padding pattern** — every page's `max-w-* mx-auto px-4 py-*` div must include `pb-24 sm:pb-*` so content scrolls clear of the fixed bottom nav on mobile.
+### Receipt deduplication
 
-**Grids** — never hardcode `grid-cols-N` without responsive variants. Use `grid-cols-N sm:grid-cols-M` so small screens stack or use fewer columns. Examples:
-- 7-item row (days of week): `grid-cols-4 sm:grid-cols-7`
-- 2-column category grid: `grid-cols-1 sm:grid-cols-2`
-- 3 summary cards: `grid-cols-3` with `p-3 sm:p-4` and `text-sm sm:text-lg` inside
+`whatsapp_message_id` is unique on the `receipts` table. The `process-receipt` endpoint checks for an existing row before OCR, returning `{"status": "duplicate"}` if found.
 
-**Flex rows on mobile** — form rows that contain multiple inputs/selects/buttons use `flex-col sm:flex-row`. Inputs get `w-full sm:flex-1`, selects/buttons get `w-full sm:w-auto`.
+### Soft deletes
 
-**Drawers / sheets** — right-side drawer pattern on desktop becomes a bottom sheet on mobile:
-```tsx
-// Overlay
-<div className="fixed inset-0 z-50 flex items-end sm:items-stretch sm:justify-end">
-// Panel
-<div className="w-full sm:max-w-md h-[88vh] sm:h-full rounded-t-2xl sm:rounded-none border-t sm:border-t-0 sm:border-l">
-```
-
-**Hiding non-essential info on mobile** — use `hidden sm:inline` for secondary labels (e.g. confidence badge in receipt rows, long button text). Show icon or abbreviated version on mobile instead.
+Receipts use `deleted: boolean`; insurance policies use `is_active: boolean`. All queries filter these fields.
 
 ---
 
@@ -443,6 +520,7 @@ Run migrations manually in Supabase SQL editor in order:
 007_group_jid.sql      → group_jid on settings, user_id nullable on receipts
 013_reimbursement.sql  → reimbursable flag on receipts, reimbursements table, settings columns
 014_image_storage.sql  → image_path on receipts, Supabase Storage
+015_insurance_policies.sql  → insurance_policies table + RLS + index
 ```
 
 > There is no migration runner — apply each file manually. Files are idempotent (`IF NOT EXISTS`, `IF NOT NULL`).

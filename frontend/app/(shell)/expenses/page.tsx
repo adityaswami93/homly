@@ -490,8 +490,16 @@ export default function ExpensesOverview() {
   const loadWeek = useCallback(async (year: number, weekNum: number) => {
     setLoading(true);
     try {
-      const res = await api.get(`/weeks/${year}/${weekNum}`);
-      setWeek(res.data);
+      const [weekRes, reimbRes] = await Promise.all([
+        api.get(`/weeks/${year}/${weekNum}`),
+        api.get(`/reimbursements/week/${year}/${weekNum}`),
+      ]);
+      const data = weekRes.data;
+      const totalPaid = reimbRes.data?.total_paid ?? 0;
+      setWeek({
+        ...data,
+        reimbursable_total: Math.max(0, Math.round((data.reimbursable_total - totalPaid) * 100) / 100),
+      });
     } catch {
       setWeek(null);
     } finally {

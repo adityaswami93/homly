@@ -704,7 +704,7 @@ export default function ExpensesOverview() {
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
             <StatCard label="To reimburse" value={fmt(week.reimbursable_total)} accent />
-            <StatCard label="Your spending" value={fmt(week.own_total)} />
+            <StatCard label="Your spending" value={fmt(week.total)} />
             <StatCard label="Receipts" value={String(week.receipt_count)} />
             <StatCard
               label="Need review"

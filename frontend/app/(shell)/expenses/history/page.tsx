@@ -36,6 +36,7 @@ function fmtDateRange(year: number, week: number) {
 interface WeekSummary {
   year: number;
   week_number: number;
+  total: number;
 }
 
 interface WeekDetail {
@@ -137,9 +138,7 @@ export default function HistoryPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {detail && (
-                      <span className="text-stone-100 font-mono text-sm font-semibold">{fmt(detail.total)}</span>
-                    )}
+                    <span className="text-stone-100 font-mono text-sm font-semibold">{fmt(week.total)}</span>
                     <span className={`text-stone-500 text-sm transition-transform ${isOpen ? "rotate-90" : ""}`}>
                       →
                     </span>

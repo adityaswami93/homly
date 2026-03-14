@@ -552,6 +552,7 @@ export default function ExpensesOverview() {
       });
       setPaid(true);
       toast.success(`SGD ${week.reimbursable_total.toFixed(2)} marked as paid`);
+      setWeek((prev) => prev ? { ...prev, reimbursable_total: 0 } : prev);
       setTimeout(() => setPaid(false), 3000);
     } catch {
       toast.error("Failed to mark as paid");

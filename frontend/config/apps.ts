@@ -51,6 +51,7 @@ export const apps: App[] = [
     nav: [
       { label: "Policies", href: "/insurance" },
       { label: "Renewals", href: "/insurance/renewals" },
+      { label: "Coverage", href: "/insurance/coverage" },
     ],
     actionLabel: "Add Policy",
   },

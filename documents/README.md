@@ -30,6 +30,7 @@ documents/005-messages/
 | 010 | setup-group-ux | Saved group display, change group flow, group search on setup page | ✅ Released |
 | 011 | mobile-responsive | Mobile bottom nav, bottom-sheet drawer, responsive grids and forms | ✅ Released |
 | 012 | edit-receipt-date | Admin/super-admin can edit receipt date from drawer; auto-recalculates week | ✅ Released |
+| 017 | insurance-document-analysis | Upload policy documents → AI extraction, auto-fill, coverage summary, Coverage Checker page | 🔄 In Review |
 
 ---
 

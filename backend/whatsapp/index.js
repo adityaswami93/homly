@@ -415,6 +415,13 @@ async function startSock() {
         continue;
       }
 
+      // Gap analysis query command (check before general insurance query)
+      if (groupMap.has(remoteJid) && isGapQuery(text)) {
+        const { household_id } = groupMap.get(remoteJid);
+        await handleGapQuery(sock, remoteJid, household_id);
+        continue;
+      }
+
       // Insurance query command
       if (groupMap.has(remoteJid) && isInsuranceQuery(text)) {
         const { household_id } = groupMap.get(remoteJid);
@@ -432,6 +439,67 @@ async function startSock() {
   });
 
   return sock;
+}
+
+// ── Coverage gap query handler ───────────────────────────────
+const GAP_KEYWORDS = [
+  "what am i missing", "coverage gap", "gap analysis",
+  "what should i get", "missing insurance", "underinsured"
+];
+
+function isGapQuery(text) {
+  return GAP_KEYWORDS.some((kw) => text.includes(kw));
+}
+
+async function handleGapQuery(sock, jid, householdId) {
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/insurance/gaps`, {
+      headers: { Authorization: `Bearer ${SERVICE_KEY}` },
+      params: { household_id: householdId }
+    });
+    const { profile_complete, gaps } = res.data;
+
+    if (!profile_complete) {
+      await sock.sendMessage(jid, {
+        text: "To get a personalised coverage gap analysis, please complete your household profile on the Homly dashboard (Insurance → Gaps)."
+      });
+      return;
+    }
+
+    if (!gaps || gaps.length === 0) {
+      await sock.sendMessage(jid, {
+        text: "✅ Your household coverage looks complete for your life stage. No significant gaps identified."
+      });
+      return;
+    }
+
+    const critical = gaps.filter((g) => g.priority === "critical");
+    const recommended = gaps.filter((g) => g.priority === "recommended");
+
+    const lines = ["🛡️ *Coverage Gap Summary*", "", "Your household may be missing:", ""];
+
+    if (critical.length > 0) {
+      lines.push("🔴 *Critical*");
+      for (const g of critical) {
+        lines.push(`- ${g.label} — ${g.explanation}`);
+      }
+      lines.push("");
+    }
+
+    if (recommended.length > 0) {
+      lines.push("🟡 *Recommended*");
+      for (const g of recommended) {
+        lines.push(`- ${g.label} — ${g.explanation}`);
+      }
+      lines.push("");
+    }
+
+    lines.push("Visit the Homly dashboard to add policies or ask me more about any of these.");
+
+    await sock.sendMessage(jid, { text: lines.join("\n").trim() });
+  } catch (e) {
+    console.error("Gap query failed:", e.message);
+  }
 }
 
 // ── Insurance query handler ──────────────────────────────────

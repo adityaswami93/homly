@@ -1,10 +1,10 @@
 const {
   default: makeWASocket,
-  useMultiFileAuthState,
   DisconnectReason,
   downloadMediaMessage,
 } = require("baileys");
 const { Boom } = require("@hapi/boom");
+const { createClient } = require("@supabase/supabase-js");
 const axios = require("axios");
 const FormData = require("form-data");
 const cron = require("node-cron");
@@ -12,20 +12,25 @@ const pino = require("pino");
 const QRCode = require("qrcode");
 require("dotenv").config();
 
-const {
-  ensureBucket,
-  downloadAuthState,
-  uploadAuthState,
-} = require("./storage-state");
+const { useSupabaseAuthState } = require("./db-auth-state");
 
-const FASTAPI_URL = process.env.FASTAPI_URL || "http://localhost:8000";
+const FASTAPI_URL  = process.env.FASTAPI_URL  || "http://localhost:8000";
 const INTERNAL_KEY = process.env.INTERNAL_KEY || "homly-internal";
-const SERVICE_KEY = process.env.SUPABASE_KEY;
+const SERVICE_KEY  = process.env.SUPABASE_KEY;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const BOT_TENANT_ID = process.env.BOT_TENANT_ID || "default";
 
 if (!SERVICE_KEY) {
   console.error("Missing required env var: SUPABASE_KEY");
   process.exit(1);
 }
+if (!SUPABASE_URL) {
+  console.error("Missing required env var: SUPABASE_URL");
+  process.exit(1);
+}
+
+// Supabase client (service-role) — used for auth state persistence only
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"
@@ -295,11 +300,16 @@ async function handleShoppingListCommand(sock, jid) {
 
 // ── Main ────────────────────────────────────────────────────
 async function startSock() {
-  // Restore auth state from Supabase Storage before starting
-  await ensureBucket();
-  await downloadAuthState();
+  // Load auth state from Postgres (single row, no Storage bucket needed)
+  const { state, saveCreds, deleteSession, flush } =
+    await useSupabaseAuthState(BOT_TENANT_ID, supabase);
 
-  const { state, saveCreds } = await useMultiFileAuthState("auth_state");
+  // Flush pending writes before Railway/process shuts us down
+  process.once("SIGTERM", async () => {
+    console.log("[bot] SIGTERM — flushing auth state before exit...");
+    await flush();
+    process.exit(0);
+  });
 
   const sock = makeWASocket({
     printQRInTerminal: false,
@@ -310,12 +320,8 @@ async function startSock() {
   });
   currentSock = sock;
 
-  sock.ev.on("creds.update", async () => {
-    saveCreds();
-    setTimeout(async () => {
-      await uploadAuthState();
-    }, 2000);
-  });
+  // saveCreds schedules a debounced DB write — no Storage calls
+  sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
@@ -373,7 +379,8 @@ async function startSock() {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
       console.log(`Connection closed, reason: ${reason}`);
       if (reason === DisconnectReason.loggedOut) {
-        console.log("Logged out — delete auth_state and restart");
+        console.log("Logged out — removing session from DB and restarting");
+        await deleteSession();
         process.exit(1);
       } else {
         setTimeout(startSock, 3000);
@@ -408,6 +415,13 @@ async function startSock() {
         continue;
       }
 
+      // Gap analysis query command (check before general insurance query)
+      if (groupMap.has(remoteJid) && isGapQuery(text)) {
+        const { household_id } = groupMap.get(remoteJid);
+        await handleGapQuery(sock, remoteJid, household_id);
+        continue;
+      }
+
       // Insurance query command
       if (groupMap.has(remoteJid) && isInsuranceQuery(text)) {
         const { household_id } = groupMap.get(remoteJid);
@@ -425,6 +439,67 @@ async function startSock() {
   });
 
   return sock;
+}
+
+// ── Coverage gap query handler ───────────────────────────────
+const GAP_KEYWORDS = [
+  "what am i missing", "coverage gap", "gap analysis",
+  "what should i get", "missing insurance", "underinsured"
+];
+
+function isGapQuery(text) {
+  return GAP_KEYWORDS.some((kw) => text.includes(kw));
+}
+
+async function handleGapQuery(sock, jid, householdId) {
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/insurance/gaps`, {
+      headers: { Authorization: `Bearer ${SERVICE_KEY}` },
+      params: { household_id: householdId }
+    });
+    const { profile_complete, gaps } = res.data;
+
+    if (!profile_complete) {
+      await sock.sendMessage(jid, {
+        text: "To get a personalised coverage gap analysis, please complete your household profile on the Homly dashboard (Insurance → Gaps)."
+      });
+      return;
+    }
+
+    if (!gaps || gaps.length === 0) {
+      await sock.sendMessage(jid, {
+        text: "✅ Your household coverage looks complete for your life stage. No significant gaps identified."
+      });
+      return;
+    }
+
+    const critical = gaps.filter((g) => g.priority === "critical");
+    const recommended = gaps.filter((g) => g.priority === "recommended");
+
+    const lines = ["🛡️ *Coverage Gap Summary*", "", "Your household may be missing:", ""];
+
+    if (critical.length > 0) {
+      lines.push("🔴 *Critical*");
+      for (const g of critical) {
+        lines.push(`- ${g.label} — ${g.explanation}`);
+      }
+      lines.push("");
+    }
+
+    if (recommended.length > 0) {
+      lines.push("🟡 *Recommended*");
+      for (const g of recommended) {
+        lines.push(`- ${g.label} — ${g.explanation}`);
+      }
+      lines.push("");
+    }
+
+    lines.push("Visit the Homly dashboard to add policies or ask me more about any of these.");
+
+    await sock.sendMessage(jid, { text: lines.join("\n").trim() });
+  } catch (e) {
+    console.error("Gap query failed:", e.message);
+  }
 }
 
 // ── Insurance query handler ──────────────────────────────────

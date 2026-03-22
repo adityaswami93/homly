@@ -562,7 +562,7 @@ export default function ExpensesOverview() {
       });
       setPaid(true);
       toast.success(`SGD ${week.reimbursable_total.toFixed(2)} marked as paid`);
-      setTotalPaid((prev) => round(prev + week.reimbursable_total));
+      setTotalPaid((prev) => prev + week.reimbursable_total;
       setWeek((prev) => prev ? { ...prev, reimbursable_total: 0 } : prev);
       setTimeout(() => setPaid(false), 3000);
     } catch {
@@ -599,9 +599,9 @@ export default function ExpensesOverview() {
         receipts: remaining,
         receipt_count: remaining.length,
         total: remaining.reduce((s, r) => s + (r.total || 0), 0),
-        reimbursable_total: round(
-          remaining.filter((r) => r.reimbursable).reduce((s, r) => s + (r.total || 0), 0)
-        ),
+        reimbursable_total: round(Math.max(0,
+          remaining.filter((r) => r.reimbursable).reduce((s, r) => s + (r.total || 0), 0) - totalPaid
+        )),
         own_total: round(
           remaining.filter((r) => !r.reimbursable).reduce((s, r) => s + (r.total || 0), 0)
         ),

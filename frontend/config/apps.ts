@@ -52,6 +52,7 @@ export const apps: App[] = [
       { label: "Policies", href: "/insurance" },
       { label: "Renewals", href: "/insurance/renewals" },
       { label: "Coverage", href: "/insurance/coverage" },
+      { label: "Gaps", href: "/insurance/gaps" },
     ],
     actionLabel: "Add Policy",
   },

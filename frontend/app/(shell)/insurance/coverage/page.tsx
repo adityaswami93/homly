@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import { useToast } from "@/lib/toast";
@@ -52,6 +52,8 @@ export default function CoveragePage() {
   const [result, setResult] = useState<CoverageAnswer | null>(null);
   const [noPoliciesError, setNoPoliciesError] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const autoSubmittedRef = useRef(false);
   const { toasts, dismissToast, toast } = useToast();
 
   useEffect(() => {
@@ -60,6 +62,31 @@ export default function CoveragePage() {
       setUser(session.user);
     });
   }, [router]);
+
+  // Pre-fill query from ?q= param and auto-submit once
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q && !autoSubmittedRef.current) {
+      autoSubmittedRef.current = true;
+      setQuery(q);
+      // Delay slightly so component is fully mounted before submitting
+      setTimeout(() => {
+        setLoading(true);
+        setResult(null);
+        setNoPoliciesError(false);
+        api.post("/insurance/query-coverage", { query: q })
+          .then((res) => setResult(res.data))
+          .catch((err) => {
+            if (err?.response?.status === 422) {
+              setNoPoliciesError(true);
+            } else {
+              toast.error("Query failed. Please try again.");
+            }
+          })
+          .finally(() => setLoading(false));
+      }, 100);
+    }
+  }, [searchParams]);
 
   const handleQuery = async (e: React.FormEvent) => {
     e.preventDefault();

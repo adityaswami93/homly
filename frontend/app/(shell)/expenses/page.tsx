@@ -562,7 +562,7 @@ export default function ExpensesOverview() {
       });
       setPaid(true);
       toast.success(`SGD ${week.reimbursable_total.toFixed(2)} marked as paid`);
-      setTotalPaid((prev) => prev + week.reimbursable_total;
+      setTotalPaid((prev) => prev + week.reimbursable_total);
       setWeek((prev) => prev ? { ...prev, reimbursable_total: 0 } : prev);
       setTimeout(() => setPaid(false), 3000);
     } catch {

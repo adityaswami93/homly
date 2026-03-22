@@ -193,6 +193,78 @@ def create_policy(request: Request, body: PolicyIn):
     return res.data[0]
 
 
+@router.get("/insurance/profile")
+def get_profile(request: Request):
+    """Return the household's life stage profile, or an empty dict if none exists yet."""
+    household_id = get_household_id(request)
+    res = (
+        supabase.table("household_profiles")
+        .select("*")
+        .eq("household_id", household_id)
+        .execute()
+    )
+    return res.data[0] if res.data else {}
+
+
+@router.put("/insurance/profile")
+def upsert_profile(request: Request, body: HouseholdProfileIn):
+    """Upsert the household's life stage profile."""
+    household_id = get_household_id(request)
+    data = body.model_dump(exclude_none=True)
+    data["household_id"] = household_id
+    data["updated_at"] = "now()"
+    res = (
+        supabase.table("household_profiles")
+        .upsert(data, on_conflict="household_id")
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status_code=500, detail="Failed to save profile")
+    return res.data[0]
+
+
+@router.get("/insurance/gaps")
+def get_gaps(request: Request):
+    """Return gap analysis for the household based on life stage profile and existing policies."""
+    household_id = get_household_id(request)
+
+    profile_res = (
+        supabase.table("household_profiles")
+        .select("*")
+        .eq("household_id", household_id)
+        .execute()
+    )
+    profile_data = profile_res.data[0] if profile_res.data else {}
+
+    policies_res = (
+        supabase.table("insurance_policies")
+        .select("coverage_type, is_active")
+        .eq("household_id", household_id)
+        .eq("is_active", True)
+        .execute()
+    )
+
+    from services.insurance_gap_analysis import Profile, analyse_gaps
+    profile = Profile(
+        primary_age=profile_data.get("primary_age"),
+        marital_status=profile_data.get("marital_status"),
+        num_children=profile_data.get("num_children", 0),
+        has_elderly_dependants=profile_data.get("has_elderly_dependants", False),
+        employment_type=profile_data.get("employment_type"),
+        has_mortgage=profile_data.get("has_mortgage", False),
+        owns_car=profile_data.get("owns_car", False),
+        residency_status=profile_data.get("residency_status"),
+    )
+
+    gaps = analyse_gaps(profile, policies_res.data or [])
+    profile_complete = bool(profile_data.get("primary_age") or profile_data.get("marital_status"))
+
+    return {
+        "profile_complete": profile_complete,
+        "gaps": gaps,
+    }
+
+
 @router.put("/insurance/{policy_id}")
 def update_policy(policy_id: str, request: Request, body: PolicyIn):
     """Update an existing policy (must belong to the user's household)."""
@@ -346,78 +418,6 @@ Rules:
         raise HTTPException(status_code=500, detail="Failed to parse coverage query response")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
-
-
-@router.get("/insurance/profile")
-def get_profile(request: Request):
-    """Return the household's life stage profile, or an empty dict if none exists yet."""
-    household_id = get_household_id(request)
-    res = (
-        supabase.table("household_profiles")
-        .select("*")
-        .eq("household_id", household_id)
-        .execute()
-    )
-    return res.data[0] if res.data else {}
-
-
-@router.put("/insurance/profile")
-def upsert_profile(request: Request, body: HouseholdProfileIn):
-    """Upsert the household's life stage profile."""
-    household_id = get_household_id(request)
-    data = body.model_dump(exclude_none=True)
-    data["household_id"] = household_id
-    data["updated_at"] = "now()"
-    res = (
-        supabase.table("household_profiles")
-        .upsert(data, on_conflict="household_id")
-        .execute()
-    )
-    if not res.data:
-        raise HTTPException(status_code=500, detail="Failed to save profile")
-    return res.data[0]
-
-
-@router.get("/insurance/gaps")
-def get_gaps(request: Request):
-    """Return gap analysis for the household based on life stage profile and existing policies."""
-    household_id = get_household_id(request)
-
-    profile_res = (
-        supabase.table("household_profiles")
-        .select("*")
-        .eq("household_id", household_id)
-        .execute()
-    )
-    profile_data = profile_res.data[0] if profile_res.data else {}
-
-    policies_res = (
-        supabase.table("insurance_policies")
-        .select("coverage_type, is_active")
-        .eq("household_id", household_id)
-        .eq("is_active", True)
-        .execute()
-    )
-
-    from services.insurance_gap_analysis import Profile, analyse_gaps
-    profile = Profile(
-        primary_age=profile_data.get("primary_age"),
-        marital_status=profile_data.get("marital_status"),
-        num_children=profile_data.get("num_children", 0),
-        has_elderly_dependants=profile_data.get("has_elderly_dependants", False),
-        employment_type=profile_data.get("employment_type"),
-        has_mortgage=profile_data.get("has_mortgage", False),
-        owns_car=profile_data.get("owns_car", False),
-        residency_status=profile_data.get("residency_status"),
-    )
-
-    gaps = analyse_gaps(profile, policies_res.data or [])
-    profile_complete = bool(profile_data.get("primary_age") or profile_data.get("marital_status"))
-
-    return {
-        "profile_complete": profile_complete,
-        "gaps": gaps,
-    }
 
 
 @router.get("/internal/insurance/renewals")

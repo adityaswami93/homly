@@ -456,6 +456,7 @@ export default function ExpensesOverview() {
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [currentWeek, setCurrentWeek] = useState<{ week: number; year: number } | null>(null);
   const [isCurrentWeek, setIsCurrentWeek] = useState(true);
+  const [totalPaid, setTotalPaid] = useState(0);
   const [sending, setSending] = useState(false);
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
@@ -495,10 +496,11 @@ export default function ExpensesOverview() {
         api.get(`/reimbursements/week/${year}/${weekNum}`),
       ]);
       const data = weekRes.data;
-      const totalPaid = reimbRes.data?.total_paid ?? 0;
+      const paid = reimbRes.data?.total_paid ?? 0;
+      setTotalPaid(paid);
       setWeek({
         ...data,
-        reimbursable_total: Math.max(0, Math.round((data.reimbursable_total - totalPaid) * 100) / 100),
+        reimbursable_total: Math.max(0, Math.round((data.reimbursable_total - paid) * 100) / 100),
       });
     } catch {
       setWeek(null);
@@ -560,6 +562,7 @@ export default function ExpensesOverview() {
       });
       setPaid(true);
       toast.success(`SGD ${week.reimbursable_total.toFixed(2)} marked as paid`);
+      setTotalPaid((prev) => round(prev + week.reimbursable_total));
       setWeek((prev) => prev ? { ...prev, reimbursable_total: 0 } : prev);
       setTimeout(() => setPaid(false), 3000);
     } catch {
@@ -626,12 +629,11 @@ export default function ExpensesOverview() {
     setWeek((prev) => {
       if (!prev) return prev;
       const updated = prev.receipts.map((r) => (r.id === id ? { ...r, reimbursable } : r));
+      const grossReimbursable = updated.filter((r) => r.reimbursable).reduce((s, r) => s + (r.total || 0), 0);
       return {
         ...prev,
         receipts: updated,
-        reimbursable_total: round(
-          updated.filter((r) => r.reimbursable).reduce((s, r) => s + (r.total || 0), 0)
-        ),
+        reimbursable_total: Math.max(0, round(grossReimbursable - totalPaid)),
         own_total: round(
           updated.filter((r) => !r.reimbursable).reduce((s, r) => s + (r.total || 0), 0)
         ),

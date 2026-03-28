@@ -34,8 +34,14 @@ def mark_reimbursed(request: Request, body: dict):
     amount      = body.get("amount")
     note        = body.get("note")
 
-    if not all([year, week_number, amount]):
+    if year is None or week_number is None or amount is None:
         raise HTTPException(status_code=400, detail="year, week_number and amount required")
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="amount must be a number")
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be positive")
 
     res = supabase.table("reimbursements").insert({
         "household_id": household_id,
@@ -46,6 +52,21 @@ def mark_reimbursed(request: Request, body: dict):
         "created_by":   user_id,
     }).execute()
     return res.data[0]
+
+
+@router.get("/reimbursements/week/{year}/{week_number}")
+def get_week_reimbursements(year: int, week_number: int, request: Request):
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+    res = supabase.table("reimbursements")\
+        .select("*")\
+        .eq("household_id",  household_id)\
+        .eq("year",          year)\
+        .eq("week_number",   week_number)\
+        .execute()
+    total_paid = sum(float(r["amount"] or 0) for r in res.data)
+    return {"reimbursements": res.data, "total_paid": round(total_paid, 2)}
 
 
 @router.delete("/reimbursements/{reimbursement_id}")
@@ -61,18 +82,3 @@ def delete_reimbursement(reimbursement_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Not found")
     supabase.table("reimbursements").delete().eq("id", reimbursement_id).execute()
     return {"status": "ok"}
-
-
-@router.get("/reimbursements/week/{year}/{week_number}")
-def get_week_reimbursements(year: int, week_number: int, request: Request):
-    household_id = request.state.user.get("household_id")
-    if not household_id:
-        raise HTTPException(status_code=403, detail="No household found")
-    res = supabase.table("reimbursements")\
-        .select("*")\
-        .eq("household_id",  household_id)\
-        .eq("year",          year)\
-        .eq("week_number",   week_number)\
-        .execute()
-    total_paid = sum(r["amount"] for r in res.data)
-    return {"reimbursements": res.data, "total_paid": round(total_paid, 2)}

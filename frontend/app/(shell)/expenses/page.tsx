@@ -491,12 +491,17 @@ export default function ExpensesOverview() {
   const loadWeek = useCallback(async (year: number, weekNum: number) => {
     setLoading(true);
     try {
-      const [weekRes, reimbRes] = await Promise.all([
-        api.get(`/weeks/${year}/${weekNum}`),
-        api.get(`/reimbursements/week/${year}/${weekNum}`),
-      ]);
+      const weekRes = await api.get(`/weeks/${year}/${weekNum}`);
       const data = weekRes.data;
-      const paid = reimbRes.data?.total_paid ?? 0;
+
+      let paid = 0;
+      try {
+        const reimbRes = await api.get(`/reimbursements/week/${year}/${weekNum}`);
+        paid = reimbRes.data?.total_paid ?? 0;
+      } catch {
+        // reimbursements fetch failed — show gross total, mark-as-paid still works
+      }
+
       setTotalPaid(paid);
       setWeek({
         ...data,

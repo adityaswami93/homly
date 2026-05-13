@@ -34,6 +34,7 @@ SKIP_AUTH_PATHS = [
     "/setup/qr-stream",
     "/auth/accept-invite",
     "/internal/shopping-list",
+    "/waitlist",
 ]
 
 

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
+import { isNativeApp } from "@/lib/platform";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 
 const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 
@@ -460,8 +462,69 @@ export default function ExpensesOverview() {
   const [sending, setSending] = useState(false);
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { toasts, dismissToast, toast } = useToast();
+
+  const submitReceiptBlob = async (blob: Blob, filename: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const formData = new FormData();
+    formData.append("file", blob, filename);
+    try {
+      setUploading(true);
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/process-receipt`,
+        {
+          method: "POST",
+          body: formData,
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }
+      );
+      const result = await res.json();
+      if (result.status === "duplicate") {
+        toast.error("Receipt already uploaded.");
+      } else {
+        toast.success("Receipt submitted — it will appear shortly.");
+        // Reload the current week to pick up the new receipt
+        if (currentWeek) loadWeek(currentWeek.year, currentWeek.week);
+      }
+    } catch {
+      toast.error("Upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const captureReceiptNative = async () => {
+    try {
+      const photo = await Camera.getPhoto({
+        quality: 85,
+        allowEditing: false,
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Camera,
+      });
+      if (!photo.base64String) return;
+      const byteCharacters = atob(photo.base64String);
+      const byteArray = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteArray[i] = byteCharacters.charCodeAt(i);
+      }
+      const blob = new Blob([byteArray], { type: "image/jpeg" });
+      await submitReceiptBlob(blob, "receipt.jpg");
+    } catch (error) {
+      console.error("Camera error:", error);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await submitReceiptBlob(file, file.name);
+    // Reset input so the same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -659,6 +722,30 @@ export default function ExpensesOverview() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {/* Receipt capture — native camera on device, file input on web */}
+          {isNativeApp() ? (
+            <button
+              onClick={captureReceiptNative}
+              disabled={uploading}
+              className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 min-h-[36px]"
+            >
+              {uploading ? "⏳" : "📷"}
+              <span className="hidden sm:inline">{uploading ? "Uploading…" : "Capture receipt"}</span>
+            </button>
+          ) : (
+            <label className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer min-h-[36px]">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                className="hidden"
+                disabled={uploading}
+              />
+              {uploading ? "⏳" : "📎"}
+              <span className="hidden sm:inline">{uploading ? "Uploading…" : "Upload receipt"}</span>
+            </label>
+          )}
           <button
             onClick={handleSendTotal}
             disabled={sending || !week || week.receipt_count === 0}

@@ -2,6 +2,7 @@ const {
   default: makeWASocket,
   DisconnectReason,
   downloadMediaMessage,
+  fetchLatestBaileysVersion,
 } = require("baileys");
 const { Boom } = require("@hapi/boom");
 const { createClient } = require("@supabase/supabase-js");
@@ -311,9 +312,12 @@ async function startSock() {
     process.exit(0);
   });
 
+  const { version } = await fetchLatestBaileysVersion();
+  console.log(`[bot] Using WhatsApp version: ${version.join(".")}`);
+
   const sock = makeWASocket({
     printQRInTerminal: false,
-    version: [2, 3000, 1033893291],
+    version,
     auth: state,
     logger: pino({ level: "warn" }),
     browser: ["Homly", "Chrome", "1.0.0"],

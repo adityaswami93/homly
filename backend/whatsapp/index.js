@@ -6,6 +6,7 @@ const {
 } = require("baileys");
 const { Boom } = require("@hapi/boom");
 const { createClient } = require("@supabase/supabase-js");
+const ws = require("ws");
 const axios = require("axios");
 const FormData = require("form-data");
 const cron = require("node-cron");
@@ -31,7 +32,9 @@ if (!SUPABASE_URL) {
 }
 
 // Supabase client (service-role) — used for auth state persistence only
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+  realtime: { transport: ws },
+});
 
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"

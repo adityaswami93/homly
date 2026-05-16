@@ -46,6 +46,8 @@ const groupMap = new Map();
 const cronJobs = new Map();
 // current active socket (set on every startSock call)
 let currentSock = null;
+// exposed so the QR-reset poller can wipe the session before reconnecting
+let deleteCurrentSession = null;
 
 // ── Settings ────────────────────────────────────────────────
 async function fetchAllSettings() {
@@ -307,6 +309,7 @@ async function startSock() {
   // Load auth state from Postgres (single row, no Storage bucket needed)
   const { state, saveCreds, deleteSession, flush } =
     await useSupabaseAuthState(BOT_TENANT_ID, supabase);
+  deleteCurrentSession = deleteSession;
 
   // Flush pending writes before Railway/process shuts us down
   process.once("SIGTERM", async () => {
@@ -315,12 +318,17 @@ async function startSock() {
     process.exit(0);
   });
 
-  const { version } = await fetchLatestBaileysVersion();
-  console.log(`[bot] Using WhatsApp version: ${version.join(".")}`);
+  let version;
+  try {
+    ({ version } = await fetchLatestBaileysVersion());
+    console.log(`[bot] Using WhatsApp version: ${version.join(".")}`);
+  } catch (e) {
+    console.warn("[bot] Could not fetch latest WA version — using Baileys default:", e.message);
+  }
 
   const sock = makeWASocket({
     printQRInTerminal: false,
-    version,
+    ...(version ? { version } : {}),
     auth: state,
     logger: pino({ level: "warn" }),
     browser: ["Homly", "Chrome", "1.0.0"],
@@ -638,20 +646,40 @@ cron.schedule("0 9 * * *", async () => {
 }, { timezone: "Asia/Singapore" });
 
 // ── QR regeneration request polling ─────────────────────────
-// Runs independently of connection state so the button always works
+// Runs independently of connection state so the button always works.
+// On reset: wipe the saved session first so Baileys starts fresh and
+// emits a new QR rather than trying to resume a stale/partial session.
 setInterval(async () => {
   try {
     const res = await axios.get(`${FASTAPI_URL}/internal/qr-status`, {
       headers: { "X-Internal-Key": INTERNAL_KEY }
     });
-    if (res.data.qr_requested && currentSock) {
-      console.log("QR regeneration requested — restarting connection...");
-      currentSock.end(new Error("QR reset requested by user"));
+    if (res.data.qr_requested) {
+      console.log("QR regeneration requested — wiping session and restarting...");
+      if (deleteCurrentSession) {
+        await deleteCurrentSession();
+        deleteCurrentSession = null;
+      }
+      if (currentSock) {
+        currentSock.end(new Error("QR reset requested by user"));
+      } else {
+        // Bot is not connected (may have crashed) — start fresh now
+        startSock().catch(console.error);
+      }
     }
   } catch (e) {
     // silently ignore — backend may not be up yet
   }
 }, 5000);
 
+async function startSockWithRetry() {
+  try {
+    await startSock();
+  } catch (e) {
+    console.error("[bot] startSock failed:", e.message, "— retrying in 5s");
+    setTimeout(startSockWithRetry, 5000);
+  }
+}
+
 console.log("Homly WhatsApp listener starting...");
-startSock().catch(console.error);
+startSockWithRetry();

@@ -101,19 +101,37 @@ function scheduleAllSummaries(sock) {
 }
 
 // ── QR / connection helpers ─────────────────────────────────
+// Last successfully converted QR image URL — re-pushed on interval so a
+// backend restart doesn't leave the frontend stuck on the loading spinner.
+let lastQRImageUrl = null;
+
 async function pushQR(qrData) {
+  let qrImageUrl;
   try {
-    const qrImageUrl = await QRCode.toDataURL(qrData);
-    await axios.post(`${FASTAPI_URL}/internal/qr`,
-      { qr: qrImageUrl, connected: false },
-      { headers: { "X-Internal-Key": INTERNAL_KEY } }
-    );
+    qrImageUrl = await QRCode.toDataURL(qrData);
   } catch (e) {
-    console.error("Failed to push QR:", e.message);
+    console.error("Failed to convert QR to image:", e.message);
+    return;
+  }
+  // Retry up to 3 times so transient backend errors don't black out the QR
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await axios.post(`${FASTAPI_URL}/internal/qr`,
+        { qr: qrImageUrl, connected: false },
+        { headers: { "X-Internal-Key": INTERNAL_KEY } }
+      );
+      lastQRImageUrl = qrImageUrl;
+      return;
+    } catch (e) {
+      const detail = e.response ? `HTTP ${e.response.status}: ${JSON.stringify(e.response.data)}` : e.message;
+      console.error(`Failed to push QR (attempt ${attempt}/3): ${detail}`);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
+    }
   }
 }
 
 async function pushConnected(groups) {
+  lastQRImageUrl = null; // clear stored QR once connected
   try {
     await axios.post(`${FASTAPI_URL}/internal/connected`,
       { connected: true, groups },
@@ -398,7 +416,7 @@ async function startSock() {
         await deleteSession();
         process.exit(1);
       } else {
-        setTimeout(startSock, 3000);
+        setTimeout(startSockWithRetry, 3000);
       }
     }
   });
@@ -681,5 +699,21 @@ async function startSockWithRetry() {
   }
 }
 
-console.log("Homly WhatsApp listener starting...");
+// Re-push the latest QR every 15 s so a backend restart doesn't leave the
+// frontend stuck — Baileys refreshes the QR every ~20 s anyway so this
+// always sends a valid (not-yet-expired) image.
+setInterval(async () => {
+  if (lastQRImageUrl) {
+    try {
+      await axios.post(`${FASTAPI_URL}/internal/qr`,
+        { qr: lastQRImageUrl, connected: false },
+        { headers: { "X-Internal-Key": INTERNAL_KEY } }
+      );
+    } catch {
+      // silently ignore — primary push already logged errors
+    }
+  }
+}, 15000);
+
+console.log(`[bot] Starting — FASTAPI_URL=${FASTAPI_URL} TENANT=${BOT_TENANT_ID}`);
 startSockWithRetry();

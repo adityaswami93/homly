@@ -1,20 +1,18 @@
-const {
-  default: makeWASocket,
+import "dotenv/config";
+import makeWASocket, {
   DisconnectReason,
   downloadMediaMessage,
   Browsers,
-} = require("baileys");
-const { Boom } = require("@hapi/boom");
-const { createClient } = require("@supabase/supabase-js");
-const ws = require("ws");
-const axios = require("axios");
-const FormData = require("form-data");
-const cron = require("node-cron");
-const pino = require("pino");
-const QRCode = require("qrcode");
-require("dotenv").config();
-
-const { useSupabaseAuthState } = require("./db-auth-state");
+} from "baileys";
+import { Boom } from "@hapi/boom";
+import { createClient } from "@supabase/supabase-js";
+import ws from "ws";
+import axios from "axios";
+import FormData from "form-data";
+import cron from "node-cron";
+import pino from "pino";
+import QRCode from "qrcode";
+import { useSupabaseAuthState } from "./db-auth-state.js";
 
 const FASTAPI_URL  = process.env.FASTAPI_URL  || "http://localhost:8000";
 const INTERNAL_KEY = process.env.INTERNAL_KEY || "homly-internal";
@@ -103,8 +101,6 @@ function scheduleAllSummaries(sock) {
 }
 
 // ── QR / connection helpers ─────────────────────────────────
-// Last successfully converted QR image URL — re-pushed on interval so a
-// backend restart doesn't leave the frontend stuck on the loading spinner.
 let lastQRImageUrl = null;
 
 async function pushQR(qrData) {
@@ -115,7 +111,6 @@ async function pushQR(qrData) {
     console.error("Failed to convert QR to image:", e.message);
     return;
   }
-  // Retry up to 3 times so transient backend errors don't black out the QR
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       await axios.post(`${FASTAPI_URL}/internal/qr`,
@@ -145,7 +140,7 @@ async function pushPairingCode(code) {
 }
 
 async function pushConnected(groups) {
-  lastQRImageUrl = null; // clear stored QR once connected
+  lastQRImageUrl = null;
   try {
     await axios.post(`${FASTAPI_URL}/internal/connected`,
       { connected: true, groups },
@@ -169,7 +164,7 @@ async function processReceiptImage(msg, sock) {
   const msgId   = msg.key.id;
   const msgInfo = msg.message;
 
-  let imgMsg =
+  const imgMsg =
     msgInfo.imageMessage ||
     msgInfo.viewOnceMessage?.message?.imageMessage ||
     msgInfo.viewOnceMessageV2?.message?.imageMessage;
@@ -230,14 +225,14 @@ async function sendWeeklySummary(sock, groupJid, householdId, cutoffMode = "last
     });
 
     const data = res.data;
-    const receipts       = (data.receipts || []).filter(r => r.reimbursable !== false);
+    const receipts        = (data.receipts || []).filter(r => r.reimbursable !== false);
     const category_totals = data.category_totals;
-    const total          = data.reimbursable_total ?? data.total;
-    const flagged_count  = receipts.filter(r => r.flagged).length;
-    const week_number    = data.week_number;
-    const year           = data.year;
-    const date_from      = data.date_from;
-    const date_to        = data.date_to;
+    const total           = data.reimbursable_total ?? data.total;
+    const flagged_count   = receipts.filter(r => r.flagged).length;
+    const week_number     = data.week_number;
+    const year            = data.year;
+    const date_from       = data.date_from;
+    const date_to         = data.date_to;
 
     if (!receipts || receipts.length === 0) {
       await sock.sendMessage(groupJid, { text: "No receipts recorded in this period." });
@@ -300,7 +295,6 @@ async function handleShoppingListCommand(sock, jid) {
       headers: { "X-Internal-Key": INTERNAL_KEY }
     });
     const { items, suggestions } = res.data;
-
     const lines = [];
 
     if (items.length > 0) {
@@ -324,26 +318,168 @@ async function handleShoppingListCommand(sock, jid) {
     }
 
     if (lines.length === 0) {
-      await sock.sendMessage(jid, {
-        text: "No items on your shopping list and nothing looks low on stock yet."
-      });
+      await sock.sendMessage(jid, { text: "No items on your shopping list and nothing looks low on stock yet." });
       return;
     }
-
     await sock.sendMessage(jid, { text: lines.join("\n") });
   } catch (e) {
     console.error("Shopping list command failed:", e.message);
   }
 }
 
+// ── Coverage gap query ───────────────────────────────────────
+const GAP_KEYWORDS = [
+  "what am i missing", "coverage gap", "gap analysis",
+  "what should i get", "missing insurance", "underinsured"
+];
+function isGapQuery(text) { return GAP_KEYWORDS.some(kw => text.includes(kw)); }
+
+async function handleGapQuery(sock, jid, householdId) {
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/insurance/gaps`, {
+      headers: { Authorization: `Bearer ${SERVICE_KEY}` },
+      params: { household_id: householdId }
+    });
+    const { profile_complete, gaps } = res.data;
+
+    if (!profile_complete) {
+      await sock.sendMessage(jid, { text: "To get a personalised coverage gap analysis, please complete your household profile on the Homly dashboard (Insurance → Gaps)." });
+      return;
+    }
+    if (!gaps || gaps.length === 0) {
+      await sock.sendMessage(jid, { text: "✅ Your household coverage looks complete for your life stage. No significant gaps identified." });
+      return;
+    }
+
+    const critical    = gaps.filter(g => g.priority === "critical");
+    const recommended = gaps.filter(g => g.priority === "recommended");
+    const lines = ["🛡️ *Coverage Gap Summary*", "", "Your household may be missing:", ""];
+
+    if (critical.length > 0) {
+      lines.push("🔴 *Critical*");
+      for (const g of critical) lines.push(`- ${g.label} — ${g.explanation}`);
+      lines.push("");
+    }
+    if (recommended.length > 0) {
+      lines.push("🟡 *Recommended*");
+      for (const g of recommended) lines.push(`- ${g.label} — ${g.explanation}`);
+      lines.push("");
+    }
+    lines.push("Visit the Homly dashboard to add policies or ask me more about any of these.");
+    await sock.sendMessage(jid, { text: lines.join("\n").trim() });
+  } catch (e) {
+    console.error("Gap query failed:", e.message);
+  }
+}
+
+// ── Insurance query ──────────────────────────────────────────
+const INSURANCE_KEYWORDS = [
+  "insurance", "policy", "policies", "health insurance", "life insurance",
+  "car insurance", "home insurance", "travel insurance"
+];
+function isInsuranceQuery(text) { return INSURANCE_KEYWORDS.some(kw => text.includes(kw)); }
+function detectCoverageTypeFilter(text) {
+  return ["health", "life", "home", "car", "travel"].find(t => text.includes(t)) || null;
+}
+
+async function handleInsuranceQuery(sock, jid, householdId, text) {
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/insurance`, {
+      headers: { Authorization: `Bearer ${SERVICE_KEY}` },
+      params: { household_id: householdId }
+    });
+    const all = res.data || [];
+    const typeFilter = detectCoverageTypeFilter(text);
+    const policies = typeFilter ? all.filter(p => p.coverage_type === typeFilter) : all;
+
+    if (policies.length === 0) {
+      await sock.sendMessage(jid, { text: "No insurance policies added yet. Visit the Homly dashboard to add your policies." });
+      return;
+    }
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const grouped = {};
+    for (const p of policies) {
+      if (!grouped[p.coverage_type]) grouped[p.coverage_type] = [];
+      grouped[p.coverage_type].push(p);
+    }
+
+    const lines = ["🛡️ *Household Insurance Policies*", ""];
+    for (const [type, items] of Object.entries(grouped)) {
+      lines.push(`*${type.toUpperCase()}*`);
+      for (const p of items) {
+        lines.push(`- ${p.provider}${p.insured_person ? ` (${p.insured_person})` : ""}`);
+        if (p.policy_number) lines.push(`  Policy #: ${p.policy_number}`);
+        const coverage = p.coverage_amount ? `$${Number(p.coverage_amount).toLocaleString()}` : "—";
+        const premium  = p.premium_amount ? `$${Number(p.premium_amount).toFixed(0)}/${p.premium_frequency ?? "mo"}` : "—";
+        lines.push(`  Coverage: ${coverage} | Premium: ${premium}`);
+        if (p.renewal_date) {
+          const renewal = new Date(p.renewal_date);
+          const days = Math.ceil((renewal.getTime() - today.getTime()) / 86400000);
+          const dateStr = renewal.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" });
+          lines.push(`  Renews: ${dateStr} (${days > 0 ? `${days} days` : "overdue"})`);
+        }
+      }
+      lines.push("");
+    }
+    if (!typeFilter) lines.push('Reply with a type to filter, e.g. "health insurance"');
+    await sock.sendMessage(jid, { text: lines.join("\n").trim() });
+  } catch (e) {
+    console.error("Insurance query failed:", e.message);
+  }
+}
+
+// ── Insurance renewal reminder (daily at 09:00 SGT) ─────────
+cron.schedule("0 9 * * *", async () => {
+  console.log("[renewal-reminder] Running daily insurance renewal check...");
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/internal/insurance/renewals`, {
+      headers: { "X-Internal-Key": INTERNAL_KEY }
+    });
+    const renewals = res.data || [];
+    if (renewals.length === 0) return;
+
+    for (const policy of renewals) {
+      const entry = [...groupMap.values()].find(e => e.household_id === policy.household_id);
+      if (!entry || !entry.settings?.group_jid) continue;
+
+      const groupJid    = entry.settings.group_jid;
+      const days        = policy.days_until_renewal;
+      const renewalDate = policy.renewal_date
+        ? new Date(policy.renewal_date).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })
+        : "—";
+      const premium = policy.premium_amount
+        ? `$${Number(policy.premium_amount).toFixed(2)} / ${policy.premium_frequency ?? "period"}`
+        : "—";
+
+      const msg = [
+        "🔔 *Insurance Renewal Reminder*", "",
+        `Your *${policy.coverage_type}* insurance with *${policy.provider}* renews in *${days} days* (${renewalDate}).`, "",
+        `Policy #: ${policy.policy_number || "—"}`,
+        `Premium: ${premium}`, "",
+        "Make sure your payment is up to date!"
+      ].join("\n");
+
+      try {
+        if (currentSock) {
+          await currentSock.sendMessage(groupJid, { text: msg });
+          console.log(`[renewal-reminder] Sent reminder for policy ${policy.id} to ${groupJid}`);
+        }
+      } catch (e) {
+        console.error(`[renewal-reminder] Failed to send to ${groupJid}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.error("[renewal-reminder] Failed to fetch renewals:", e.message);
+  }
+}, { timezone: "Asia/Singapore" });
+
 // ── Main ────────────────────────────────────────────────────
 async function startSock() {
-  // Load auth state from Postgres (single row, no Storage bucket needed)
   const { state, saveCreds, deleteSession, flush } =
     await useSupabaseAuthState(BOT_TENANT_ID, supabase);
   deleteCurrentSession = deleteSession;
 
-  // Flush pending writes before Railway/process shuts us down
   process.once("SIGTERM", async () => {
     console.log("[bot] SIGTERM — flushing auth state before exit...");
     await flush();
@@ -355,13 +491,10 @@ async function startSock() {
     auth: state,
     logger: pino({ level: "warn" }),
     browser: Browsers.macOS("Safari"),
-    // Without getMessage, Baileys retries undecryptable messages indefinitely,
-    // flooding WhatsApp with retry requests and causing DB write conflicts.
     getMessage: async () => undefined,
   });
   currentSock = sock;
 
-  // saveCreds schedules a debounced DB write — no Storage calls
   sock.ev.on("creds.update", saveCreds);
 
   // If a pairing code was requested, ask WA for one right after socket init
@@ -386,18 +519,15 @@ async function startSock() {
 
     if (connection === "open") {
       console.log("WhatsApp connected!");
-
       const groups = await sock.groupFetchAllParticipating();
       const groupList = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
       await pushConnected(groupList);
 
-      // Build group → household map from DB settings
       const knownGroupJids = new Set(Object.keys(groups));
       const allSettings = await fetchAllSettings();
       buildGroupMap(allSettings, knownGroupJids);
       scheduleAllSummaries(sock);
 
-      // Re-sync map every 5 min in case settings changed (new group assigned, etc.)
       let lastSettingsStr = JSON.stringify(allSettings);
       setInterval(async () => {
         const latest = await fetchAllSettings();
@@ -411,22 +541,18 @@ async function startSock() {
         }
       }, 5 * 60 * 1000);
 
-      // Poll message queue every 10 seconds
       setInterval(async () => {
         try {
           const res = await axios.get(`${FASTAPI_URL}/internal/messages`, {
             headers: { "X-Internal-Key": INTERNAL_KEY }
           });
-          const { messages } = res.data;
-          for (const msg of messages) {
+          for (const msg of res.data.messages || []) {
             if (msg.group_jid && groupMap.has(msg.group_jid)) {
               await sock.sendMessage(msg.group_jid, { text: msg.text });
               console.log(`Sent queued message to ${msg.group_jid}`);
             }
           }
-        } catch (e) {
-          // silently ignore
-        }
+        } catch { /* silently ignore */ }
       }, 10000);
     }
 
@@ -448,14 +574,12 @@ async function startSock() {
     for (const msg of messages) {
       const remoteJid = msg.key.remoteJid;
 
-      // Debug logging — helps diagnose command routing
       const dbgConv    = msg.message?.conversation;
       const dbgExt     = msg.message?.extendedTextMessage?.text;
       const dbgEphConv = msg.message?.ephemeralMessage?.message?.conversation;
       const dbgEphExt  = msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text;
       console.log(`[msg] jid=${remoteJid} fromMe=${msg.key.fromMe} groupMapHas=${groupMap.has(remoteJid)} conv=${dbgConv} ext=${dbgExt} ephConv=${dbgEphConv} ephExt=${dbgEphExt}`);
 
-      // Extract text from all possible wrappers
       const text = (
         msg.message?.conversation
         || msg.message?.extendedTextMessage?.text
@@ -464,27 +588,21 @@ async function startSock() {
         || ""
       ).trim().toLowerCase();
 
-      // Shopping list command — works from ANY mapped group, not filtered by groupJid
       if (groupMap.has(remoteJid) && (text.includes("shopping list") || text.includes("/shopping"))) {
         await handleShoppingListCommand(sock, remoteJid);
         continue;
       }
-
-      // Gap analysis query command (check before general insurance query)
       if (groupMap.has(remoteJid) && isGapQuery(text)) {
         const { household_id } = groupMap.get(remoteJid);
         await handleGapQuery(sock, remoteJid, household_id);
         continue;
       }
-
-      // Insurance query command
       if (groupMap.has(remoteJid) && isInsuranceQuery(text)) {
         const { household_id } = groupMap.get(remoteJid);
         await handleInsuranceQuery(sock, remoteJid, household_id, text);
         continue;
       }
 
-      // Receipt image handling — must be a mapped group
       if (!groupMap.has(remoteJid)) continue;
       if (!msg.message?.imageMessage &&
           !msg.message?.viewOnceMessage?.message?.imageMessage &&
@@ -496,199 +614,7 @@ async function startSock() {
   return sock;
 }
 
-// ── Coverage gap query handler ───────────────────────────────
-const GAP_KEYWORDS = [
-  "what am i missing", "coverage gap", "gap analysis",
-  "what should i get", "missing insurance", "underinsured"
-];
-
-function isGapQuery(text) {
-  return GAP_KEYWORDS.some((kw) => text.includes(kw));
-}
-
-async function handleGapQuery(sock, jid, householdId) {
-  try {
-    const res = await axios.get(`${FASTAPI_URL}/insurance/gaps`, {
-      headers: { Authorization: `Bearer ${SERVICE_KEY}` },
-      params: { household_id: householdId }
-    });
-    const { profile_complete, gaps } = res.data;
-
-    if (!profile_complete) {
-      await sock.sendMessage(jid, {
-        text: "To get a personalised coverage gap analysis, please complete your household profile on the Homly dashboard (Insurance → Gaps)."
-      });
-      return;
-    }
-
-    if (!gaps || gaps.length === 0) {
-      await sock.sendMessage(jid, {
-        text: "✅ Your household coverage looks complete for your life stage. No significant gaps identified."
-      });
-      return;
-    }
-
-    const critical = gaps.filter((g) => g.priority === "critical");
-    const recommended = gaps.filter((g) => g.priority === "recommended");
-
-    const lines = ["🛡️ *Coverage Gap Summary*", "", "Your household may be missing:", ""];
-
-    if (critical.length > 0) {
-      lines.push("🔴 *Critical*");
-      for (const g of critical) {
-        lines.push(`- ${g.label} — ${g.explanation}`);
-      }
-      lines.push("");
-    }
-
-    if (recommended.length > 0) {
-      lines.push("🟡 *Recommended*");
-      for (const g of recommended) {
-        lines.push(`- ${g.label} — ${g.explanation}`);
-      }
-      lines.push("");
-    }
-
-    lines.push("Visit the Homly dashboard to add policies or ask me more about any of these.");
-
-    await sock.sendMessage(jid, { text: lines.join("\n").trim() });
-  } catch (e) {
-    console.error("Gap query failed:", e.message);
-  }
-}
-
-// ── Insurance query handler ──────────────────────────────────
-const INSURANCE_KEYWORDS = [
-  "insurance", "policy", "policies", "health insurance", "life insurance",
-  "car insurance", "home insurance", "travel insurance"
-];
-
-function isInsuranceQuery(text) {
-  return INSURANCE_KEYWORDS.some((kw) => text.includes(kw));
-}
-
-function detectCoverageTypeFilter(text) {
-  const types = ["health", "life", "home", "car", "travel"];
-  return types.find((t) => text.includes(t)) || null;
-}
-
-async function handleInsuranceQuery(sock, jid, householdId, text) {
-  try {
-    const res = await axios.get(`${FASTAPI_URL}/insurance`, {
-      headers: { Authorization: `Bearer ${SERVICE_KEY}` },
-      params: { household_id: householdId }
-    });
-    const all = res.data || [];
-    const typeFilter = detectCoverageTypeFilter(text);
-    const policies = typeFilter ? all.filter((p) => p.coverage_type === typeFilter) : all;
-
-    if (policies.length === 0) {
-      await sock.sendMessage(jid, {
-        text: "No insurance policies added yet. Visit the Homly dashboard to add your policies."
-      });
-      return;
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Group by coverage type
-    const grouped = {};
-    for (const p of policies) {
-      if (!grouped[p.coverage_type]) grouped[p.coverage_type] = [];
-      grouped[p.coverage_type].push(p);
-    }
-
-    const lines = ["🛡️ *Household Insurance Policies*", ""];
-    for (const [type, items] of Object.entries(grouped)) {
-      lines.push(`*${type.toUpperCase()}*`);
-      for (const p of items) {
-        lines.push(`- ${p.provider}${p.insured_person ? ` (${p.insured_person})` : ""}`);
-        if (p.policy_number) lines.push(`  Policy #: ${p.policy_number}`);
-        const coverage = p.coverage_amount ? `$${Number(p.coverage_amount).toLocaleString()}` : "—";
-        const premium = p.premium_amount
-          ? `$${Number(p.premium_amount).toFixed(0)}/${p.premium_frequency ?? "mo"}`
-          : "—";
-        lines.push(`  Coverage: ${coverage} | Premium: ${premium}`);
-        if (p.renewal_date) {
-          const renewal = new Date(p.renewal_date);
-          const days = Math.ceil((renewal.getTime() - today.getTime()) / 86400000);
-          const dateStr = renewal.toLocaleDateString("en-SG", {
-            day: "numeric", month: "short", year: "numeric"
-          });
-          lines.push(`  Renews: ${dateStr} (${days > 0 ? `${days} days` : "overdue"})`);
-        }
-      }
-      lines.push("");
-    }
-
-    if (!typeFilter) {
-      lines.push('Reply with a type to filter, e.g. "health insurance"');
-    }
-
-    await sock.sendMessage(jid, { text: lines.join("\n").trim() });
-  } catch (e) {
-    console.error("Insurance query failed:", e.message);
-  }
-}
-
-// ── Insurance renewal reminder (daily at 09:00 SGT) ─────────
-cron.schedule("0 9 * * *", async () => {
-  console.log("[renewal-reminder] Running daily insurance renewal check...");
-  try {
-    const res = await axios.get(`${FASTAPI_URL}/internal/insurance/renewals`, {
-      headers: { "X-Internal-Key": INTERNAL_KEY }
-    });
-    const renewals = res.data || [];
-    if (renewals.length === 0) return;
-
-    // Send reminder to each household's group
-    for (const policy of renewals) {
-      const entry = [...groupMap.values()].find(
-        (e) => e.household_id === policy.household_id
-      );
-      if (!entry || !entry.settings?.group_jid) continue;
-
-      const groupJid = entry.settings.group_jid;
-      const days = policy.days_until_renewal;
-      const renewalDate = policy.renewal_date
-        ? new Date(policy.renewal_date).toLocaleDateString("en-SG", {
-            day: "numeric", month: "short", year: "numeric"
-          })
-        : "—";
-      const premium = policy.premium_amount
-        ? `$${Number(policy.premium_amount).toFixed(2)} / ${policy.premium_frequency ?? "period"}`
-        : "—";
-
-      const msg = [
-        "🔔 *Insurance Renewal Reminder*",
-        "",
-        `Your *${policy.coverage_type}* insurance with *${policy.provider}* renews in *${days} days* (${renewalDate}).`,
-        "",
-        `Policy #: ${policy.policy_number || "—"}`,
-        `Premium: ${premium}`,
-        "",
-        "Make sure your payment is up to date!"
-      ].join("\n");
-
-      try {
-        if (currentSock) {
-          await currentSock.sendMessage(groupJid, { text: msg });
-          console.log(`[renewal-reminder] Sent reminder for policy ${policy.id} to ${groupJid}`);
-        }
-      } catch (e) {
-        console.error(`[renewal-reminder] Failed to send to ${groupJid}:`, e.message);
-      }
-    }
-  } catch (e) {
-    console.error("[renewal-reminder] Failed to fetch renewals:", e.message);
-  }
-}, { timezone: "Asia/Singapore" });
-
-// ── QR regeneration request polling ─────────────────────────
-// Runs independently of connection state so the button always works.
-// On reset: wipe the saved session first so Baileys starts fresh and
-// emits a new QR rather than trying to resume a stale/partial session.
+// ── QR regeneration / pairing request polling ────────────────
 setInterval(async () => {
   try {
     const res = await axios.get(`${FASTAPI_URL}/internal/qr-status`, {
@@ -712,9 +638,7 @@ setInterval(async () => {
         startSock().catch(console.error);
       }
     }
-  } catch (e) {
-    // silently ignore — backend may not be up yet
-  }
+  } catch { /* silently ignore — backend may not be up yet */ }
 }, 5000);
 
 async function startSockWithRetry() {
@@ -726,9 +650,7 @@ async function startSockWithRetry() {
   }
 }
 
-// Re-push the latest QR every 15 s so a backend restart doesn't leave the
-// frontend stuck — Baileys refreshes the QR every ~20 s anyway so this
-// always sends a valid (not-yet-expired) image.
+// Re-push last QR every 15s so a backend restart doesn't black out the QR display
 setInterval(async () => {
   if (lastQRImageUrl) {
     try {
@@ -736,9 +658,7 @@ setInterval(async () => {
         { qr: lastQRImageUrl, connected: false },
         { headers: { "X-Internal-Key": INTERNAL_KEY } }
       );
-    } catch {
-      // silently ignore — primary push already logged errors
-    }
+    } catch { /* silently ignore */ }
   }
 }, 15000);
 

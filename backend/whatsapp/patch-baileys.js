@@ -1,23 +1,8 @@
-"use strict";
-/**
- * Patches Baileys 7.x RC to fix three bugs that cause 100% QR/pairing failure.
- * Runs as postinstall hook.
- *
- * Bug 1: passive:true  →  passive:false  (validate-connection.js)
- *   WA treats passive=true as a read-only listener and kills it with
- *   device_removed before auth completes. creds.update never fires → no session.
- *
- * Bug 2: lidDbMigrated:false  →  removed  (validate-connection.js)
- *   Undocumented field not in WA's protocol; triggers server rejection.
- *
- * Bug 3: await noise.finishInit()  →  noise.finishInit()  (socket.js)
- *   Race condition: keep-alive fires before handshake state commits.
- *
- * Source: https://github.com/openclaw/openclaw/issues/19907
- */
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const fs = require("fs");
-const path = require("path");
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let patched = 0;
 let skipped = 0;

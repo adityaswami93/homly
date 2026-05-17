@@ -1,31 +1,4 @@
-"use strict";
-
-/**
- * useSupabaseAuthState(tenantId, supabase)
- *
- * Drop-in replacement for Baileys' useMultiFileAuthState, backed by a
- * single Postgres row (JSONB) instead of Supabase Storage.
- *
- * Root cause of the old runaway:
- *   Baileys fires `creds.update` on every Signal Protocol key exchange
- *   (pre-keys, sender-keys, session keys).  The old code uploaded *every
- *   file in the auth_state/ directory* on each event → thousands of
- *   Storage API calls per hour.
- *
- * This implementation:
- *   • Keeps the full auth state (creds + all key types) in memory.
- *   • On any change, sets a dirty flag and arms a 5-second debounce timer.
- *   • The timer fires at most once per burst → one UPSERT to Postgres.
- *   • Reads once on startup; deletes the row on logout.
- *
- * Expected write volume: < 50 UPSERTs / tenant / day.
- *
- * @param {string} tenantId   - Primary key in whatsapp_sessions (e.g. "default")
- * @param {object} supabase   - Supabase client initialised with the service-role key
- * @returns {{ state, saveCreds, deleteSession, flush }}
- */
-
-const { initAuthCreds, BufferJSON } = require("baileys");
+import { initAuthCreds, BufferJSON } from "baileys";
 
 const WRITE_DEBOUNCE_MS = 5_000; // collapse burst writes to ≤ 1 per 5 s
 
@@ -171,4 +144,4 @@ async function useSupabaseAuthState(tenantId, supabase) {
   return { state, saveCreds, deleteSession, flush };
 }
 
-module.exports = { useSupabaseAuthState };
+export { useSupabaseAuthState };

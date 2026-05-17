@@ -48,6 +48,8 @@ const cronJobs = new Map();
 let currentSock = null;
 // exposed so the QR-reset poller can wipe the session before reconnecting
 let deleteCurrentSession = null;
+// phone number to pair with on next startSock (set by QR-status poller)
+let pendingPairingPhone = null;
 
 // ── Settings ────────────────────────────────────────────────
 async function fetchAllSettings() {
@@ -127,6 +129,18 @@ async function pushQR(qrData) {
       console.error(`Failed to push QR (attempt ${attempt}/3): ${detail}`);
       if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
     }
+  }
+}
+
+async function pushPairingCode(code) {
+  try {
+    await axios.post(`${FASTAPI_URL}/internal/pairing-code`,
+      { code },
+      { headers: { "X-Internal-Key": INTERNAL_KEY } }
+    );
+    console.log(`[pairing] Code pushed to dashboard: ${code}`);
+  } catch (e) {
+    console.error("[pairing] Failed to push pairing code:", e.message);
   }
 }
 
@@ -349,6 +363,20 @@ async function startSock() {
 
   // saveCreds schedules a debounced DB write — no Storage calls
   sock.ev.on("creds.update", saveCreds);
+
+  // If a pairing code was requested, ask WA for one right after socket init
+  if (pendingPairingPhone) {
+    const phone = pendingPairingPhone;
+    pendingPairingPhone = null;
+    setTimeout(async () => {
+      try {
+        const code = await sock.requestPairingCode(phone);
+        await pushPairingCode(code);
+      } catch (e) {
+        console.error("[pairing] requestPairingCode failed:", e.message);
+      }
+    }, 3000);
+  }
 
   sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
@@ -666,16 +694,21 @@ setInterval(async () => {
     const res = await axios.get(`${FASTAPI_URL}/internal/qr-status`, {
       headers: { "X-Internal-Key": INTERNAL_KEY }
     });
-    if (res.data.qr_requested) {
-      console.log("QR regeneration requested — wiping session and restarting...");
+    const { qr_requested, pairing_phone } = res.data;
+    if (qr_requested || pairing_phone) {
+      if (pairing_phone) {
+        console.log(`Pairing code requested for ${pairing_phone} — wiping session and restarting...`);
+        pendingPairingPhone = pairing_phone;
+      } else {
+        console.log("QR regeneration requested — wiping session and restarting...");
+      }
       if (deleteCurrentSession) {
         await deleteCurrentSession();
         deleteCurrentSession = null;
       }
       if (currentSock) {
-        currentSock.end(new Error("QR reset requested by user"));
+        currentSock.end(new Error(pairing_phone ? "Pairing code requested" : "QR reset requested"));
       } else {
-        // Bot is not connected (may have crashed) — start fresh now
         startSock().catch(console.error);
       }
     }

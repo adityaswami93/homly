@@ -32,10 +32,22 @@ async def receive_connected(request: Request, body: dict):
 
 @router.get("/internal/qr-status")
 async def qr_status(request: Request):
-    """Bot polls this to check if a QR regeneration was requested"""
+    """Bot polls this to check if a QR regeneration or pairing code was requested"""
     key = request.headers.get("X-Internal-Key")
     if key != INTERNAL_KEY:
         raise HTTPException(status_code=403, detail="Forbidden")
     requested = whatsapp_state.get("qr_requested", False)
-    whatsapp_state["qr_requested"] = False  # clear after reading
-    return {"qr_requested": requested}
+    pairing_phone = whatsapp_state.get("pairing_phone")
+    whatsapp_state["qr_requested"] = False
+    whatsapp_state["pairing_phone"] = None  # clear after bot reads it
+    return {"qr_requested": requested, "pairing_phone": pairing_phone}
+
+
+@router.post("/internal/pairing-code")
+async def receive_pairing_code(request: Request, body: dict):
+    """Bot pushes the pairing code here after requesting it from WA"""
+    key = request.headers.get("X-Internal-Key")
+    if key != INTERNAL_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    whatsapp_state["pairing_code"] = body.get("code")
+    return {"status": "ok"}

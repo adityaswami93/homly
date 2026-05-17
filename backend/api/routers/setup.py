@@ -1,10 +1,11 @@
 import os
+import re
 import asyncio
 import json
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from dotenv import load_dotenv
 
@@ -15,10 +16,12 @@ router = APIRouter()
 # Shared state between whatsapp process and API
 whatsapp_state = {
     "qr": None,
+    "pairing_code": None,
     "connected": False,
     "group_name": None,
     "groups": [],
     "qr_requested": False,
+    "pairing_phone": None,
 }
 
 
@@ -31,7 +34,22 @@ def get_state():
 async def reset_qr():
     """Clears stored QR and signals the bot to restart its connection and generate a fresh QR"""
     whatsapp_state["qr"] = None
+    whatsapp_state["pairing_code"] = None
+    whatsapp_state["pairing_phone"] = None
     whatsapp_state["qr_requested"] = True
+    return {"status": "ok"}
+
+
+@router.post("/setup/request-pairing")
+async def request_pairing(body: dict):
+    """Stores the phone number and signals the bot to request a pairing code"""
+    phone = re.sub(r"[^\d]", "", body.get("phone_number", ""))
+    if not phone:
+        raise HTTPException(status_code=400, detail="phone_number required")
+    whatsapp_state["pairing_code"] = None
+    whatsapp_state["pairing_phone"] = phone
+    whatsapp_state["qr"] = None
+    whatsapp_state["qr_requested"] = False
     return {"status": "ok"}
 
 

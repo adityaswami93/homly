@@ -10,6 +10,7 @@ import { ToastContainer } from "@/app/components/Toast";
 interface SetupState {
   connected: boolean;
   qr: string | null;
+  pairing_code: string | null;
   groups: { id: string; name: string }[];
   qr_requested?: boolean;
 }
@@ -17,6 +18,11 @@ interface SetupState {
 interface Settings {
   group_name: string | null;
   group_jid: string | null;
+}
+
+function formatPairingCode(code: string) {
+  const c = code.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  return c.length === 8 ? `${c.slice(0, 4)}-${c.slice(4)}` : code;
 }
 
 export default function SetupPage() {
@@ -27,6 +33,8 @@ export default function SetupPage() {
   const [resetting, setResetting] = useState(false);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [requestingPairing, setRequestingPairing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const router = useRouter();
   const { toasts, dismissToast, toast } = useToast();
@@ -61,11 +69,28 @@ export default function SetupPage() {
     setResetting(true);
     try {
       await api.post("/setup/reset-qr");
-      setState((prev) => prev ? { ...prev, qr: null, qr_requested: true } : prev);
+      setState((prev) => prev ? { ...prev, qr: null, pairing_code: null, qr_requested: true } : prev);
     } catch {
       toast.error("Failed to request QR code");
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleRequestPairing = async () => {
+    const normalized = phone.replace(/\D/g, "");
+    if (!normalized) {
+      toast.error("Enter your phone number with country code");
+      return;
+    }
+    setRequestingPairing(true);
+    try {
+      await api.post("/setup/request-pairing", { phone_number: normalized });
+      setState((prev) => prev ? { ...prev, qr: null, pairing_code: null } : prev);
+    } catch {
+      toast.error("Failed to request pairing code");
+    } finally {
+      setRequestingPairing(false);
     }
   };
 
@@ -109,8 +134,23 @@ export default function SetupPage() {
 
             {!state?.connected && (
               <>
-                {state?.qr ? (
-                  <div className="text-center">
+                {/* Pairing code display */}
+                {state?.pairing_code ? (
+                  <div className="text-center mb-4">
+                    <p className="text-sm text-stone-400 mb-3">
+                      Enter this code in WhatsApp to link the bot.
+                    </p>
+                    <div className="inline-block px-6 py-4 bg-stone-800 border border-stone-600 rounded-xl">
+                      <span className="text-3xl font-mono font-bold tracking-widest text-emerald-400">
+                        {formatPairingCode(state.pairing_code)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-stone-500 mt-3">
+                      WhatsApp → Linked Devices → Link a device → Link with phone number
+                    </p>
+                  </div>
+                ) : state?.qr ? (
+                  <div className="text-center mb-4">
                     <p className="text-sm text-stone-400 mb-4">
                       Scan this QR code with WhatsApp on your phone.
                     </p>
@@ -122,21 +162,43 @@ export default function SetupPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="text-center py-6">
+                  <div className="text-center py-6 mb-4">
                     <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                     <p className="text-sm text-stone-400">
-                      {state?.qr_requested ? "Generating new QR code…" : "Waiting for bot connection…"}
+                      {state?.qr_requested ? "Generating QR code…" : "Waiting for bot…"}
                     </p>
                   </div>
                 )}
 
-                <div className="mt-4 pt-4 border-t border-stone-800">
+                {/* Link with phone number */}
+                <div className="border-t border-stone-800 pt-4 space-y-2">
+                  <p className="text-xs text-stone-400 font-medium">Link with phone number</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+65 9123 4567"
+                      className="flex-1 border border-stone-700 bg-stone-800 rounded-lg px-3 py-2 text-sm text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-emerald-600 min-h-[44px] text-base"
+                    />
+                    <button
+                      onClick={handleRequestPairing}
+                      disabled={requestingPairing || !phone.trim()}
+                      className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-medium transition-colors disabled:opacity-50 min-h-[44px] whitespace-nowrap"
+                    >
+                      {requestingPairing ? "Requesting…" : "Get code"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* QR fallback */}
+                <div className="pt-2">
                   <button
                     onClick={handleResetQR}
                     disabled={resetting}
-                    className="w-full py-2.5 rounded-xl border border-stone-700 text-stone-300 text-sm font-medium hover:bg-stone-800 transition-colors disabled:opacity-50 min-h-[44px]"
+                    className="w-full py-2.5 rounded-xl border border-stone-700 text-stone-400 text-sm hover:bg-stone-800 transition-colors disabled:opacity-50 min-h-[44px]"
                   >
-                    {resetting ? "Requesting…" : "Generate new QR code"}
+                    {resetting ? "Requesting…" : "Generate QR code instead"}
                   </button>
                 </div>
               </>

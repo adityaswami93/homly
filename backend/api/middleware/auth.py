@@ -28,10 +28,12 @@ SKIP_AUTH_PATHS = [
     "/internal/settings",
     "/internal/messages",
     "/internal/qr-status",
+    "/internal/pairing-code",
     "/setup/state",
     "/setup/group",
     "/setup/reset-qr",
     "/setup/qr-stream",
+    "/setup/request-pairing",
     "/auth/accept-invite",
     "/internal/shopping-list",
 ]

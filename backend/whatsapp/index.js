@@ -3,6 +3,7 @@ const {
   DisconnectReason,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
+  Browsers,
 } = require("baileys");
 const { Boom } = require("@hapi/boom");
 const { createClient } = require("@supabase/supabase-js");
@@ -349,7 +350,7 @@ async function startSock() {
     ...(version ? { version } : {}),
     auth: state,
     logger: pino({ level: "warn" }),
-    browser: ["Homly", "Chrome", "1.0.0"],
+    browser: Browsers.ubuntu("Chrome"),
     // Without getMessage, Baileys retries undecryptable messages indefinitely,
     // flooding WhatsApp with retry requests and causing DB write conflicts.
     getMessage: async () => undefined,

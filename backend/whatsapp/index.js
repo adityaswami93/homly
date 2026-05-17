@@ -427,10 +427,6 @@ async function startSock() {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
-      // Skip echoes of our own sent messages — we never act on them and they
-      // reliably fail to decrypt right after a fresh QR link (no sender keys yet).
-      if (msg.key.fromMe) continue;
-
       const remoteJid = msg.key.remoteJid;
 
       // Debug logging — helps diagnose command routing
@@ -438,7 +434,7 @@ async function startSock() {
       const dbgExt     = msg.message?.extendedTextMessage?.text;
       const dbgEphConv = msg.message?.ephemeralMessage?.message?.conversation;
       const dbgEphExt  = msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text;
-      console.log(`[msg] jid=${remoteJid} groupMapHas=${groupMap.has(remoteJid)} conv=${dbgConv} ext=${dbgExt} ephConv=${dbgEphConv} ephExt=${dbgEphExt}`);
+      console.log(`[msg] jid=${remoteJid} fromMe=${msg.key.fromMe} groupMapHas=${groupMap.has(remoteJid)} conv=${dbgConv} ext=${dbgExt} ephConv=${dbgEphConv} ephExt=${dbgEphExt}`);
 
       // Extract text from all possible wrappers
       const text = (

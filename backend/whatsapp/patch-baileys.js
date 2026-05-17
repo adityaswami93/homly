@@ -1,15 +1,17 @@
 "use strict";
 /**
- * Patches Baileys 7.x RC to fix three bugs that cause 100% QR/pairing failure:
+ * Patches Baileys 7.x RC to fix three bugs that cause 100% QR/pairing failure.
+ * Runs as postinstall hook.
  *
- * 1. passive: true  → passive: false  (validate-connection.js)
- *    WA treats passive=true as a listener connection and kills it with device_removed.
+ * Bug 1: passive:true  →  passive:false  (validate-connection.js)
+ *   WA treats passive=true as a read-only listener and kills it with
+ *   device_removed before auth completes. creds.update never fires → no session.
  *
- * 2. lidDbMigrated: false removed  (validate-connection.js)
- *    Undocumented field not in WA's protocol; causes server rejection.
+ * Bug 2: lidDbMigrated:false  →  removed  (validate-connection.js)
+ *   Undocumented field not in WA's protocol; triggers server rejection.
  *
- * 3. await noise.finishInit()  → noise.finishInit()  (socket.js)
- *    Race condition: keep-alive fires before handshake state is committed.
+ * Bug 3: await noise.finishInit()  →  noise.finishInit()  (socket.js)
+ *   Race condition: keep-alive fires before handshake state commits.
  *
  * Source: https://github.com/openclaw/openclaw/issues/19907
  */
@@ -17,35 +19,64 @@
 const fs = require("fs");
 const path = require("path");
 
-function patch(filePath, description, fn) {
+let patched = 0;
+let skipped = 0;
+
+function tryPatch(filePath, description, replacements) {
   if (!fs.existsSync(filePath)) {
-    console.warn(`[patch-baileys] SKIP — file not found: ${filePath}`);
+    console.log(`[patch-baileys] NOT FOUND: ${filePath}`);
+    skipped++;
     return;
   }
-  const original = fs.readFileSync(filePath, "utf8");
-  const patched = fn(original);
-  if (patched === original) {
-    console.log(`[patch-baileys] already applied or not matched: ${description}`);
-    return;
+  let src = fs.readFileSync(filePath, "utf8");
+  let out = src;
+  for (const [pattern, replacement, label] of replacements) {
+    const before = out;
+    out = out.replace(pattern, replacement);
+    if (out === before) {
+      console.log(`[patch-baileys] NO MATCH for "${label}" in ${path.basename(filePath)}`);
+    } else {
+      console.log(`[patch-baileys] PATCHED "${label}" in ${path.basename(filePath)}`);
+      patched++;
+    }
   }
-  fs.writeFileSync(filePath, patched, "utf8");
-  console.log(`[patch-baileys] OK — ${description}`);
+  if (out !== src) {
+    fs.writeFileSync(filePath, out, "utf8");
+  }
 }
 
-const base = path.join(__dirname, "node_modules", "baileys", "lib");
+// Try both possible install locations (baileys and @whiskeysockets/baileys)
+const candidates = [
+  path.join(__dirname, "node_modules", "baileys", "lib"),
+  path.join(__dirname, "node_modules", "@whiskeysockets", "baileys", "lib"),
+];
 
-// Patch 1 + 2: validate-connection.js
-patch(
-  path.join(base, "Utils", "validate-connection.js"),
-  "passive:false + remove lidDbMigrated",
-  (src) => src
-    .replace(/\bpassive:\s*true\b/g, "passive: false")
-    .replace(/\s*lidDbMigrated:\s*false,?/g, "")
-);
+for (const base of candidates) {
+  if (!fs.existsSync(base)) {
+    console.log(`[patch-baileys] base not found: ${base}`);
+    continue;
+  }
+  console.log(`[patch-baileys] patching: ${base}`);
 
-// Patch 3: socket.js
-patch(
-  path.join(base, "Socket", "socket.js"),
-  "remove await noise.finishInit()",
-  (src) => src.replace(/\bawait\s+(noise\.finishInit\(\))/g, "$1")
-);
+  tryPatch(
+    path.join(base, "Utils", "validate-connection.js"),
+    "validate-connection.js",
+    [
+      // Bug 1: passive:true → passive:false  (handles any whitespace around colon)
+      [/passive\s*:\s*true/g, "passive: false", "passive:true→false"],
+      // Bug 2: lidDbMigrated field — handle with/without trailing comma
+      [/,?\s*lidDbMigrated\s*:\s*false\s*,?/g, "", "remove lidDbMigrated"],
+    ]
+  );
+
+  tryPatch(
+    path.join(base, "Socket", "socket.js"),
+    "socket.js",
+    [
+      // Bug 3: remove await before noise.finishInit()
+      [/\bawait\s+(noise\.finishInit\(\))/g, "$1", "await noise.finishInit"],
+    ]
+  );
+}
+
+console.log(`[patch-baileys] done — ${patched} replacement(s) applied, ${skipped} file(s) not found`);

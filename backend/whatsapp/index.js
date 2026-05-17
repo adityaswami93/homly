@@ -3,7 +3,7 @@ import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const WA = require("baileys");
 const makeWASocket = WA.default ?? WA;
-const { DisconnectReason, downloadMediaMessage, Browsers } = WA;
+const { DisconnectReason, downloadMediaMessage, Browsers, fetchLatestBaileysVersion } = WA;
 import { Boom } from "@hapi/boom";
 import { createClient } from "@supabase/supabase-js";
 import ws from "ws";
@@ -490,11 +490,14 @@ async function startSock() {
     process.exit(0);
   });
 
+  const { version } = await fetchLatestBaileysVersion();
+  console.log(`[bot] WA version: ${version.join(".")}`);
+
   const sock = makeWASocket({
-    printQRInTerminal: true,
+    version,
     auth: state,
     logger: pino({ level: "warn" }),
-    browser: Browsers.macOS("Safari"),
+    browser: Browsers.ubuntu("Chrome"),
     getMessage: async () => undefined,
   });
   currentSock = sock;

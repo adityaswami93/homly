@@ -1,6 +1,6 @@
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { initAuthCreds, BufferJSON } = require("@whiskeysockets/baileys");
+const { initAuthCreds, BufferJSON } = require("baileys");
 
 const WRITE_DEBOUNCE_MS = 5_000; // collapse burst writes to ≤ 1 per 5 s
 

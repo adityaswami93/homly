@@ -366,7 +366,7 @@ async function startSock() {
       console.log("WhatsApp connected!");
 
       const groups = await sock.groupFetchAllParticipating();
-      const groupList = Object.values(groups).map(g => ({ jid: g.id, name: g.subject }));
+      const groupList = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
       await pushConnected(groupList);
 
       // Build group → household map from DB settings

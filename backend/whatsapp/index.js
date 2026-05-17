@@ -48,6 +48,8 @@ let currentSock = null;
 let deleteCurrentSession = null;
 // phone number to pair with on next startSock (set by QR-status poller)
 let pendingPairingPhone = null;
+// consecutive connection failures (resets on successful open)
+let connectionFailures = 0;
 
 // ── Settings ────────────────────────────────────────────────
 async function fetchAllSettings() {
@@ -487,7 +489,7 @@ async function startSock() {
   });
 
   const sock = makeWASocket({
-    printQRInTerminal: false,
+    printQRInTerminal: true,
     auth: state,
     logger: pino({ level: "warn" }),
     browser: Browsers.macOS("Safari"),
@@ -518,6 +520,7 @@ async function startSock() {
     }
 
     if (connection === "open") {
+      connectionFailures = 0;
       console.log("WhatsApp connected!");
       const groups = await sock.groupFetchAllParticipating();
       const groupList = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
@@ -564,6 +567,14 @@ async function startSock() {
         await deleteSession();
         process.exit(1);
       } else {
+        connectionFailures++;
+        console.log(`Connection failure #${connectionFailures}`);
+        // After 3 consecutive failures, wipe the session — Baileys will generate a fresh QR
+        if (connectionFailures >= 3) {
+          console.log("[bot] 3 failed reconnects — clearing stale session for fresh QR...");
+          try { await deleteSession(); } catch {}
+          connectionFailures = 0;
+        }
         setTimeout(startSockWithRetry, 3000);
       }
     }
@@ -628,14 +639,23 @@ setInterval(async () => {
       } else {
         console.log("QR regeneration requested — wiping session and restarting...");
       }
+      // Always wipe session — use deleteCurrentSession if available, else delete directly
       if (deleteCurrentSession) {
         await deleteCurrentSession();
         deleteCurrentSession = null;
+      } else {
+        try {
+          await supabase.from("whatsapp_sessions").delete().eq("tenant_id", BOT_TENANT_ID);
+          console.log("[qr-reset] Session cleared from DB directly");
+        } catch (e) {
+          console.error("[qr-reset] Direct session delete failed:", e.message);
+        }
       }
+      connectionFailures = 0;
       if (currentSock) {
         currentSock.end(new Error(pairing_phone ? "Pairing code requested" : "QR reset requested"));
       } else {
-        startSock().catch(console.error);
+        startSockWithRetry();
       }
     }
   } catch { /* silently ignore — backend may not be up yet */ }

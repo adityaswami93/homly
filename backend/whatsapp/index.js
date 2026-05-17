@@ -1,9 +1,12 @@
 import "dotenv/config";
-import makeWASocket, {
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const {
+  default: makeWASocket,
   DisconnectReason,
   downloadMediaMessage,
   Browsers,
-} from "baileys";
+} = require("@whiskeysockets/baileys");
 import { Boom } from "@hapi/boom";
 import { createClient } from "@supabase/supabase-js";
 import ws from "ws";

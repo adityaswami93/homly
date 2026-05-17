@@ -350,6 +350,9 @@ async function startSock() {
     auth: state,
     logger: pino({ level: "warn" }),
     browser: ["Homly", "Chrome", "1.0.0"],
+    // Without getMessage, Baileys retries undecryptable messages indefinitely,
+    // flooding WhatsApp with retry requests and causing DB write conflicts.
+    getMessage: async () => undefined,
   });
   currentSock = sock;
 

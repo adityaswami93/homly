@@ -571,12 +571,17 @@ async function startSock() {
         console.log("Logged out — removing session from DB and restarting");
         await deleteSession();
         process.exit(1);
+      } else if (reason === 515 || reason === DisconnectReason.restartRequired) {
+        // Normal WA lifecycle — server asked us to restart, not a real failure
+        console.log("Restart required by WA — reconnecting...");
+        setTimeout(startSockWithRetry, 1000);
       } else {
+        // 408 = QR timeout (no scan within ~2 min) — normal, just restart
+        // Other codes — restart but only wipe session after many consecutive failures
         connectionFailures++;
-        console.log(`Connection failure #${connectionFailures}`);
-        // After 3 consecutive failures, wipe the session — Baileys will generate a fresh QR
-        if (connectionFailures >= 3) {
-          console.log("[bot] 3 failed reconnects — clearing stale session for fresh QR...");
+        console.log(`Connection failure #${connectionFailures} (reason: ${reason})`);
+        if (connectionFailures >= 10) {
+          console.log("[bot] 10 consecutive non-lifecycle failures — clearing session for fresh QR...");
           try { await deleteSession(); } catch {}
           connectionFailures = 0;
         }

@@ -6,6 +6,7 @@ const makeWASocket = WA.default ?? WA;
 const { DisconnectReason, downloadMediaMessage, Browsers } = WA;
 import { Boom } from "@hapi/boom";
 import { createClient } from "@supabase/supabase-js";
+import ws from "ws";
 import axios from "axios";
 import FormData from "form-data";
 import cron from "node-cron";
@@ -31,7 +32,9 @@ if (!SUPABASE_URL) {
 console.log(`[bot] Loaded — makeWASocket type: ${typeof makeWASocket}`);
 
 // Supabase client (service-role) — used for auth state persistence only
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+  realtime: { transport: ws },
+});
 
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"

@@ -1,15 +1,11 @@
 import "dotenv/config";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const {
-  default: makeWASocket,
-  DisconnectReason,
-  downloadMediaMessage,
-  Browsers,
-} = require("baileys");
+const WA = require("baileys");
+const makeWASocket = WA.default ?? WA;
+const { DisconnectReason, downloadMediaMessage, Browsers } = WA;
 import { Boom } from "@hapi/boom";
 import { createClient } from "@supabase/supabase-js";
-import ws from "ws";
 import axios from "axios";
 import FormData from "form-data";
 import cron from "node-cron";
@@ -24,18 +20,18 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const BOT_TENANT_ID = process.env.BOT_TENANT_ID || "default";
 
 if (!SERVICE_KEY) {
-  console.error("Missing required env var: SUPABASE_KEY");
+  console.error("[bot] FATAL: SUPABASE_KEY not set");
   process.exit(1);
 }
 if (!SUPABASE_URL) {
-  console.error("Missing required env var: SUPABASE_URL");
+  console.error("[bot] FATAL: SUPABASE_URL not set");
   process.exit(1);
 }
 
+console.log(`[bot] Loaded — makeWASocket type: ${typeof makeWASocket}`);
+
 // Supabase client (service-role) — used for auth state persistence only
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
-  realtime: { transport: ws },
-});
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"

@@ -1,6 +1,7 @@
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { initAuthCreds, BufferJSON } = require("baileys");
+if (!initAuthCreds || !BufferJSON) throw new Error("[db-auth-state] baileys exports missing: initAuthCreds/BufferJSON");
 
 const WRITE_DEBOUNCE_MS = 5_000; // collapse burst writes to ≤ 1 per 5 s
 

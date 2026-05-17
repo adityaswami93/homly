@@ -2,7 +2,6 @@ const {
   default: makeWASocket,
   DisconnectReason,
   downloadMediaMessage,
-  fetchLatestBaileysVersion,
   Browsers,
 } = require("baileys");
 const { Boom } = require("@hapi/boom");
@@ -337,20 +336,11 @@ async function startSock() {
     process.exit(0);
   });
 
-  let version;
-  try {
-    ({ version } = await fetchLatestBaileysVersion());
-    console.log(`[bot] Using WhatsApp version: ${version.join(".")}`);
-  } catch (e) {
-    console.warn("[bot] Could not fetch latest WA version — using Baileys default:", e.message);
-  }
-
   const sock = makeWASocket({
     printQRInTerminal: false,
-    ...(version ? { version } : {}),
     auth: state,
     logger: pino({ level: "warn" }),
-    browser: Browsers.ubuntu("Chrome"),
+    browser: Browsers.macOS("Safari"),
     // Without getMessage, Baileys retries undecryptable messages indefinitely,
     // flooding WhatsApp with retry requests and causing DB write conflicts.
     getMessage: async () => undefined,

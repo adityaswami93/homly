@@ -6,7 +6,7 @@ const {
   DisconnectReason,
   downloadMediaMessage,
   Browsers,
-} = require("@whiskeysockets/baileys");
+} = require("baileys");
 import { Boom } from "@hapi/boom";
 import { createClient } from "@supabase/supabase-js";
 import ws from "ws";

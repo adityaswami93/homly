@@ -40,14 +40,14 @@ export default function SetupPage() {
 
   const fetchState = async () => {
     try {
-      const [stateRes, settingsRes] = await Promise.all([
-        api.get("/setup/state"),
-        api.get("/settings"),
-      ]);
+      const stateRes = await api.get("/setup/state");
       setState(stateRes.data);
+    } catch { /* ignore */ }
+    try {
+      const settingsRes = await api.get("/settings");
       setSettings(settingsRes.data);
     } catch { /* ignore */ }
-    finally { setLoading(false); }
+    setLoading(false);
   };
 
   useEffect(() => {

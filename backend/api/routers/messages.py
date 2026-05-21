@@ -1,8 +1,7 @@
 import os
-import asyncio
+from datetime import date, timedelta
 from fastapi import APIRouter, Request, HTTPException
 from supabase import create_client
-from datetime import date, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,13 +9,14 @@ load_dotenv()
 router = APIRouter()
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-# Shared message queue — whatsapp bot polls this
-message_queue: list[dict] = []
+CATEGORY_EMOJI = {
+    "groceries": "🛒", "household": "🏠", "personal care": "🧴",
+    "food & beverage": "🍜", "transport": "🚌", "other": "📦",
+}
 
 
 @router.post("/messages/send")
 async def send_message(request: Request, body: dict):
-    user_id      = request.state.user["sub"]
     household_id = request.state.user.get("household_id")
     if not household_id:
         raise HTTPException(status_code=403, detail="No household found")
@@ -40,25 +40,13 @@ async def send_message(request: Request, body: dict):
         group_jid = s.data[0]["group_jid"] if s.data else None
     except Exception:
         pass
-    message_queue.append({"text": text, "group_jid": group_jid, "household_id": household_id})
-    return {"status": "queued", "text": text}
 
+    if not group_jid:
+        raise HTTPException(status_code=400, detail="No WhatsApp group configured for this household")
 
-@router.get("/internal/messages")
-async def pop_messages(request: Request):
-    """Called by WhatsApp bot to get pending messages"""
-    key = request.headers.get("X-Internal-Key")
-    if key != os.getenv("INTERNAL_KEY", "homly-internal"):
-        raise HTTPException(status_code=403, detail="Forbidden")
-    msgs = message_queue.copy()
-    message_queue.clear()
-    return {"messages": msgs}
-
-
-CATEGORY_EMOJI = {
-    "groceries": "🛒", "household": "🏠", "personal care": "🧴",
-    "food & beverage": "🍜", "transport": "🚌", "other": "📦",
-}
+    from services.whatsapp_client import send_text
+    sent = await send_text(group_jid, text)
+    return {"status": "sent" if sent else "failed", "text": text}
 
 
 async def build_week_total(household_id: str, year: int = None, week_number: int = None) -> str:
@@ -68,24 +56,22 @@ async def build_week_total(household_id: str, year: int = None, week_number: int
         week_number = iso.week
         year = iso.year
 
-    receipts_res = supabase.table("receipts")\
-        .select("*")\
-        .eq("household_id", household_id)\
-        .eq("year", year)\
-        .eq("week_number", week_number)\
-        .eq("deleted", False)\
-        .order("date", desc=False)\
+    receipts_res = (
+        supabase.table("receipts")
+        .select("*")
+        .eq("household_id", household_id)
+        .eq("year", year)
+        .eq("week_number", week_number)
+        .eq("deleted", False)
+        .order("date", desc=False)
         .execute()
-
+    )
     receipts = receipts_res.data
     if not receipts:
         return f"No receipts recorded for week {week_number}, {year}."
 
     receipt_ids = [r["id"] for r in receipts]
-    items_res = supabase.table("items")\
-        .select("category, line_total")\
-        .in_("receipt_id", receipt_ids)\
-        .execute()
+    items_res = supabase.table("items").select("category, line_total").in_("receipt_id", receipt_ids).execute()
 
     category_totals: dict[str, float] = {}
     for item in items_res.data:
@@ -108,12 +94,14 @@ async def build_week_total(household_id: str, year: int = None, week_number: int
         f"{CATEGORY_EMOJI.get(cat, '•')} {cat.capitalize()}: SGD {amt:.2f}"
         for cat, amt in sorted(category_totals.items(), key=lambda x: -x[1])
     )
-
-    flag_note = f"\n⚠️ {flagged} receipt{'s' if flagged > 1 else ''} need{'s' if flagged == 1 else ''} manual check" if flagged else ""
+    flag_note = (
+        f"\n⚠️ {flagged} receipt{'s' if flagged > 1 else ''} need{'s' if flagged == 1 else ''} manual check"
+        if flagged else ""
+    )
 
     return "\n".join([
         f"📋 *Week {week_number} Summary*",
-        f"━━━━━━━━━━━━━━━━━━━━",
+        "━━━━━━━━━━━━━━━━━━━━",
         "",
         "*Receipts:*",
         "\n".join(receipt_lines),
@@ -130,24 +118,22 @@ async def build_last7days_total(household_id: str) -> str:
     today = date.today()
     date_from = today - timedelta(days=6)
 
-    receipts_res = supabase.table("receipts")\
-        .select("*")\
-        .eq("household_id", household_id)\
-        .eq("deleted", False)\
-        .gte("date", date_from.isoformat())\
-        .lte("date", today.isoformat())\
-        .order("date", desc=False)\
+    receipts_res = (
+        supabase.table("receipts")
+        .select("*")
+        .eq("household_id", household_id)
+        .eq("deleted", False)
+        .gte("date", date_from.isoformat())
+        .lte("date", today.isoformat())
+        .order("date", desc=False)
         .execute()
-
+    )
     receipts = receipts_res.data
     if not receipts:
         return f"No receipts recorded from {date_from} to {today}."
 
     receipt_ids = [r["id"] for r in receipts]
-    items_res = supabase.table("items")\
-        .select("category, line_total")\
-        .in_("receipt_id", receipt_ids)\
-        .execute()
+    items_res = supabase.table("items").select("category, line_total").in_("receipt_id", receipt_ids).execute()
 
     category_totals: dict[str, float] = {}
     for item in items_res.data:
@@ -170,13 +156,15 @@ async def build_last7days_total(household_id: str) -> str:
         f"{CATEGORY_EMOJI.get(cat, '•')} {cat.capitalize()}: SGD {amt:.2f}"
         for cat, amt in sorted(category_totals.items(), key=lambda x: -x[1])
     )
-
-    flag_note = f"\n⚠️ {flagged} receipt{'s' if flagged > 1 else ''} need{'s' if flagged == 1 else ''} manual check" if flagged else ""
+    flag_note = (
+        f"\n⚠️ {flagged} receipt{'s' if flagged > 1 else ''} need{'s' if flagged == 1 else ''} manual check"
+        if flagged else ""
+    )
 
     return "\n".join([
-        f"📋 *Expense Summary*",
+        "📋 *Expense Summary*",
         f"{date_from} – {today}",
-        f"━━━━━━━━━━━━━━━━━━━━",
+        "━━━━━━━━━━━━━━━━━━━━",
         "",
         "*Receipts:*",
         "\n".join(receipt_lines),

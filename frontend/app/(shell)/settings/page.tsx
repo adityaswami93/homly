@@ -252,34 +252,19 @@ export default function SettingsPage() {
           {activeTab === "whatsapp" && (
             <div className="space-y-4">
               <div className="bg-stone-900 border border-stone-800 rounded-xl p-5">
-                <h2 className="text-sm font-semibold text-stone-300 mb-1">WhatsApp Group</h2>
-                <p className="text-xs text-stone-500 mb-3">
-                  Display name of the connected WhatsApp group
+                <h2 className="text-sm font-semibold text-stone-300 mb-1">WhatsApp Connection</h2>
+                <p className="text-xs text-stone-500 mb-4">
+                  {form.group_name
+                    ? `Connected to group: ${form.group_name}`
+                    : "No WhatsApp group connected yet."}
                 </p>
-                <input
-                  type="text"
-                  value={form.group_name || ""}
-                  onChange={(e) => update("group_name", e.target.value || null)}
-                  placeholder="e.g. Household Expenses"
-                  className="w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-600 min-h-[44px] text-base mb-3"
-                />
                 <Link
                   href="/setup"
                   className="block w-full text-center py-2.5 rounded-xl border border-stone-700 text-stone-300 text-sm font-medium hover:bg-stone-800 transition-colors min-h-[44px] flex items-center justify-center"
                 >
-                  Manage WhatsApp connection →
+                  {form.group_name ? "Change WhatsApp group →" : "Connect WhatsApp →"}
                 </Link>
               </div>
-
-              {isAdmin && (
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition text-sm min-h-[48px]"
-                >
-                  {saving ? "Saving…" : "Save settings"}
-                </button>
-              )}
             </div>
           )}
         </>

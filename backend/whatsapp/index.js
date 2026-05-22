@@ -15,6 +15,7 @@ import FormData from "form-data";
 import pino from "pino";
 import QRCode from "qrcode";
 import { createClient } from "@supabase/supabase-js";
+import ws from "ws";
 import { useSupabaseAuthState } from "./db-auth-state.js";
 
 const FASTAPI_URL   = process.env.FASTAPI_URL   || "http://localhost:8000";
@@ -32,7 +33,7 @@ if (!SUPABASE_URL) {
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { realtime: { transport: ws } });
 
 const iHeaders = { "X-Internal-Key": INTERNAL_KEY };
 const IMAGE_MIME_TYPES = new Set([

@@ -79,10 +79,14 @@ async def whatsapp_webhook(request: Request):
     if body.get("typeWebhook") != "incomingMessageReceived":
         return {"status": "ignored"}
 
-    # Verify this webhook is from our Green API instance
-    instance_id = str(body.get("instanceData", {}).get("idInstance", ""))
-    if instance_id != os.getenv("GREEN_API_INSTANCE_ID", ""):
-        return {"status": "ignored"}
+    # Auth: internal bot key (Baileys) OR Green API instance ID
+    internal_key = request.headers.get("X-Internal-Key")
+    is_internal = internal_key and internal_key == os.getenv("INTERNAL_KEY", "homly-internal")
+
+    if not is_internal:
+        instance_id = str(body.get("instanceData", {}).get("idInstance", ""))
+        if instance_id != os.getenv("GREEN_API_INSTANCE_ID", ""):
+            return {"status": "ignored"}
 
     sender_data = body.get("senderData", {})
     chat_id = sender_data.get("chatId", "")

@@ -78,13 +78,16 @@ async def process_receipt(
     sender_name: Optional[str] = Form(default=None),
     sender_phone: Optional[str] = Form(default=None),
     household_id: Optional[str] = Form(default=None),
+    group_jid: Optional[str] = Form(default=None),
 ):
     resolved_household = request.state.user.get("household_id")
+    if not resolved_household and request.state.user.get("is_service_key"):
+        resolved_household = household_id
+        if not resolved_household and group_jid:
+            s = _db().table("settings").select("household_id").eq("group_jid", group_jid).execute()
+            resolved_household = s.data[0]["household_id"] if s.data else None
     if not resolved_household:
-        if request.state.user.get("is_service_key"):
-            resolved_household = household_id
-        if not resolved_household:
-            raise HTTPException(status_code=403, detail="No household found")
+        raise HTTPException(status_code=403, detail="No household found")
     household_id = resolved_household
 
     from api.routers.settings import get_or_create_settings

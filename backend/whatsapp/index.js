@@ -42,6 +42,7 @@ const IMAGE_MIME_TYPES = new Set([
 
 let currentSock = null;
 let connectionFailures = 0;
+let decryptFailures = 0;
 
 // ── QR / connected ──────────────────────────────────────────
 async function pushQR(qrData) {
@@ -122,7 +123,9 @@ async function processReceiptImage(msg, sock) {
   const imgMsg   =
     msg.message?.imageMessage ||
     msg.message?.viewOnceMessage?.message?.imageMessage ||
-    msg.message?.viewOnceMessageV2?.message?.imageMessage;
+    msg.message?.viewOnceMessageV2?.message?.imageMessage ||
+    msg.message?.ephemeralMessage?.message?.imageMessage ||
+    msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
 
   if (!imgMsg) return;
 
@@ -177,10 +180,27 @@ async function startSock() {
   const { version } = await fetchLatestBaileysVersion();
   console.log(`[bot] WA version: ${version.join(".")} | tenant: ${BOT_TENANT_ID}`);
 
+  decryptFailures = 0;
+
+  const botLogger = pino({ level: "warn" });
+  const origError = botLogger.error.bind(botLogger);
+  botLogger.error = (...args) => {
+    const msg = typeof args[0] === "string" ? args[0] : JSON.stringify(args[0]);
+    if (msg.includes("decrypt") || msg.includes("init queries")) {
+      decryptFailures++;
+      if (decryptFailures >= 5) {
+        console.warn("[bot] Too many decrypt/init failures — restarting connection");
+        decryptFailures = 0;
+        setTimeout(() => { if (currentSock) currentSock.end(new Error("decrypt-failure-restart")); }, 500);
+      }
+    }
+    origError(...args);
+  };
+
   const sock = makeWASocket({
     version,
     auth: state,
-    logger: pino({ level: "warn" }),
+    logger: botLogger,
     browser: Browsers.ubuntu("Chrome"),
     getMessage: async () => undefined,
   });
@@ -234,9 +254,12 @@ async function startSock() {
       const hasImage =
         msg.message?.imageMessage ||
         msg.message?.viewOnceMessage?.message?.imageMessage ||
-        msg.message?.viewOnceMessageV2?.message?.imageMessage;
+        msg.message?.viewOnceMessageV2?.message?.imageMessage ||
+        msg.message?.ephemeralMessage?.message?.imageMessage ||
+        msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
 
       if (hasImage) {
+        console.log(`[bot] Image received in ${remoteJid} — processing as receipt`);
         await processReceiptImage(msg, sock);
       } else {
         await forwardText(msg);

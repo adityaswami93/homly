@@ -1,65 +1,57 @@
 import os
-import asyncio
-import json
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import logging
+from fastapi import APIRouter, Request, HTTPException
+from supabase import create_client
+from services.whatsapp_client import get_state, get_qr, get_groups, is_configured
 
-from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse, JSONResponse
-from dotenv import load_dotenv
-
-load_dotenv()
-
+logger = logging.getLogger(__name__)
 router = APIRouter()
+_supabase = None
 
-# Shared state between whatsapp process and API
-whatsapp_state = {
-    "qr": None,
-    "connected": False,
-    "group_name": None,
-    "groups": [],
-    "qr_requested": False,
-}
+
+def _db():
+    global _supabase
+    if _supabase is None:
+        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    return _supabase
 
 
 @router.get("/setup/state")
-def get_state():
-    return whatsapp_state
+async def setup_state(request: Request):
+    household_id = request.state.user.get("household_id")
+
+    state = await get_state()
+    is_connected = state.get("stateInstance") == "authorized"
+
+    groups = []
+    if is_connected:
+        groups = await get_groups()
+
+    # Current group selection for this household
+    current_group_jid = None
+    current_group_name = None
+    if household_id:
+        res = _db().table("settings").select("group_jid, group_name").eq("household_id", household_id).execute()
+        if res.data:
+            current_group_jid = res.data[0].get("group_jid")
+            current_group_name = res.data[0].get("group_name")
+
+    return {
+        "connected": is_connected,
+        "state": state.get("stateInstance"),
+        "groups": groups,
+        "configured": is_configured(),
+        "group_jid": current_group_jid,
+        "group_name": current_group_name,
+    }
 
 
-@router.post("/setup/reset-qr")
-async def reset_qr():
-    """Clears stored QR and signals the bot to restart its connection and generate a fresh QR"""
-    whatsapp_state["qr"] = None
-    whatsapp_state["qr_requested"] = True
-    return {"status": "ok"}
-
-
-@router.post("/setup/group")
-async def set_group(body: dict):
-    whatsapp_state["group_name"] = body.get("group_name")
-    # Write to a file so whatsapp process can pick it up
-    with open("/tmp/homly_group.txt", "w") as f:
-        f.write(body.get("group_name", ""))
-    return {"status": "ok", "group_name": whatsapp_state["group_name"]}
-
-
-@router.get("/setup/qr-stream")
-async def qr_stream(request: Request):
-    """Server-sent events stream for QR code updates"""
-    async def event_generator():
-        last_qr = None
-        while True:
-            if await request.is_disconnected():
-                break
-            qr = whatsapp_state.get("qr")
-            connected = whatsapp_state.get("connected")
-            if connected:
-                yield f"data: {json.dumps({'type': 'connected'})}\n\n"
-                break
-            if qr and qr != last_qr:
-                last_qr = qr
-                yield f"data: {json.dumps({'type': 'qr', 'qr': qr})}\n\n"
-            await asyncio.sleep(2)
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+@router.get("/setup/qr")
+async def setup_qr():
+    data = await get_qr()
+    qr_b64 = data.get("message") if data.get("type") == "qrCode" else None
+    return {
+        "type": data.get("type"),
+        "qr": f"data:image/png;base64,{qr_b64}" if qr_b64 else None,
+        "error": data.get("message") if data.get("type") not in ("qrCode", "alreadyLogged") else None,
+    }

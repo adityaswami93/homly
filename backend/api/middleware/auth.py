@@ -23,17 +23,8 @@ SKIP_AUTH_PATHS = [
     "/docs",
     "/openapi.json",
     "/redoc",
-    "/internal/qr",
-    "/internal/connected",
-    "/internal/settings",
-    "/internal/messages",
-    "/internal/qr-status",
-    "/setup/state",
-    "/setup/group",
-    "/setup/reset-qr",
-    "/setup/qr-stream",
     "/auth/accept-invite",
-    "/internal/shopping-list",
+    "/webhook/whatsapp",
     "/waitlist",
 ]
 

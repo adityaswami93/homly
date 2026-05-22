@@ -52,11 +52,3 @@ def update_settings(request: Request, body: dict):
     return get_or_create_settings(household_id)
 
 
-@router.get("/internal/settings")
-async def get_settings_internal(request: Request):
-    """Called by WhatsApp bot to get settings for all households"""
-    key = request.headers.get("X-Internal-Key")
-    if key != os.getenv("INTERNAL_KEY", "homly-internal"):
-        raise HTTPException(status_code=403, detail="Forbidden")
-    res = supabase.table("settings").select("*").execute()
-    return res.data

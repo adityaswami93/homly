@@ -1,7 +1,7 @@
 import os
 import uuid
 import json
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
 
 import logging
@@ -420,36 +420,3 @@ Rules:
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
 
-@router.get("/internal/insurance/renewals")
-async def get_upcoming_renewals(request: Request):
-    """
-    Internal endpoint: returns policies renewing in exactly 30 or 7 days from today (SGT).
-    Called by the WhatsApp bot scheduler.
-    """
-    import pytz
-
-    key = request.headers.get("X-Internal-Key")
-    if key != os.getenv("INTERNAL_KEY", "homly-internal"):
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-    today_sgt = date.today()
-
-    target_dates = [
-        (today_sgt + timedelta(days=30)).isoformat(),
-        (today_sgt + timedelta(days=7)).isoformat(),
-    ]
-
-    results = []
-    for target_date in target_dates:
-        res = (
-            supabase.table("insurance_policies")
-            .select("*, settings!inner(group_jid, household_id)")
-            .eq("renewal_date", target_date)
-            .eq("is_active", True)
-            .execute()
-        )
-        for row in res.data:
-            days_left = 30 if target_date == target_dates[0] else 7
-            results.append({**row, "days_until_renewal": days_left})
-
-    return results

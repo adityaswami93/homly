@@ -45,8 +45,18 @@ async def send_message(request: Request, body: dict):
         raise HTTPException(status_code=400, detail="No WhatsApp group configured for this household")
 
     from services.whatsapp_client import send_text
-    sent = await send_text(group_jid, text)
-    return {"status": "sent" if sent else "failed", "text": text}
+    await send_text(group_jid, text)
+    return {"status": "queued", "text": text}
+
+
+@router.get("/internal/messages")
+def pop_messages(request: Request):
+    """Bot polls this to get pending outgoing messages."""
+    key = request.headers.get("X-Internal-Key")
+    if key != os.getenv("INTERNAL_KEY", "homly-internal"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from services.whatsapp_client import pop_outgoing
+    return {"messages": pop_outgoing()}
 
 
 async def build_week_total(household_id: str, year: int = None, week_number: int = None) -> str:

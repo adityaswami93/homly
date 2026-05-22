@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 from api.middleware.auth import AuthMiddleware
 from api.dependencies.limiter import limiter
 from api.routers import (
-    expenses, setup, settings, messages, households,
+    expenses, setup, internal, settings, messages, households,
     reimbursements, analytics, insights, insurance, webhook,
 )
 from api.routers import admin as admin_router
@@ -62,6 +62,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 app.include_router(expenses.router)
 app.include_router(setup.router)
+app.include_router(internal.router)
 app.include_router(settings.router)
 app.include_router(messages.router)
 app.include_router(households.router)

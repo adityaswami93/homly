@@ -25,6 +25,12 @@ SKIP_AUTH_PATHS = [
     "/redoc",
     "/auth/accept-invite",
     "/webhook/whatsapp",
+    "/internal/qr",
+    "/internal/connected",
+    "/internal/qr-status",
+    "/internal/messages",
+    "/setup/reset-qr",
+    "/internal/shopping-list",
     "/waitlist",
 ]
 

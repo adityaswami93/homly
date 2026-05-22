@@ -9,28 +9,20 @@ import { ToastContainer } from "@/app/components/Toast";
 
 interface SetupState {
   connected: boolean;
-  state: string | null;
+  qr: string | null;
   groups: { id: string; name: string }[];
-  configured: boolean;
   group_jid: string | null;
   group_name: string | null;
 }
 
-interface QRState {
-  type: string | null;
-  qr: string | null;
-  error: string | null;
-}
-
 export default function SetupPage() {
   const [user, setUser] = useState<any>(null);
-  const [setup, setSetup] = useState<SetupState | null>(null);
-  const [qr, setQr] = useState<QRState | null>(null);
+  const [state, setState] = useState<SetupState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const router = useRouter();
   const { toasts, dismissToast, toast } = useToast();
 
@@ -44,45 +36,43 @@ export default function SetupPage() {
   const fetchState = async () => {
     try {
       const res = await api.get("/setup/state");
-      setSetup(res.data);
-      if (!res.data.connected) {
-        fetchQR();
-      }
+      setState(res.data);
     } catch { /* ignore */ }
     setLoading(false);
-  };
-
-  const fetchQR = async () => {
-    try {
-      const res = await api.get("/setup/qr");
-      setQr(res.data);
-    } catch { /* ignore */ }
   };
 
   useEffect(() => {
     if (!user) return;
     fetchState();
-    // Poll connection state every 4s
-    pollRef.current = setInterval(fetchState, 4000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      if (qrPollRef.current) clearInterval(qrPollRef.current);
-    };
+    pollRef.current = setInterval(fetchState, 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [user]);
 
   // Stop polling once connected
   useEffect(() => {
-    if (setup?.connected && pollRef.current) {
+    if (state?.connected && pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
-  }, [setup?.connected]);
+  }, [state?.connected]);
+
+  const handleResetQR = async () => {
+    setResetting(true);
+    try {
+      await api.post("/setup/reset-qr");
+      setState((prev) => prev ? { ...prev, qr: null } : prev);
+    } catch {
+      toast.error("Failed to request new QR code");
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const handleSelectGroup = async (group: { id: string; name: string }) => {
     setSaving(true);
     try {
       await api.patch("/settings", { group_jid: group.id, group_name: group.name });
-      setSetup((prev) => prev ? { ...prev, group_jid: group.id, group_name: group.name } : prev);
+      setState((prev) => prev ? { ...prev, group_jid: group.id, group_name: group.name } : prev);
       toast.success(`Connected to "${group.name}"`);
     } catch {
       toast.error("Failed to save group");
@@ -93,7 +83,7 @@ export default function SetupPage() {
 
   if (!user) return null;
 
-  const filteredGroups = (setup?.groups ?? []).filter((g) =>
+  const filteredGroups = (state?.groups ?? []).filter((g) =>
     g.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -104,97 +94,68 @@ export default function SetupPage() {
       ) : (
         <div className="space-y-4">
 
-          {/* Not configured */}
-          {!setup?.configured && (
-            <div className="bg-amber-900/20 border border-amber-800 rounded-xl p-5">
-              <h2 className="text-sm font-semibold text-amber-300 mb-2">Green API not configured</h2>
-              <p className="text-xs text-amber-400/80 leading-relaxed">
-                Set <code className="bg-amber-900/40 px-1 rounded">GREEN_API_INSTANCE_ID</code> and{" "}
-                <code className="bg-amber-900/40 px-1 rounded">GREEN_API_TOKEN</code> environment
-                variables on your backend service. Create a free account at{" "}
-                <span className="text-amber-300">green-api.com</span> to get these credentials.
-              </p>
-            </div>
-          )}
-
-          {/* Connection status */}
+          {/* Connection status + QR */}
           <div className="bg-stone-900 border border-stone-800 rounded-xl p-5">
             <div className="flex items-center gap-3 mb-4">
               <div
                 className={`w-3 h-3 rounded-full shrink-0 ${
-                  setup?.connected ? "bg-emerald-500" : "bg-stone-600"
+                  state?.connected ? "bg-emerald-500 animate-none" : "bg-stone-600"
                 }`}
               />
               <h2 className="text-sm font-semibold text-stone-100">
-                {setup?.connected ? "WhatsApp connected" : "WhatsApp disconnected"}
+                {state?.connected ? "WhatsApp connected" : "WhatsApp disconnected"}
               </h2>
-              {!setup?.connected && setup?.configured && (
-                <span className="text-xs text-stone-500 ml-auto">Checking…</span>
-              )}
             </div>
 
-            {setup?.connected && setup.group_name && (
+            {state?.connected && state.group_name && (
               <div className="flex items-center gap-2 text-sm text-stone-400 mb-4">
                 <span>📲</span>
                 <span>
-                  Connected to{" "}
-                  <strong className="text-stone-200">{setup.group_name}</strong>
+                  Connected to <strong className="text-stone-200">{state.group_name}</strong>
                 </span>
               </div>
             )}
 
-            {/* QR code while not connected */}
-            {!setup?.connected && setup?.configured && (
+            {!state?.connected && (
               <>
-                {qr?.qr ? (
+                {state?.qr ? (
                   <div className="text-center mb-4">
                     <p className="text-sm text-stone-400 mb-4">
                       Scan this QR code in WhatsApp → Linked Devices → Link a device
                     </p>
                     <div className="inline-block p-3 bg-white border-2 border-stone-300 rounded-xl">
-                      <img src={qr.qr} alt="WhatsApp QR code" className="w-56 h-56" />
+                      <img src={state.qr} alt="WhatsApp QR code" className="w-56 h-56" />
                     </div>
                     <p className="text-xs text-stone-500 mt-3">
-                      Refreshes automatically. Waiting for scan…
+                      Waiting for scan…
                     </p>
                   </div>
-                ) : qr?.type === "alreadyLogged" ? (
-                  <div className="text-center py-4 text-sm text-stone-400">
-                    Instance reports logged in — verifying connection…
-                  </div>
-                ) : qr?.error ? (
-                  <div className="text-center py-4 text-sm text-red-400">
-                    QR error: {qr.error}
-                  </div>
                 ) : (
-                  <div className="text-center py-6">
+                  <div className="text-center py-6 mb-4">
                     <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-sm text-stone-400">Loading QR code…</p>
+                    <p className="text-sm text-stone-400">
+                      {resetting ? "Generating new QR code…" : "Waiting for bot to start…"}
+                    </p>
                   </div>
                 )}
+
+                <button
+                  onClick={handleResetQR}
+                  disabled={resetting}
+                  className="w-full py-2.5 rounded-xl border border-stone-700 text-stone-400 text-sm hover:bg-stone-800 transition-colors disabled:opacity-50 min-h-[44px]"
+                >
+                  {resetting ? "Requesting…" : "Generate new QR code"}
+                </button>
               </>
             )}
           </div>
 
-          {/* Webhook URL info */}
-          {setup?.configured && (
-            <div className="bg-stone-900 border border-stone-800 rounded-xl p-5">
-              <h2 className="text-sm font-semibold text-stone-300 mb-1">Webhook URL</h2>
-              <p className="text-xs text-stone-500 mb-3">
-                In your Green API dashboard, set the webhook URL to:
-              </p>
-              <div className="bg-stone-800 border border-stone-700 rounded-lg px-3 py-2.5 font-mono text-xs text-stone-300 break-all">
-                {process.env.NEXT_PUBLIC_API_URL || "https://your-backend-url"}/webhook/whatsapp
-              </div>
-            </div>
-          )}
-
           {/* Group selection */}
-          {setup?.connected && setup.groups.length > 0 && (
+          {state?.connected && state.groups.length > 0 && (
             <div className="bg-stone-900 border border-stone-800 rounded-xl p-5">
               <h2 className="text-sm font-semibold text-stone-100 mb-1">Select WhatsApp Group</h2>
               <p className="text-xs text-stone-500 mb-3">
-                Choose the group where receipts will be sent.
+                Choose the group where receipts are sent.
               </p>
               <input
                 type="text"
@@ -205,7 +166,7 @@ export default function SetupPage() {
               />
               <div className="space-y-1 max-h-64 overflow-y-auto">
                 {filteredGroups.map((group) => {
-                  const isSelected = setup.group_jid === group.id;
+                  const isSelected = state.group_jid === group.id;
                   return (
                     <button
                       key={group.id}
@@ -225,15 +186,15 @@ export default function SetupPage() {
                   );
                 })}
                 {filteredGroups.length === 0 && (
-                  <p className="text-xs text-stone-500 px-3 py-2">No groups match your search.</p>
+                  <p className="text-xs text-stone-500 px-3 py-2">No groups match.</p>
                 )}
               </div>
             </div>
           )}
 
-          {setup?.connected && setup.groups.length === 0 && (
+          {state?.connected && state.groups.length === 0 && (
             <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 text-center text-sm text-stone-400">
-              No WhatsApp groups found. Make sure the WhatsApp account is a member of your household group.
+              No WhatsApp groups found. Make sure this WhatsApp account is a member of your household group.
             </div>
           )}
         </div>

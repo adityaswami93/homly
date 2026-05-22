@@ -1,0 +1,22 @@
+{
+  "name": "homly-whatsapp",
+  "version": "2.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "baileys": "npm:@whiskeysockets/baileys@^6.7.0",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "form-data": "^4.0.0",
+    "pino": "^9.3.2",
+    "qrcode": "^1.5.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

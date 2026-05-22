@@ -8,23 +8,31 @@ const {
   downloadMediaMessage,
   Browsers,
   fetchLatestBaileysVersion,
-  useMultiFileAuthState,
 } = WA;
 import { Boom } from "@hapi/boom";
 import axios from "axios";
 import FormData from "form-data";
 import pino from "pino";
 import QRCode from "qrcode";
+import { createClient } from "@supabase/supabase-js";
+import { useSupabaseAuthState } from "./db-auth-state.js";
 
-const FASTAPI_URL  = process.env.FASTAPI_URL  || "http://localhost:8000";
-const INTERNAL_KEY = process.env.INTERNAL_KEY || "homly-internal";
-const SERVICE_KEY  = process.env.SUPABASE_KEY;
-const AUTH_PATH    = process.env.AUTH_PATH     || "./auth-store";
+const FASTAPI_URL   = process.env.FASTAPI_URL   || "http://localhost:8000";
+const INTERNAL_KEY  = process.env.INTERNAL_KEY  || "homly-internal";
+const SERVICE_KEY   = process.env.SUPABASE_KEY;
+const SUPABASE_URL  = process.env.SUPABASE_URL;
+const BOT_TENANT_ID = process.env.BOT_TENANT_ID || "default";
 
 if (!SERVICE_KEY) {
   console.error("[bot] FATAL: SUPABASE_KEY not set");
   process.exit(1);
 }
+if (!SUPABASE_URL) {
+  console.error("[bot] FATAL: SUPABASE_URL not set");
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 const iHeaders = { "X-Internal-Key": INTERNAL_KEY };
 const IMAGE_MIME_TYPES = new Set([
@@ -163,9 +171,10 @@ async function processReceiptImage(msg, sock) {
 
 // ── Main socket ──────────────────────────────────────────────
 async function startSock() {
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_PATH);
+  const { state, saveCreds, deleteSession, flush } = await useSupabaseAuthState(BOT_TENANT_ID, supabase);
+  latestFlush = flush;
   const { version } = await fetchLatestBaileysVersion();
-  console.log(`[bot] WA version: ${version.join(".")} | auth: ${AUTH_PATH}`);
+  console.log(`[bot] WA version: ${version.join(".")} | tenant: ${BOT_TENANT_ID}`);
 
   const sock = makeWASocket({
     version,
@@ -198,7 +207,8 @@ async function startSock() {
       console.log(`[bot] Closed, reason: ${reason}`);
 
       if (reason === DisconnectReason.loggedOut) {
-        console.log("[bot] Logged out — restart to re-scan QR");
+        console.log("[bot] Logged out — clearing session, restart to re-scan QR");
+        await deleteSession();
         process.exit(1);
       } else if (reason === 515 || reason === DisconnectReason.restartRequired) {
         setTimeout(startSockWithRetry, 1000);
@@ -239,7 +249,7 @@ setInterval(async () => {
   try {
     const res = await axios.get(`${FASTAPI_URL}/internal/qr-status`, { headers: iHeaders });
     if (res.data?.qr_requested) {
-      console.log("[bot] QR reset requested — restarting connection");
+      console.log("[bot] QR reset requested — clearing session and restarting connection");
       if (currentSock) {
         currentSock.end(new Error("QR reset requested"));
       } else {
@@ -258,5 +268,15 @@ async function startSockWithRetry() {
   }
 }
 
-console.log(`[bot] Starting — FASTAPI_URL=${FASTAPI_URL} AUTH_PATH=${AUTH_PATH}`);
+// flush is captured per-startSock call; store latest reference for SIGTERM
+let latestFlush = null;
+
+process.on("SIGTERM", async () => {
+  console.log("[bot] SIGTERM received — flushing auth state");
+  try { if (latestFlush) await latestFlush(); } catch { /* ignore */ }
+  try { if (currentSock) currentSock.end(); } catch { /* ignore */ }
+  process.exit(0);
+});
+
+console.log(`[bot] Starting — FASTAPI_URL=${FASTAPI_URL} tenant: ${BOT_TENANT_ID}`);
 startSockWithRetry();

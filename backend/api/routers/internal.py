@@ -41,4 +41,4 @@ async def qr_status(request: Request):
     _check(request)
     requested = whatsapp_state.get("qr_requested", False)
     whatsapp_state["qr_requested"] = False
-    return {"qr_requested": requested}
+    return {"qr_requested": requested, "connected": whatsapp_state["connected"]}

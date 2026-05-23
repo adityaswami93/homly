@@ -43,6 +43,8 @@ const IMAGE_MIME_TYPES = new Set([
 let currentSock = null;
 let connectionFailures = 0;
 let decryptFailures = 0;
+let isConnected = false;
+let connectedGroups = [];
 
 // ── QR / connected ──────────────────────────────────────────
 async function pushQR(qrData) {
@@ -218,12 +220,15 @@ async function startSock() {
       connectionFailures = 0;
       console.log("[bot] Connected!");
       const groups = await sock.groupFetchAllParticipating();
-      const groupList = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
-      await pushConnected(groupList);
+      connectedGroups = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
+      isConnected = true;
+      await pushConnected(connectedGroups);
       startMessagePoller(sock);
     }
 
     if (connection === "close") {
+      isConnected = false;
+      connectedGroups = [];
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
       console.log(`[bot] Closed, reason: ${reason}`);
 
@@ -281,6 +286,11 @@ setInterval(async () => {
       } else {
         startSockWithRetry();
       }
+    }
+    // Re-sync connected state if backend restarted and lost it
+    if (isConnected && res.data?.connected === false) {
+      console.log("[bot] Backend lost connected state — re-syncing");
+      await pushConnected(connectedGroups);
     }
   } catch { /* backend may not be up yet */ }
 }, 5000);

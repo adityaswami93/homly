@@ -247,7 +247,6 @@ async function startSock() {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
-      if (msg.key.fromMe) continue;
       const remoteJid = msg.key.remoteJid;
       if (!remoteJid?.endsWith("@g.us")) continue;
 
@@ -257,6 +256,9 @@ async function startSock() {
         msg.message?.viewOnceMessageV2?.message?.imageMessage ||
         msg.message?.ephemeralMessage?.message?.imageMessage ||
         msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
+
+      // Skip own text/non-image messages to avoid looping on bot confirmations
+      if (msg.key.fromMe && !hasImage) continue;
 
       if (hasImage) {
         console.log(`[bot] Image received in ${remoteJid} — processing as receipt`);

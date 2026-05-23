@@ -155,22 +155,47 @@ async def process_receipt(
     if items:
         item_rows = [
             {
-                "receipt_id":   receipt_id,
-                "household_id": household_id,
-                "name":         item.get("name"),
-                "qty":          item.get("qty", 1),
-                "unit_price":   item.get("unit_price"),
-                "line_total":   item.get("line_total"),
-                "category":     item.get("category", "other"),
-                "vendor":       analysis.get("vendor"),
-                "receipt_date": receipt_date.isoformat(),
-                "week_number":  week_num,
-                "year":         year,
+                "receipt_id":     receipt_id,
+                "household_id":   household_id,
+                "name":           item.get("name"),
+                "canonical_name": (item.get("canonical_name") or item.get("name") or "").strip().lower() or None,
+                "brand":          item.get("brand"),
+                "variant":        item.get("variant"),
+                "qty":            item.get("qty", 1),
+                "unit_price":     item.get("unit_price"),
+                "line_total":     item.get("line_total"),
+                "category":       item.get("category", "other"),
+                "vendor":         analysis.get("vendor"),
+                "receipt_date":   receipt_date.isoformat(),
+                "week_number":    week_num,
+                "year":           year,
             }
             for item in items if item.get("name")
         ]
         if item_rows:
-            _db().table("items").insert(item_rows).execute()
+            items_res = _db().table("items").insert(item_rows).execute()
+            inserted_items = items_res.data or []
+
+            price_history_rows = []
+            for ins in inserted_items:
+                canonical = ins.get("canonical_name") or (ins.get("name") or "").strip().lower() or None
+                if not canonical or ins.get("unit_price") is None:
+                    continue
+                price_history_rows.append({
+                    "household_id":   household_id,
+                    "receipt_id":     receipt_id,
+                    "item_id":        ins["id"],
+                    "canonical_name": canonical,
+                    "brand":          ins.get("brand"),
+                    "variant":        ins.get("variant"),
+                    "category":       ins.get("category"),
+                    "vendor":         ins.get("vendor"),
+                    "unit_price":     ins.get("unit_price"),
+                    "quantity":       ins.get("qty") or 1,
+                    "bought_at":      receipt_date.isoformat(),
+                })
+            if price_history_rows:
+                _db().table("price_history").insert(price_history_rows).execute()
 
     return {
         "status":     "ok",

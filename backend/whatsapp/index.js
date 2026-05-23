@@ -8,23 +8,32 @@ const {
   downloadMediaMessage,
   Browsers,
   fetchLatestBaileysVersion,
-  useMultiFileAuthState,
 } = WA;
 import { Boom } from "@hapi/boom";
 import axios from "axios";
 import FormData from "form-data";
 import pino from "pino";
 import QRCode from "qrcode";
+import { createClient } from "@supabase/supabase-js";
+import ws from "ws";
+import { useSupabaseAuthState } from "./db-auth-state.js";
 
-const FASTAPI_URL  = process.env.FASTAPI_URL  || "http://localhost:8000";
-const INTERNAL_KEY = process.env.INTERNAL_KEY || "homly-internal";
-const SERVICE_KEY  = process.env.SUPABASE_KEY;
-const AUTH_PATH    = process.env.AUTH_PATH     || "./auth-store";
+const FASTAPI_URL   = process.env.FASTAPI_URL   || "http://localhost:8000";
+const INTERNAL_KEY  = process.env.INTERNAL_KEY  || "homly-internal";
+const SERVICE_KEY   = process.env.SUPABASE_KEY;
+const SUPABASE_URL  = process.env.SUPABASE_URL;
+const BOT_TENANT_ID = process.env.BOT_TENANT_ID || "default";
 
 if (!SERVICE_KEY) {
   console.error("[bot] FATAL: SUPABASE_KEY not set");
   process.exit(1);
 }
+if (!SUPABASE_URL) {
+  console.error("[bot] FATAL: SUPABASE_URL not set");
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { realtime: { transport: ws } });
 
 const iHeaders = { "X-Internal-Key": INTERNAL_KEY };
 const IMAGE_MIME_TYPES = new Set([
@@ -33,6 +42,9 @@ const IMAGE_MIME_TYPES = new Set([
 
 let currentSock = null;
 let connectionFailures = 0;
+let decryptFailures = 0;
+let isConnected = false;
+let connectedGroups = [];
 
 // ── QR / connected ──────────────────────────────────────────
 async function pushQR(qrData) {
@@ -113,7 +125,9 @@ async function processReceiptImage(msg, sock) {
   const imgMsg   =
     msg.message?.imageMessage ||
     msg.message?.viewOnceMessage?.message?.imageMessage ||
-    msg.message?.viewOnceMessageV2?.message?.imageMessage;
+    msg.message?.viewOnceMessageV2?.message?.imageMessage ||
+    msg.message?.ephemeralMessage?.message?.imageMessage ||
+    msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
 
   if (!imgMsg) return;
 
@@ -163,14 +177,32 @@ async function processReceiptImage(msg, sock) {
 
 // ── Main socket ──────────────────────────────────────────────
 async function startSock() {
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_PATH);
+  const { state, saveCreds, deleteSession, flush } = await useSupabaseAuthState(BOT_TENANT_ID, supabase);
+  latestFlush = flush;
   const { version } = await fetchLatestBaileysVersion();
-  console.log(`[bot] WA version: ${version.join(".")} | auth: ${AUTH_PATH}`);
+  console.log(`[bot] WA version: ${version.join(".")} | tenant: ${BOT_TENANT_ID}`);
+
+  decryptFailures = 0;
+
+  const botLogger = pino({ level: "warn" });
+  const origError = botLogger.error.bind(botLogger);
+  botLogger.error = (...args) => {
+    const msg = typeof args[0] === "string" ? args[0] : JSON.stringify(args[0]);
+    if (msg.includes("decrypt") || msg.includes("init queries")) {
+      decryptFailures++;
+      if (decryptFailures >= 5) {
+        console.warn("[bot] Too many decrypt/init failures — restarting connection");
+        decryptFailures = 0;
+        setTimeout(() => { if (currentSock) currentSock.end(new Error("decrypt-failure-restart")); }, 500);
+      }
+    }
+    origError(...args);
+  };
 
   const sock = makeWASocket({
     version,
     auth: state,
-    logger: pino({ level: "warn" }),
+    logger: botLogger,
     browser: Browsers.ubuntu("Chrome"),
     getMessage: async () => undefined,
   });
@@ -188,17 +220,21 @@ async function startSock() {
       connectionFailures = 0;
       console.log("[bot] Connected!");
       const groups = await sock.groupFetchAllParticipating();
-      const groupList = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
-      await pushConnected(groupList);
+      connectedGroups = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
+      isConnected = true;
+      await pushConnected(connectedGroups);
       startMessagePoller(sock);
     }
 
     if (connection === "close") {
+      isConnected = false;
+      connectedGroups = [];
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
       console.log(`[bot] Closed, reason: ${reason}`);
 
       if (reason === DisconnectReason.loggedOut) {
-        console.log("[bot] Logged out — restart to re-scan QR");
+        console.log("[bot] Logged out — clearing session, restart to re-scan QR");
+        await deleteSession();
         process.exit(1);
       } else if (reason === 515 || reason === DisconnectReason.restartRequired) {
         setTimeout(startSockWithRetry, 1000);
@@ -216,16 +252,21 @@ async function startSock() {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
-      if (msg.key.fromMe) continue;
       const remoteJid = msg.key.remoteJid;
       if (!remoteJid?.endsWith("@g.us")) continue;
 
       const hasImage =
         msg.message?.imageMessage ||
         msg.message?.viewOnceMessage?.message?.imageMessage ||
-        msg.message?.viewOnceMessageV2?.message?.imageMessage;
+        msg.message?.viewOnceMessageV2?.message?.imageMessage ||
+        msg.message?.ephemeralMessage?.message?.imageMessage ||
+        msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
+
+      // Skip own text/non-image messages to avoid looping on bot confirmations
+      if (msg.key.fromMe && !hasImage) continue;
 
       if (hasImage) {
+        console.log(`[bot] Image received in ${remoteJid} — processing as receipt`);
         await processReceiptImage(msg, sock);
       } else {
         await forwardText(msg);
@@ -239,12 +280,17 @@ setInterval(async () => {
   try {
     const res = await axios.get(`${FASTAPI_URL}/internal/qr-status`, { headers: iHeaders });
     if (res.data?.qr_requested) {
-      console.log("[bot] QR reset requested — restarting connection");
+      console.log("[bot] QR reset requested — clearing session and restarting connection");
       if (currentSock) {
         currentSock.end(new Error("QR reset requested"));
       } else {
         startSockWithRetry();
       }
+    }
+    // Re-sync connected state if backend restarted and lost it
+    if (isConnected && res.data?.connected === false) {
+      console.log("[bot] Backend lost connected state — re-syncing");
+      await pushConnected(connectedGroups);
     }
   } catch { /* backend may not be up yet */ }
 }, 5000);
@@ -258,5 +304,15 @@ async function startSockWithRetry() {
   }
 }
 
-console.log(`[bot] Starting — FASTAPI_URL=${FASTAPI_URL} AUTH_PATH=${AUTH_PATH}`);
+// flush is captured per-startSock call; store latest reference for SIGTERM
+let latestFlush = null;
+
+process.on("SIGTERM", async () => {
+  console.log("[bot] SIGTERM received — flushing auth state");
+  try { if (latestFlush) await latestFlush(); } catch { /* ignore */ }
+  try { if (currentSock) currentSock.end(); } catch { /* ignore */ }
+  process.exit(0);
+});
+
+console.log(`[bot] Starting — FASTAPI_URL=${FASTAPI_URL} tenant: ${BOT_TENANT_ID}`);
 startSockWithRetry();

@@ -17,7 +17,10 @@ Return ONLY a JSON object — no markdown, no explanation, no backticks. Exactly
   "date": "YYYY-MM-DD or null",
   "items": [
     {
-      "name": "item name",
+      "name": "exact name as printed on receipt",
+      "canonical_name": "normalised product name — lowercase, drop weight/size/pack info, e.g. 'broccoli', 'whole milk', 'dish soap'",
+      "brand": "brand name or null",
+      "variant": "variant or size e.g. '1L', 'light', '3-pack' or null",
       "qty": 1,
       "unit_price": 0.00,
       "line_total": 0.00,

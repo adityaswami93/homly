@@ -36,7 +36,6 @@ interface PriceTrendRow {
 interface PriceIntelligenceSummary {
   total_items_tracked: number;
   total_price_records: number;
-  total_households_contributing: number;
   most_tracked_item: string | null;
   most_expensive_category: string | null;
 }
@@ -98,7 +97,7 @@ export default function InsightsPage() {
 
   useEffect(() => {
     if (!user) return;
-    api.get("/admin/price-intelligence")
+    api.get("/insights/price-intelligence")
       .then((res) => setData(res.data))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
@@ -123,7 +122,7 @@ export default function InsightsPage() {
           </div>
           <h3 className="text-stone-200 font-semibold mb-2">Not enough data yet</h3>
           <p className="text-stone-500 text-sm">
-            Price intelligence becomes available once your household has tracked multiple purchases of the same items.
+            Price intelligence becomes available once your household has tracked at least 2 purchases of the same item across different receipts.
           </p>
         </div>
       </div>

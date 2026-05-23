@@ -9,12 +9,14 @@
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
+    "@supabase/supabase-js": "^2.43.4",
     "baileys": "npm:@whiskeysockets/baileys@^6.7.0",
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
     "form-data": "^4.0.0",
     "pino": "^9.3.2",
-    "qrcode": "^1.5.3"
+    "qrcode": "^1.5.3",
+    "ws": "^8.18.0"
   },
   "engines": {
     "node": ">=20"

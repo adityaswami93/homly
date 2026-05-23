@@ -25,6 +25,14 @@ interface WeekPoint {
   reimbursable_total: number;
 }
 
+interface MonthPoint {
+  label: string;
+  month: string;
+  total: number;
+  reimbursable_total: number;
+  receipt_count: number;
+}
+
 interface Vendor {
   vendor: string;
   count: number;
@@ -40,14 +48,32 @@ interface Purchase {
   flagged: boolean;
 }
 
+interface SenderRow {
+  sender_name: string;
+  total: number;
+  reimbursable_total: number;
+  receipt_count: number;
+}
+
+interface RecurringVendor {
+  vendor: string;
+  week_count: number;
+  receipt_count: number;
+  total: number;
+  avg_per_occurrence: number;
+}
+
 interface AnalyticsData {
   date_from: string;
   date_to: string;
   summary: Summary;
   weekly_spending: WeekPoint[];
+  monthly_spending: MonthPoint[];
   category_totals: Record<string, number>;
   top_vendors: Vendor[];
   biggest_purchases: Purchase[];
+  sender_breakdown: SenderRow[];
+  recurring_vendors: RecurringVendor[];
 }
 
 const CATEGORY_COLOR: Record<string, string> = {
@@ -63,6 +89,8 @@ const CATEGORY_EMOJI: Record<string, string> = {
   groceries: "🛒", household: "🏠", "personal care": "🧴",
   "food & beverage": "🍜", transport: "🚌", other: "📦",
 };
+
+const SENDER_COLORS = ["#10b981", "#3b82f6", "#a855f7", "#f97316", "#06b6d4", "#f59e0b"];
 
 const PRESETS = [
   { label: "7d", days: 7 },
@@ -112,10 +140,13 @@ function DarkTooltip({ active, payload, label }: any) {
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="bg-stone-900 border border-stone-800 rounded-xl p-4 sm:p-5">
-      <h2 className="text-stone-500 text-xs uppercase tracking-widest mb-4">{title}</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-stone-500 text-xs uppercase tracking-widest">{title}</h2>
+        {action}
+      </div>
       {children}
     </div>
   );
@@ -126,10 +157,12 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [chartType, setChartType] = useState<"bar" | "line">("bar");
+  const [groupBy, setGroupBy] = useState<"week" | "month">("week");
   const [activePreset, setActivePreset] = useState(90);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [useCustom, setUseCustom] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -138,6 +171,13 @@ export default function AnalyticsPage() {
       setUser(session.user);
     });
   }, [router]);
+
+  const getDateRange = () => {
+    if (useCustom && customFrom && customTo) return { from: customFrom, to: customTo };
+    const to = toISO(new Date());
+    const from = toISO(addDays(new Date(), -(activePreset - 1)));
+    return { from, to };
+  };
 
   const fetchData = async (from: string, to: string) => {
     setLoading(true);
@@ -153,14 +193,30 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     if (!user) return;
-    if (useCustom) {
-      if (customFrom && customTo) fetchData(customFrom, customTo);
-    } else {
-      const to = toISO(new Date());
-      const from = toISO(addDays(new Date(), -(activePreset - 1)));
-      fetchData(from, to);
-    }
+    const { from, to } = getDateRange();
+    fetchData(from, to);
   }, [user, activePreset, useCustom, customFrom, customTo]);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const { from, to } = getDateRange();
+      const res = await api.get("/analytics/export", {
+        params: { date_from: from, date_to: to },
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `homly-expenses-${from}-to-${to}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      // silently fail
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (!user) return null;
 
@@ -169,10 +225,13 @@ export default function AnalyticsPage() {
     : [];
   const catTotal = catEntries.reduce((s, [, v]) => s + v, 0);
 
+  const chartData = groupBy === "week" ? data?.weekly_spending : data?.monthly_spending;
+
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
-      {/* Date range controls */}
+      {/* Controls row */}
       <div className="flex flex-wrap items-center gap-2 mb-6">
+        {/* Presets */}
         {PRESETS.map((p) => (
           <button
             key={p.days}
@@ -186,6 +245,8 @@ export default function AnalyticsPage() {
             {p.label}
           </button>
         ))}
+
+        {/* Custom date range */}
         <div className="flex items-center gap-1.5">
           <input
             type="date"
@@ -212,6 +273,15 @@ export default function AnalyticsPage() {
             Apply
           </button>
         </div>
+
+        {/* Export CSV */}
+        <button
+          onClick={handleExport}
+          disabled={exporting || loading || !data}
+          className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium border border-stone-700 text-stone-400 hover:border-stone-600 hover:text-stone-200 transition-colors min-h-[36px] disabled:opacity-40"
+        >
+          {exporting ? "Exporting…" : "Export CSV"}
+        </button>
       </div>
 
       {loading ? (
@@ -253,10 +323,31 @@ export default function AnalyticsPage() {
             ))}
           </div>
 
-          {/* Weekly spending chart */}
-          {data.weekly_spending.length > 0 && (
-            <Card title="Weekly spending">
+          {/* Spending chart */}
+          {chartData && chartData.length > 0 && (
+            <Card title={groupBy === "week" ? "Weekly spending" : "Monthly spending"}>
               <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => setGroupBy("week")}
+                  className={`px-3 py-1 rounded-lg text-xs border transition-colors min-h-[32px] ${
+                    groupBy === "week"
+                      ? "border-emerald-800 bg-emerald-900/30 text-emerald-400"
+                      : "border-stone-700 text-stone-400 hover:border-stone-600"
+                  }`}
+                >
+                  Weekly
+                </button>
+                <button
+                  onClick={() => setGroupBy("month")}
+                  className={`px-3 py-1 rounded-lg text-xs border transition-colors min-h-[32px] ${
+                    groupBy === "month"
+                      ? "border-emerald-800 bg-emerald-900/30 text-emerald-400"
+                      : "border-stone-700 text-stone-400 hover:border-stone-600"
+                  }`}
+                >
+                  Monthly
+                </button>
+                <div className="w-px bg-stone-800 mx-1" />
                 {(["bar", "line"] as const).map((t) => (
                   <button
                     key={t}
@@ -273,7 +364,7 @@ export default function AnalyticsPage() {
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 {chartType === "bar" ? (
-                  <BarChart data={data.weekly_spending} barCategoryGap="30%" margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <BarChart data={chartData} barCategoryGap="30%" margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
                     <CartesianGrid stroke="#292524" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fill: "#78716c", fontSize: 10 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: "#78716c", fontSize: 10 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v}`} />
@@ -282,7 +373,7 @@ export default function AnalyticsPage() {
                     <Bar dataKey="reimbursable_total" name="reimbursable" fill="#10b98140" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 ) : (
-                  <LineChart data={data.weekly_spending} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
                     <CartesianGrid stroke="#292524" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fill: "#78716c", fontSize: 10 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: "#78716c", fontSize: 10 }} axisLine={false} tickLine={false} width={48} tickFormatter={(v) => `$${v}`} />
@@ -321,6 +412,70 @@ export default function AnalyticsPage() {
                     </div>
                   );
                 })}
+              </div>
+            </Card>
+          )}
+
+          {/* By person */}
+          {data.sender_breakdown.length > 1 && (
+            <Card title="By person">
+              <div className="space-y-3">
+                {data.sender_breakdown.map((row, i) => {
+                  const total = data.summary.total;
+                  const pct = total > 0 ? Math.min(100, Math.round((row.total / total) * 100)) : 0;
+                  const color = SENDER_COLORS[i % SENDER_COLORS.length];
+                  return (
+                    <div key={row.sender_name}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ background: color }}
+                          />
+                          <span className="text-stone-300 text-sm">{row.sender_name}</span>
+                          <span className="text-stone-600 text-xs">{row.receipt_count} receipts</span>
+                        </div>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-stone-500 text-xs">{pct}%</span>
+                          <span className="text-stone-100 text-sm font-mono w-24 text-right">{fmt(row.total)}</span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 bg-stone-800 rounded-full">
+                        <div
+                          className="h-1.5 rounded-full transition-all"
+                          style={{ width: `${pct}%`, background: color }}
+                        />
+                      </div>
+                      {row.reimbursable_total > 0 && (
+                        <p className="text-stone-600 text-xs mt-1 ml-4">
+                          {fmt(row.reimbursable_total)} reimbursable
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          {/* Recurring vendors */}
+          {data.recurring_vendors.length > 0 && (
+            <Card title="Recurring spend">
+              <p className="text-stone-600 text-xs mb-3">
+                Vendors you shop at consistently (3+ different weeks)
+              </p>
+              <div className="space-y-2">
+                {data.recurring_vendors.map((v) => (
+                  <div key={v.vendor} className="flex items-center justify-between py-2 border-b border-stone-800 last:border-0">
+                    <div>
+                      <p className="text-stone-200 text-sm">{v.vendor}</p>
+                      <p className="text-stone-500 text-xs mt-0.5">
+                        {v.week_count} weeks · {v.receipt_count} receipts · {fmt(v.avg_per_occurrence)} avg
+                      </p>
+                    </div>
+                    <span className="text-stone-100 font-mono text-sm">{fmt(v.total)}</span>
+                  </div>
+                ))}
               </div>
             </Card>
           )}

@@ -82,6 +82,35 @@ function startMessagePoller(sock) {
   }, 10000);
 }
 
+// ── Household query engine ───────────────────────────────────
+function isHouseholdQuery(text) {
+  const t = (text || "").trim();
+  if (!t || t.length < 5 || t.length > 400) return false;
+  if (t.endsWith("?")) return true;
+  return /^(what|how|when|where|who|which|show|tell|list|find|give|total|summarize|summarise|compare|any|are|is|do|did|have|has)\b/i.test(t);
+}
+
+async function handleHouseholdQuery(text, groupJid, sock) {
+  try {
+    await sock.sendPresenceUpdate("composing", groupJid);
+    const res = await axios.post(
+      `${FASTAPI_URL}/query`,
+      { query: text, group_jid: groupJid },
+      { headers: { Authorization: `Bearer ${SERVICE_KEY}` }, timeout: 30000 },
+    );
+    await sock.sendPresenceUpdate("paused", groupJid);
+    if (res.data?.handled) {
+      await sock.sendMessage(groupJid, { text: res.data.response });
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.error("[bot] query failed:", e.message);
+    await sock.sendPresenceUpdate("paused", groupJid);
+    return false;
+  }
+}
+
 // ── Text forwarding ──────────────────────────────────────────
 async function forwardText(msg) {
   const remoteJid = msg.key.remoteJid;
@@ -269,7 +298,19 @@ async function startSock() {
         console.log(`[bot] Image received in ${remoteJid} — processing as receipt`);
         await processReceiptImage(msg, sock);
       } else {
-        await forwardText(msg);
+        const text =
+          msg.message?.conversation ||
+          msg.message?.extendedTextMessage?.text ||
+          msg.message?.ephemeralMessage?.message?.conversation ||
+          msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+          "";
+        if (isHouseholdQuery(text)) {
+          console.log(`[bot] Query detected in ${remoteJid}: "${text.slice(0, 60)}"`);
+          const handled = await handleHouseholdQuery(text, remoteJid, sock);
+          if (!handled) await forwardText(msg);
+        } else {
+          await forwardText(msg);
+        }
       }
     }
   });

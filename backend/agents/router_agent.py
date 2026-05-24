@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from supabase import create_client
@@ -11,6 +12,16 @@ from agents.query.insurance_query_agent import InsuranceQueryAgent
 from services.llm_client import get_completion, get_tool_completion
 
 logger = logging.getLogger(__name__)
+
+_supabase = None
+
+
+def _db():
+    global _supabase
+    if _supabase is None:
+        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    return _supabase
+
 
 # ── agent registry ────────────────────────────────────────────────────────────
 # Add new agents here; everything else is automatic.
@@ -37,10 +48,6 @@ class QueryResponse:
     response: str
     sources: list[dict]
     handled: bool
-
-
-def _db():
-    return create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 
 def _log_query(household_id: str, query: str, agents_called: list[str], handled: bool) -> None:
@@ -79,8 +86,8 @@ def run_query(
             handled=False,
         )
 
-    # Phase 2: execute each selected agent
-    results: list[AgentResult] = []
+    # Phase 2: parse tool calls, then dispatch all agents in parallel
+    calls: list[tuple[str, BaseQueryAgent, str, dict]] = []  # (tool_name, agent, intent, params)
     agents_called: list[str] = []
 
     for tool_call in routing_msg.tool_calls:
@@ -90,19 +97,25 @@ def run_query(
         except json.JSONDecodeError:
             logger.warning(f"[router] bad tool args for {name}")
             continue
-
         agent = _AGENT_MAP.get(name)
         if not agent:
             logger.warning(f"[router] unknown agent tool: {name}")
             continue
-
         agents_called.append(name)
-        result = agent.handle(
-            intent=args.get("intent", ""),
-            params=args.get("params", {}),
-            household_id=household_id,
-        )
-        results.append(result)
+        calls.append((name, agent, args.get("intent", ""), args.get("params", {})))
+
+    results: list[AgentResult] = []
+    if calls:
+        with ThreadPoolExecutor(max_workers=len(calls)) as pool:
+            futures = {
+                pool.submit(agent.handle, intent, params, household_id): name
+                for name, agent, intent, params in calls
+            }
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as e:
+                    logger.error(f"[router] agent {futures[future]} raised: {e}")
 
     handled = any(r.handled for r in results)
 

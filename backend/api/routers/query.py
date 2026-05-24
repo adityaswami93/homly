@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -12,7 +13,7 @@ class QueryRequest(BaseModel):
 
 
 @router.post("/query")
-def query_endpoint(request: Request, body: QueryRequest):
+async def query_endpoint(request: Request, body: QueryRequest):
     household_id = request.state.user.get("household_id")
     if not household_id:
         raise HTTPException(status_code=403, detail="No household found")
@@ -22,10 +23,12 @@ def query_endpoint(request: Request, body: QueryRequest):
 
     from agents.router_agent import run_query
 
-    result = run_query(
-        query=body.query,
-        household_id=household_id,
-        context=body.context,
+    # run_query uses blocking I/O (Supabase + LLM); run in thread so the event loop stays free
+    result = await asyncio.to_thread(
+        run_query,
+        body.query,
+        household_id,
+        body.context,
     )
     return {
         "response": result.response,

@@ -1,4 +1,6 @@
+import asyncio
 import os
+import re
 import uuid
 import logging
 from datetime import date
@@ -13,11 +15,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 IMAGE_MIME_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"}
-INSURANCE_KEYWORDS = [
-    "insurance", "policy", "policies",
-    "health insurance", "life insurance", "car insurance",
-    "home insurance", "travel insurance",
-]
 
 _supabase = None
 
@@ -130,11 +127,16 @@ async def whatsapp_webhook(request: Request):
 
 
 async def _handle_text(chat_id: str, household_id: str, text: str, settings: dict):
-    if any(kw in text for kw in INSURANCE_KEYWORDS):
-        await _handle_insurance_query(chat_id, household_id, text)
+    if not _is_query(text):
         return
 
-    if "summary" in text or "/summary" in text:
+    from agents.router_agent import run_query
+
+    result = await asyncio.to_thread(run_query, text, household_id)
+    if result.handled:
+        await send_text(chat_id, result.response)
+    elif "summary" in text or "/summary" in text:
+        # Fallback: explicit /summary command the engine doesn't handle
         from api.routers.messages import build_last7days_total, build_week_total
         mode = settings.get("cutoff_mode", "last7days")
         msg = (
@@ -143,6 +145,22 @@ async def _handle_text(chat_id: str, household_id: str, text: str, settings: dic
             else await build_week_total(household_id)
         )
         await send_text(chat_id, msg)
+
+
+def _is_query(text: str) -> bool:
+    t = text.strip()
+    if not t or len(t) < 5 or len(t) > 400:
+        return False
+    if t.endswith("?"):
+        return True
+    if re.match(
+        r"^(what|how|when|where|who|which|show|tell|list|find|give|total|"
+        r"summarize|summarise|compare|any|are|is|do|did|have|has)\b",
+        t,
+        re.IGNORECASE,
+    ):
+        return True
+    return False
 
 
 async def _handle_image(
@@ -245,57 +263,3 @@ async def _handle_image(
     logger.info(f"[webhook] Receipt {receipt_id}: {vendor}, total={total}, confidence={analysis.get('confidence')}")
 
 
-async def _handle_insurance_query(chat_id: str, household_id: str, text: str):
-    try:
-        res = (
-            _db().table("insurance_policies")
-            .select("*")
-            .eq("household_id", household_id)
-            .eq("is_active", True)
-            .order("coverage_type")
-            .execute()
-        )
-        all_policies = res.data or []
-
-        coverage_types = ["health", "life", "home", "car", "travel"]
-        type_filter = next((t for t in coverage_types if t in text), None)
-        policies = [p for p in all_policies if p["coverage_type"] == type_filter] if type_filter else all_policies
-
-        if not policies:
-            await send_text(
-                chat_id,
-                "No insurance policies added yet. Visit the Homly dashboard to add your policies.",
-            )
-            return
-
-        today = date.today()
-        grouped: dict[str, list] = {}
-        for p in policies:
-            grouped.setdefault(p["coverage_type"], []).append(p)
-
-        lines = ["🛡️ *Household Insurance Policies*", ""]
-        for ctype, items in grouped.items():
-            lines.append(f"*{ctype.upper()}*")
-            for p in items:
-                line = f"- {p['provider']}"
-                if p.get("insured_person"):
-                    line += f" ({p['insured_person']})"
-                lines.append(line)
-                if p.get("policy_number"):
-                    lines.append(f"  Policy #: {p['policy_number']}")
-                coverage = f"${float(p['coverage_amount']):,.0f}" if p.get("coverage_amount") else "—"
-                premium = f"${float(p['premium_amount']):.0f}/{p.get('premium_frequency', 'mo')}" if p.get("premium_amount") else "—"
-                lines.append(f"  Coverage: {coverage} | Premium: {premium}")
-                if p.get("renewal_date"):
-                    renewal = date.fromisoformat(p["renewal_date"])
-                    days = (renewal - today).days
-                    date_str = renewal.strftime("%-d %b %Y")
-                    lines.append(f"  Renews: {date_str} ({'overdue' if days <= 0 else f'{days} days'})")
-            lines.append("")
-
-        if not type_filter:
-            lines.append('Reply with a type to filter, e.g. "health insurance"')
-
-        await send_text(chat_id, "\n".join(lines).strip())
-    except Exception as e:
-        logger.error(f"[webhook] Insurance query failed: {e}")

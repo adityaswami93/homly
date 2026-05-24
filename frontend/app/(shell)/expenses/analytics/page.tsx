@@ -17,19 +17,19 @@ interface Summary {
   receipt_count: number;
 }
 
-interface WeekPoint {
+interface SpendingPoint {
   label: string;
-  week: number;
-  year: number;
   total: number;
   reimbursable_total: number;
 }
 
-interface MonthPoint {
-  label: string;
+interface WeekPoint extends SpendingPoint {
+  week: number;
+  year: number;
+}
+
+interface MonthPoint extends SpendingPoint {
   month: string;
-  total: number;
-  reimbursable_total: number;
   receipt_count: number;
 }
 
@@ -225,7 +225,7 @@ export default function AnalyticsPage() {
     : [];
   const catTotal = catEntries.reduce((s, [, v]) => s + v, 0);
 
-  const chartData: (WeekPoint | MonthPoint)[] | undefined = groupBy === "week" ? data?.weekly_spending : data?.monthly_spending;
+  const chartData: SpendingPoint[] | undefined = groupBy === "week" ? data?.weekly_spending : data?.monthly_spending;
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">

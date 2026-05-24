@@ -225,7 +225,8 @@ export default function AnalyticsPage() {
     : [];
   const catTotal = catEntries.reduce((s, [, v]) => s + v, 0);
 
-  const chartData = groupBy === "week" ? data?.weekly_spending : data?.monthly_spending;
+  const chartData: Array<{ label: string; total: number; reimbursable_total: number }> | undefined =
+    groupBy === "week" ? data?.weekly_spending : data?.monthly_spending;
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">

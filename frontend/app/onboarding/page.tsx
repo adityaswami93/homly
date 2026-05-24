@@ -21,10 +21,18 @@ function OnboardingInner() {
       if (!session) { router.push("/login"); return; }
 
       // Check if user already has a household
-      const res = await api.get("/household");
-      if (res.data?.id) {
-        router.push("/dashboard");
-        return;
+      try {
+        const res = await api.get("/household");
+        if (res.data?.id) {
+          router.push("/dashboard");
+          return;
+        }
+      } catch (e: any) {
+        if (!e?.response) {
+          toast.error("Unable to reach the server. Please try again.");
+        } else if (e.response?.status !== 404) {
+          toast.error(e.response?.data?.detail || "Failed to load household");
+        }
       }
 
       // Check for invite token in URL
@@ -45,7 +53,7 @@ function OnboardingInner() {
       setStep("create");
     };
     init();
-  }, [router, searchParams]);
+  }, [router, searchParams, toast]);
 
   const handleCreate = async () => {
     setSaving(true);

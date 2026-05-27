@@ -8,6 +8,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def pdf_to_image_bytes(pdf_bytes: bytes) -> tuple[bytes, str]:
+    """Convert the first page of a PDF to JPEG bytes using pymupdf.
+    Returns (image_bytes, mime_type).
+    """
+    import fitz  # pymupdf
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page = doc[0]
+    # Render at 2× zoom for better OCR quality
+    mat = fitz.Matrix(2.0, 2.0)
+    pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+    img_bytes = pix.tobytes("jpeg")
+    doc.close()
+    return img_bytes, "image/jpeg"
+
 RECEIPT_PROMPT = """You are a receipt OCR specialist. Extract all information from this receipt image.
 
 Return ONLY a JSON object — no markdown, no explanation, no backticks. Exactly this schema:
@@ -58,6 +73,10 @@ Important:
 
 def analyse_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
     try:
+        # Convert PDF to image before sending to the vision model
+        if mime_type == "application/pdf":
+            image_bytes, mime_type = pdf_to_image_bytes(image_bytes)
+
         raw = get_vision_completion(RECEIPT_PROMPT, image_bytes, mime_type)
 
         clean = raw.strip()

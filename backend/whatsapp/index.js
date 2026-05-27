@@ -39,6 +39,7 @@ const iHeaders = { "X-Internal-Key": INTERNAL_KEY };
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic",
 ]);
+const PDF_MIME_TYPES = new Set(["application/pdf"]);
 
 let currentSock = null;
 let connectionFailures = 0;
@@ -201,6 +202,66 @@ async function processReceiptImage(msg, sock) {
     console.log(`[bot] Receipt saved — ${vendor || "unknown"}, SGD ${total ?? "?"}`);
   } catch (err) {
     console.error(`[bot] Receipt ${msgId} failed:`, err.response?.data || err.message);
+    await sock.sendMessage(groupJid, {
+      text: "Could not process the receipt — please try a clearer photo.",
+    });
+  }
+}
+
+// ── Receipt PDF document ─────────────────────────────────────
+async function processReceiptDocument(msg, sock) {
+  const groupJid = msg.key.remoteJid;
+  const msgId    = msg.key.id;
+  const docMsg   =
+    msg.message?.documentMessage ||
+    msg.message?.ephemeralMessage?.message?.documentMessage;
+
+  if (!docMsg) return;
+
+  const mimeType = (docMsg.mimetype || "").toLowerCase();
+  if (!PDF_MIME_TYPES.has(mimeType)) return;
+
+  const senderJid   = msg.key.participant || groupJid;
+  const senderPhone = senderJid.includes("@") ? senderJid.split("@")[0] : null;
+  const pushName    = msg.pushName || null;
+
+  console.log(`[bot] PDF receipt from ${pushName || senderPhone} in ${groupJid}`);
+
+  try {
+    const buffer = await downloadMediaMessage(
+      msg, "buffer", {},
+      { logger: pino({ level: "silent" }), reuploadRequest: sock.updateMediaMessage },
+    );
+
+    const form = new FormData();
+    form.append("file", buffer, { filename: "receipt.pdf", contentType: "application/pdf" });
+    form.append("whatsapp_message_id", msgId);
+    form.append("group_jid", groupJid);
+    if (pushName)    form.append("sender_name",  pushName);
+    if (senderPhone) form.append("sender_phone", senderPhone);
+
+    const res = await axios.post(`${FASTAPI_URL}/process-receipt`, form, {
+      headers: { ...form.getHeaders(), Authorization: `Bearer ${SERVICE_KEY}` },
+      timeout: 90000,  // PDF conversion + OCR may take longer
+    });
+
+    const { status, vendor, total, flagged } = res.data;
+    if (status === "duplicate") return;
+
+    if (flagged) {
+      await sock.sendMessage(groupJid, {
+        text: `Receipt captured but needs a manual check.\nVendor: ${vendor || "unknown"}, Total: ${total ? `SGD ${total}` : "unreadable"}`,
+      });
+    } else {
+      await sock.sendMessage(groupJid, { react: { text: "✅", key: msg.key } });
+    }
+
+    console.log(`[bot] PDF Receipt saved — ${vendor || "unknown"}, SGD ${total ?? "?"}`);
+  } catch (err) {
+    console.error(`[bot] PDF Receipt ${msgId} failed:`, err.response?.data || err.message);
+    await sock.sendMessage(groupJid, {
+      text: "Could not process the PDF receipt — please try a clearer image or check the file.",
+    });
   }
 }
 
@@ -291,12 +352,21 @@ async function startSock() {
         msg.message?.ephemeralMessage?.message?.imageMessage ||
         msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
 
-      // Skip own text/non-image messages to avoid looping on bot confirmations
-      if (msg.key.fromMe && !hasImage) continue;
+      const docMsg =
+        msg.message?.documentMessage ||
+        msg.message?.ephemeralMessage?.message?.documentMessage;
+      const hasPDF = docMsg &&
+        PDF_MIME_TYPES.has((docMsg.mimetype || "").toLowerCase());
+
+      // Skip own text/non-media messages to avoid looping on bot confirmations
+      if (msg.key.fromMe && !hasImage && !hasPDF) continue;
 
       if (hasImage) {
         console.log(`[bot] Image received in ${remoteJid} — processing as receipt`);
         await processReceiptImage(msg, sock);
+      } else if (hasPDF) {
+        console.log(`[bot] PDF document received in ${remoteJid} — processing as receipt`);
+        await processReceiptDocument(msg, sock);
       } else {
         const text =
           msg.message?.conversation ||

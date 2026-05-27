@@ -68,12 +68,18 @@ def _week_for_date(d: date) -> tuple[int, int]:
     return iso.week, iso.year
 
 
+ACCEPTED_MIME_TYPES = {
+    "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic",
+    "application/pdf",
+}
+
+
 @router.post("/process-receipt")
 @limiter.limit("60/minute")
 async def process_receipt(
     request: Request,
     file: UploadFile = File(...),
-    whatsapp_message_id: str = Form(...),
+    whatsapp_message_id: Optional[str] = Form(default=None),
     user_id: Optional[str] = Form(default=None),
     sender_name: Optional[str] = Form(default=None),
     sender_phone: Optional[str] = Form(default=None),
@@ -90,6 +96,10 @@ async def process_receipt(
         raise HTTPException(status_code=403, detail="No household found")
     household_id = resolved_household
 
+    # Auto-generate a dedup key for direct web uploads (no WhatsApp message ID)
+    if not whatsapp_message_id:
+        whatsapp_message_id = f"web-{uuid.uuid4().hex}"
+
     from api.routers.settings import get_or_create_settings
     settings = get_or_create_settings(household_id)
     reimbursable = get_reimbursable(sender_name, sender_phone, settings)
@@ -103,9 +113,14 @@ async def process_receipt(
 
     image_bytes = await file.read()
     if len(image_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Image too large (max 10 MB)")
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
 
-    content_type = file.content_type or "image/jpeg"
+    content_type = (file.content_type or "image/jpeg").lower().split(";")[0].strip()
+    if content_type not in ACCEPTED_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {content_type}. Accepted: images and PDF."
+        )
 
     # Upload image to Supabase Storage
     image_path = upload_receipt_image(image_bytes, content_type, household_id)

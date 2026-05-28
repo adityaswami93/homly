@@ -463,7 +463,7 @@ export default function ExpensesOverview() {
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { toasts, dismissToast, toast } = useToast();
 
@@ -516,14 +516,6 @@ export default function ExpensesOverview() {
     } catch (error) {
       console.error("Camera error:", error);
     }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await submitReceiptBlob(file, file.name);
-    // Reset input so the same file can be re-selected
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   useEffect(() => {
@@ -710,6 +702,30 @@ export default function ExpensesOverview() {
     if (selectedReceipt?.id === id) setSelectedReceipt((p) => (p ? { ...p, reimbursable } : p));
   };
 
+  const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentWeek) return;
+
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      await api.post("/process-receipt", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      toast.success("Receipt uploaded successfully");
+      loadWeek(currentWeek.year, currentWeek.week);
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      toast.error(detail ?? "Upload failed — please try again");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   if (!user || !currentWeek) return null;
 
   return (
@@ -722,29 +738,52 @@ export default function ExpensesOverview() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {/* Receipt capture — native camera on device, file input on web */}
+          {/* Hidden file input — accepts images and PDFs */}
+          <input
+            ref={uploadRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+            className="hidden"
+            onChange={handleUploadFile}
+          />
+          {/* Native camera on device, upload button on web */}
           {isNativeApp() ? (
             <button
               onClick={captureReceiptNative}
               disabled={uploading}
-              className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 min-h-[36px]"
+              className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 min-h-[36px]"
             >
-              {uploading ? "⏳" : "📷"}
-              <span className="hidden sm:inline">{uploading ? "Uploading…" : "Capture receipt"}</span>
+              {uploading ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="hidden sm:inline">Uploading…</span>
+                </>
+              ) : (
+                <>
+                  <span>📷</span>
+                  <span className="hidden sm:inline">Capture receipt</span>
+                </>
+              )}
             </button>
           ) : (
-            <label className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer min-h-[36px]">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileUpload}
-                className="hidden"
-                disabled={uploading}
-              />
-              {uploading ? "⏳" : "📎"}
-              <span className="hidden sm:inline">{uploading ? "Uploading…" : "Upload receipt"}</span>
-            </label>
+            <button
+              onClick={() => uploadRef.current?.click()}
+              disabled={uploading}
+              title="Upload a receipt (image or PDF)"
+              className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 min-h-[36px]"
+            >
+              {uploading ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="hidden sm:inline">Uploading…</span>
+                </>
+              ) : (
+                <>
+                  <span>📎</span>
+                  <span className="hidden sm:inline">Upload receipt</span>
+                </>
+              )}
+            </button>
           )}
           <button
             onClick={handleSendTotal}
@@ -790,9 +829,17 @@ export default function ExpensesOverview() {
             <span className="text-xl">🧾</span>
           </div>
           <h3 className="text-stone-300 font-medium mb-2">No receipts this week</h3>
-          <p className="text-stone-500 text-sm">
-            Send receipt photos to the WhatsApp group and they will appear here automatically.
+          <p className="text-stone-500 text-sm mb-4">
+            Send receipt photos to the WhatsApp group, or upload directly using the 📎 button above.
           </p>
+          <button
+            onClick={() => uploadRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex items-center gap-2 text-sm bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-300 px-4 py-2 rounded-lg transition-colors disabled:opacity-50 min-h-[40px]"
+          >
+            <span>📎</span>
+            Upload a receipt
+          </button>
         </div>
       ) : (
         <>

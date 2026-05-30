@@ -31,6 +31,7 @@ SKIP_AUTH_PATHS = [
     "/internal/messages",
     "/setup/reset-qr",
     "/internal/shopping-list",
+    "/internal/pantry",
     "/waitlist",
 ]
 

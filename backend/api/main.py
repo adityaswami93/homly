@@ -20,7 +20,8 @@ from api.middleware.auth import AuthMiddleware
 from api.dependencies.limiter import limiter
 from api.routers import (
     expenses, setup, internal, settings, messages, households,
-    reimbursements, analytics, insights, insurance, webhook, budgets, query, recipe, waitlist,
+<<<<<<< HEAD
+    reimbursements, analytics, insights, insurance, webhook, budgets, query, recipe, pantry, waitlist,
 )
 from api.routers import admin as admin_router
 
@@ -75,6 +76,7 @@ app.include_router(webhook.router)
 app.include_router(query.router)
 app.include_router(budgets.router)
 app.include_router(recipe.router)
+app.include_router(pantry.router)
 app.include_router(waitlist.router)
 
 

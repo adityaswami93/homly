@@ -62,6 +62,55 @@ def analyse_dish(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
         return {"error": str(e), "dish": None, "confidence": "low", "ingredients": []}
 
 
+def _check_pantry(canonical_name: str, household_id: str, db) -> str:
+    """Returns 'in_stock', 'low', 'out_of_stock', or 'unknown'"""
+    res = (
+        db.table("pantry_items")
+        .select("status")
+        .eq("household_id", household_id)
+        .ilike("canonical_name", f"%{canonical_name}%")
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        return "unknown"
+    return res.data[0]["status"]
+
+
+def analyse_dish_with_pantry(
+    image_bytes: bytes,
+    mime_type: str,
+    household_id: str,
+    supabase_client,
+) -> dict:
+    result = analyse_dish(image_bytes, mime_type)
+    ingredients = result.get("ingredients") or []
+
+    need_to_buy: list[str] = []
+    running_low: list[str] = []
+    already_have: list[str] = []
+
+    for ing in ingredients:
+        if ing.get("pantry_staple"):
+            continue
+        canonical = (ing.get("canonical_name") or ing.get("name") or "").strip().lower()
+        if not canonical:
+            continue
+        status = _check_pantry(canonical, household_id, supabase_client)
+        ing["pantry_status"] = status
+        if status == "in_stock":
+            already_have.append(ing["name"])
+        elif status == "low":
+            running_low.append(ing["name"])
+        else:
+            need_to_buy.append(ing["name"])
+
+    result["need_to_buy"] = need_to_buy
+    result["running_low"] = running_low
+    result["already_have"] = already_have
+    return result
+
+
 if __name__ == "__main__":
     path = sys.argv[1] if len(sys.argv) > 1 else None
     if path:

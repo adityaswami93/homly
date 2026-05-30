@@ -47,6 +47,27 @@ let decryptFailures = 0;
 let isConnected = false;
 let connectedGroups = [];
 
+// ── Group → household mapping ────────────────────────────────
+// Maps group_jid to household_id; populated on connect and refreshed every 5 min.
+const groupMap = new Map();
+
+async function refreshGroupMap() {
+  try {
+    const { data } = await supabase
+      .from("settings")
+      .select("group_jid, household_id");
+    groupMap.clear();
+    for (const row of data || []) {
+      if (row.group_jid) groupMap.set(row.group_jid, row.household_id);
+    }
+    console.log(`[bot] groupMap refreshed — ${groupMap.size} household(s)`);
+  } catch (e) {
+    console.error("[bot] refreshGroupMap failed:", e.message);
+  }
+}
+
+setInterval(refreshGroupMap, 5 * 60 * 1000);
+
 // ── QR / connected ──────────────────────────────────────────
 async function pushQR(qrData) {
   try {
@@ -95,296 +116,169 @@ function startMessagePoller() {
   }, 5000);
 }
 
-// ── Household query engine ───────────────────────────────────
-function isHouseholdQuery(text) {
-  const t = (text || "").trim();
-  if (!t || t.length < 5 || t.length > 400) return false;
-  if (t.endsWith("?")) return true;
-  return /^(what|how|when|where|who|which|show|tell|list|find|give|total|summarize|summarise|compare|any|are|is|do|did|have|has)\b/i.test(t);
-}
-
-async function handleHouseholdQuery(text, groupJid, sock) {
-  try {
-    await sock.sendPresenceUpdate("composing", groupJid);
-    const res = await axios.post(
-      `${FASTAPI_URL}/query`,
-      { query: text, group_jid: groupJid },
-      { headers: { Authorization: `Bearer ${SERVICE_KEY}` }, timeout: 30000 },
-    );
-    await sock.sendPresenceUpdate("paused", groupJid);
-    if (res.data?.handled) {
-      await sock.sendMessage(groupJid, { text: res.data.response });
-      return true;
-    }
-    return false;
-  } catch (e) {
-    console.error("[bot] query failed:", e.message);
-    await sock.sendPresenceUpdate("paused", groupJid);
-    return false;
-  }
-}
-
-// ── Text forwarding ──────────────────────────────────────────
-async function forwardText(msg) {
+// ── LangGraph message handler ────────────────────────────────
+async function handleMessage(msg, sock) {
   const remoteJid = msg.key.remoteJid;
-  const senderJid = msg.key.participant || remoteJid;
-  const text =
-    msg.message?.conversation ||
-    msg.message?.extendedTextMessage?.text ||
-    msg.message?.ephemeralMessage?.message?.conversation ||
-    msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
-    "";
+  if (!remoteJid?.endsWith("@g.us")) return;
 
-  if (!text.trim()) return;
-
-  try {
-    await axios.post(
-      `${FASTAPI_URL}/webhook/whatsapp`,
-      {
-        typeWebhook: "incomingMessageReceived",
-        idMessage: msg.key.id,
-        senderData: {
-          chatId: remoteJid,
-          sender: senderJid,
-          senderName: msg.pushName || null,
-        },
-        messageData: {
-          typeMessage: "textMessage",
-          textMessageData: { textMessage: text },
-        },
-      },
-      { headers: iHeaders },
-    );
-  } catch (e) {
-    console.error("[bot] forwardText failed:", e.message);
+  const household_id = groupMap.get(remoteJid);
+  if (!household_id) {
+    console.log(`[bot] No household for group ${remoteJid} — skipping`);
+    return;
   }
-}
 
-// ── Recipe image ────────────────────────────────────────────
-const RECIPE_TRIGGERS = /^(🛒|cook|recipe|ingredients|what do i need)/i;
-
-function isRecipeCaption(caption) {
-  return RECIPE_TRIGGERS.test((caption || "").trim());
-}
-
-async function processRecipeImage(msg, sock) {
-  const groupJid = msg.key.remoteJid;
-  const imgMsg   =
+  const imgMsg =
     msg.message?.imageMessage ||
     msg.message?.viewOnceMessage?.message?.imageMessage ||
     msg.message?.viewOnceMessageV2?.message?.imageMessage ||
     msg.message?.ephemeralMessage?.message?.imageMessage ||
     msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
 
-  if (!imgMsg) return;
-
-  const mimeType    = (imgMsg.mimetype || "image/jpeg").toLowerCase();
-  const senderJid   = msg.key.participant || groupJid;
-  const senderPhone = senderJid.includes("@") ? senderJid.split("@")[0] : null;
-  const pushName    = msg.pushName || null;
-
-  console.log(`[bot] Recipe scan from ${pushName || senderPhone} in ${groupJid}`);
-
-  try {
-    const buffer = await downloadMediaMessage(
-      msg, "buffer", {},
-      { logger: pino({ level: "silent" }), reuploadRequest: sock.updateMediaMessage },
-    );
-
-    const form = new FormData();
-    form.append("file", buffer, { filename: "food.jpg", contentType: mimeType });
-    form.append("group_jid", groupJid);
-    if (pushName)    form.append("sender_name",  pushName);
-    if (senderPhone) form.append("sender_phone", senderPhone);
-
-    const res = await axios.post(`${FASTAPI_URL}/recipe/scan`, form, {
-      headers: { ...form.getHeaders(), Authorization: `Bearer ${SERVICE_KEY}` },
-      timeout: 60000,
-    });
-
-    const { dish, confidence, ingredients, need_to_buy, running_low, already_have, items_added_to_shopping_list } = res.data;
-
-    if (!ingredients || ingredients.length === 0) {
-      await sock.sendMessage(groupJid, {
-        text: "Could not identify a dish in this photo. Try a clearer image, or add a caption like \"recipe 🛒\".",
-      });
-      return;
-    }
-
-    const staples = (ingredients || []).filter(i => i.pantry_staple);
-    const stapleNames = staples.map(i => i.name).join(", ");
-
-    // Determine if pantry cross-reference was useful (any ingredient had a known pantry status)
-    const nonStaples = (ingredients || []).filter(i => !i.pantry_staple);
-    const allUnknown = nonStaples.every(i => !i.pantry_status || i.pantry_status === "unknown");
-
-    let reply = "";
-    if (confidence === "low") {
-      reply += "⚠️ _Not sure about this dish — here's my best guess:_\n\n";
-    }
-    reply += `🍽️ *${dish || "Unknown dish"}*\n\n`;
-
-    if (allUnknown) {
-      // Phase 1 fallback — no pantry data, show raw list
-      const formatQty = (i) => {
-        const q = i.qty != null ? i.qty : "";
-        const u = i.unit ? ` ${i.unit}` : "";
-        return q ? `(${q}${u})` : "";
-      };
-      const itemLines = nonStaples.map(i => `- ${i.name} ${formatQty(i)}`.trimEnd()).join("\n");
-      reply += `🛒 *Shopping list:*\n${itemLines}`;
-      if (stapleNames) {
-        reply += `\n\n✅ Skipped pantry staples (${stapleNames} etc.)`;
-      }
-      reply += "\n\n_Added to your Homly shopping list_";
-      reply += "\n_Tip: tell me what you have (e.g. \"added rice\") to get smarter suggestions_";
-    } else if ((need_to_buy || []).length === 0 && (running_low || []).length === 0) {
-      // Everything in stock
-      reply += "✅ You have everything to make this!";
-      if (stapleNames) {
-        reply += `\n\n_Pantry staples (${stapleNames} etc.) assumed present_`;
-      }
-    } else {
-      // Pantry-aware reply
-      const buyItems = [...(need_to_buy || []), ...(running_low || []).map(n => `${n} (running low)`)];
-      const buyLines = buyItems.map(n => `- ${n}`).join("\n");
-      reply += `🛒 *Need to buy:*\n${buyLines}`;
-      if ((already_have || []).length > 0) {
-        reply += `\n\n✅ *Already have:*\n${already_have.join(", ")}`;
-      }
-      if (stapleNames) {
-        reply += `\n\n_Pantry staples (${stapleNames} etc.) skipped_`;
-      }
-      const count = items_added_to_shopping_list || 0;
-      reply += `\n_Added ${count} item${count !== 1 ? "s" : ""} to your Homly shopping list_`;
-    }
-
-    await sock.sendMessage(groupJid, { text: reply });
-    console.log(`[bot] Recipe scan done — ${dish || "unknown"}, ${nonStaples.length} items added`);
-  } catch (err) {
-    console.error(`[bot] Recipe scan failed:`, err.response?.data || err.message);
-    await sock.sendMessage(groupJid, {
-      text: "Could not analyse this recipe — please try again.",
-    });
-  }
-}
-
-// ── Receipt image ────────────────────────────────────────────
-async function processReceiptImage(msg, sock) {
-  const groupJid = msg.key.remoteJid;
-  const msgId    = msg.key.id;
-  const imgMsg   =
-    msg.message?.imageMessage ||
-    msg.message?.viewOnceMessage?.message?.imageMessage ||
-    msg.message?.viewOnceMessageV2?.message?.imageMessage ||
-    msg.message?.ephemeralMessage?.message?.imageMessage ||
-    msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
-
-  if (!imgMsg) return;
-
-  const mimeType = (imgMsg.mimetype || "image/jpeg").toLowerCase();
-  if (!IMAGE_MIME_TYPES.has(mimeType)) return;
-
-  const senderJid   = msg.key.participant || groupJid;
-  const senderPhone = senderJid.includes("@") ? senderJid.split("@")[0] : null;
-  const pushName    = msg.pushName || null;
-
-  console.log(`[bot] Receipt from ${pushName || senderPhone} in ${groupJid}`);
-
-  try {
-    const buffer = await downloadMediaMessage(
-      msg, "buffer", {},
-      { logger: pino({ level: "silent" }), reuploadRequest: sock.updateMediaMessage },
-    );
-
-    const form = new FormData();
-    form.append("file", buffer, { filename: "receipt.jpg", contentType: mimeType });
-    form.append("whatsapp_message_id", msgId);
-    form.append("group_jid", groupJid);
-    if (pushName)    form.append("sender_name",  pushName);
-    if (senderPhone) form.append("sender_phone", senderPhone);
-
-    const res = await axios.post(`${FASTAPI_URL}/process-receipt`, form, {
-      headers: { ...form.getHeaders(), Authorization: `Bearer ${SERVICE_KEY}` },
-      timeout: 60000,
-    });
-
-    const { status, vendor, total, flagged } = res.data;
-    if (status === "duplicate") return;
-
-    if (flagged) {
-      await sock.sendMessage(groupJid, {
-        text: `Receipt captured but needs a manual check.\nVendor: ${vendor || "unknown"}, Total: ${total ? `SGD ${total}` : "unreadable"}`,
-      });
-    } else {
-      await sock.sendMessage(groupJid, { react: { text: "✅", key: msg.key } });
-    }
-
-    console.log(`[bot] Receipt saved — ${vendor || "unknown"}, SGD ${total ?? "?"}`);
-  } catch (err) {
-    console.error(`[bot] Receipt ${msgId} failed:`, err.response?.data || err.message);
-    await sock.sendMessage(groupJid, {
-      text: "Could not process the receipt — please try a clearer photo.",
-    });
-  }
-}
-
-// ── Receipt PDF document ─────────────────────────────────────
-async function processReceiptDocument(msg, sock) {
-  const groupJid = msg.key.remoteJid;
-  const msgId    = msg.key.id;
-  const docMsg   =
+  const docMsg =
     msg.message?.documentMessage ||
     msg.message?.ephemeralMessage?.message?.documentMessage;
+  const hasPDF = docMsg && PDF_MIME_TYPES.has((docMsg.mimetype || "").toLowerCase());
 
-  if (!docMsg) return;
+  let payload;
 
-  const mimeType = (docMsg.mimetype || "").toLowerCase();
-  if (!PDF_MIME_TYPES.has(mimeType)) return;
+  if (imgMsg || hasPDF) {
+    const mediaMsg = hasPDF ? docMsg : imgMsg;
+    const mimeType = (mediaMsg.mimetype || "image/jpeg").toLowerCase();
 
-  const senderJid   = msg.key.participant || groupJid;
-  const senderPhone = senderJid.includes("@") ? senderJid.split("@")[0] : null;
-  const pushName    = msg.pushName || null;
+    try {
+      const buffer = await downloadMediaMessage(
+        msg, "buffer", {},
+        { logger: pino({ level: "silent" }), reuploadRequest: sock.updateMediaMessage },
+      );
+      payload = {
+        household_id,
+        group_jid: remoteJid,
+        thread_id: remoteJid,
+        image_b64: buffer.toString("base64"),
+        image_mime: mimeType,
+        query: null,
+      };
+    } catch (e) {
+      console.error("[bot] media download failed:", e.message);
+      return;
+    }
+  } else {
+    const text =
+      msg.message?.conversation ||
+      msg.message?.extendedTextMessage?.text ||
+      msg.message?.ephemeralMessage?.message?.conversation ||
+      msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+      "";
+    if (!text.trim()) return;
 
-  console.log(`[bot] PDF receipt from ${pushName || senderPhone} in ${groupJid}`);
+    payload = {
+      household_id,
+      group_jid: remoteJid,
+      thread_id: remoteJid,
+      query: text,
+      image_b64: null,
+      image_mime: null,
+    };
+  }
 
   try {
-    const buffer = await downloadMediaMessage(
-      msg, "buffer", {},
-      { logger: pino({ level: "silent" }), reuploadRequest: sock.updateMediaMessage },
+    await sock.sendPresenceUpdate("composing", remoteJid);
+    const result = await axios.post(
+      `${FASTAPI_URL}/internal/graph-invoke`,
+      payload,
+      { headers: iHeaders, timeout: 90000 },
     );
+    await sock.sendPresenceUpdate("paused", remoteJid);
 
-    const form = new FormData();
-    form.append("file", buffer, { filename: "receipt.pdf", contentType: "application/pdf" });
-    form.append("whatsapp_message_id", msgId);
-    form.append("group_jid", groupJid);
-    if (pushName)    form.append("sender_name",  pushName);
-    if (senderPhone) form.append("sender_phone", senderPhone);
-
-    const res = await axios.post(`${FASTAPI_URL}/process-receipt`, form, {
-      headers: { ...form.getHeaders(), Authorization: `Bearer ${SERVICE_KEY}` },
-      timeout: 90000,  // PDF conversion + OCR may take longer
-    });
-
-    const { status, vendor, total, flagged } = res.data;
-    if (status === "duplicate") return;
-
-    if (flagged) {
-      await sock.sendMessage(groupJid, {
-        text: `Receipt captured but needs a manual check.\nVendor: ${vendor || "unknown"}, Total: ${total ? `SGD ${total}` : "unreadable"}`,
-      });
-    } else {
-      await sock.sendMessage(groupJid, { react: { text: "✅", key: msg.key } });
+    if (result.data?.response) {
+      await sock.sendMessage(remoteJid, { text: result.data.response });
     }
-
-    console.log(`[bot] PDF Receipt saved — ${vendor || "unknown"}, SGD ${total ?? "?"}`);
-  } catch (err) {
-    console.error(`[bot] PDF Receipt ${msgId} failed:`, err.response?.data || err.message);
-    await sock.sendMessage(groupJid, {
-      text: "Could not process the PDF receipt — please try a clearer image or check the file.",
-    });
+  } catch (e) {
+    await sock.sendPresenceUpdate("paused", remoteJid).catch(() => {});
+    console.error("[bot] graph-invoke failed:", e.response?.data || e.message);
   }
 }
+
+// LANGGRAPH MIGRATION - kept for rollback
+// async function handleHouseholdQuery(text, groupJid, sock) {
+//   try {
+//     await sock.sendPresenceUpdate("composing", groupJid);
+//     const res = await axios.post(
+//       `${FASTAPI_URL}/query`,
+//       { query: text, group_jid: groupJid },
+//       { headers: { Authorization: `Bearer ${SERVICE_KEY}` }, timeout: 30000 },
+//     );
+//     await sock.sendPresenceUpdate("paused", groupJid);
+//     if (res.data?.handled) {
+//       await sock.sendMessage(groupJid, { text: res.data.response });
+//       return true;
+//     }
+//     return false;
+//   } catch (e) {
+//     console.error("[bot] query failed:", e.message);
+//     await sock.sendPresenceUpdate("paused", groupJid);
+//     return false;
+//   }
+// }
+
+// LANGGRAPH MIGRATION - kept for rollback
+// function isHouseholdQuery(text) {
+//   const t = (text || "").trim();
+//   if (!t || t.length < 5 || t.length > 400) return false;
+//   if (t.endsWith("?")) return true;
+//   return /^(what|how|when|where|who|which|show|tell|list|find|give|total|summarize|summarise|compare|any|are|is|do|did|have|has)\b/i.test(t);
+// }
+
+// LANGGRAPH MIGRATION - kept for rollback
+// async function forwardText(msg) {
+//   const remoteJid = msg.key.remoteJid;
+//   const senderJid = msg.key.participant || remoteJid;
+//   const text =
+//     msg.message?.conversation ||
+//     msg.message?.extendedTextMessage?.text ||
+//     msg.message?.ephemeralMessage?.message?.conversation ||
+//     msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+//     "";
+//
+//   if (!text.trim()) return;
+//
+//   try {
+//     await axios.post(
+//       `${FASTAPI_URL}/webhook/whatsapp`,
+//       {
+//         typeWebhook: "incomingMessageReceived",
+//         idMessage: msg.key.id,
+//         senderData: {
+//           chatId: remoteJid,
+//           sender: senderJid,
+//           senderName: msg.pushName || null,
+//         },
+//         messageData: {
+//           typeMessage: "textMessage",
+//           textMessageData: { textMessage: text },
+//         },
+//       },
+//       { headers: iHeaders },
+//     );
+//   } catch (e) {
+//     console.error("[bot] forwardText failed:", e.message);
+//   }
+// }
+
+// LANGGRAPH MIGRATION - kept for rollback
+// const RECIPE_TRIGGERS = /^(🛒|cook|recipe|ingredients|what do i need)/i;
+// function isRecipeCaption(caption) {
+//   return RECIPE_TRIGGERS.test((caption || "").trim());
+// }
+
+// LANGGRAPH MIGRATION - kept for rollback
+// async function processRecipeImage(msg, sock) { ... }
+
+// LANGGRAPH MIGRATION - kept for rollback
+// async function processReceiptImage(msg, sock) { ... }
+
+// LANGGRAPH MIGRATION - kept for rollback
+// async function processReceiptDocument(msg, sock) { ... }
 
 // ── Main socket ──────────────────────────────────────────────
 async function startSock() {
@@ -434,6 +328,7 @@ async function startSock() {
       connectedGroups = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
       isConnected = true;
       await pushConnected(connectedGroups);
+      await refreshGroupMap();
       startMessagePoller();
     }
 
@@ -463,52 +358,8 @@ async function startSock() {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
-      const remoteJid = msg.key.remoteJid;
-      if (!remoteJid?.endsWith("@g.us")) continue;
-
-      const hasImage =
-        msg.message?.imageMessage ||
-        msg.message?.viewOnceMessage?.message?.imageMessage ||
-        msg.message?.viewOnceMessageV2?.message?.imageMessage ||
-        msg.message?.ephemeralMessage?.message?.imageMessage ||
-        msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
-
-      const docMsg =
-        msg.message?.documentMessage ||
-        msg.message?.ephemeralMessage?.message?.documentMessage;
-      const hasPDF = docMsg &&
-        PDF_MIME_TYPES.has((docMsg.mimetype || "").toLowerCase());
-
-      // Skip own text/non-media messages to avoid looping on bot confirmations
-      if (msg.key.fromMe && !hasImage && !hasPDF) continue;
-
-      if (hasImage) {
-        const imgCaption = hasImage?.caption || "";
-        if (isRecipeCaption(imgCaption)) {
-          console.log(`[bot] Recipe trigger detected in ${remoteJid} — processing as recipe`);
-          await processRecipeImage(msg, sock);
-        } else {
-          console.log(`[bot] Image received in ${remoteJid} — processing as receipt`);
-          await processReceiptImage(msg, sock);
-        }
-      } else if (hasPDF) {
-        console.log(`[bot] PDF document received in ${remoteJid} — processing as receipt`);
-        await processReceiptDocument(msg, sock);
-      } else {
-        const text =
-          msg.message?.conversation ||
-          msg.message?.extendedTextMessage?.text ||
-          msg.message?.ephemeralMessage?.message?.conversation ||
-          msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
-          "";
-        if (isHouseholdQuery(text)) {
-          console.log(`[bot] Query detected in ${remoteJid}: "${text.slice(0, 60)}"`);
-          const handled = await handleHouseholdQuery(text, remoteJid, sock);
-          if (!handled) await forwardText(msg);
-        } else {
-          await forwardText(msg);
-        }
-      }
+      if (msg.key.fromMe) continue;
+      await handleMessage(msg, sock);
     }
   });
 }

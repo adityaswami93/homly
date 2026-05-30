@@ -1,69 +1,123 @@
-# Task 020 — LangGraph Integration
+# Task 020 — LangGraph Implementation
+
+## Why LangGraph
+
+The original bot used a flat `if/elif` chain in the `messages.upsert` handler to decide whether an
+incoming message was a receipt, recipe, query, etc. Each branch called a different function, making
+it difficult to add new message types, share state across steps, or attach conversation memory.
+
+LangGraph replaces that chain with a compiled, stateful directed graph. Each node is an isolated
+Python function; routing is declared separately from logic; and a checkpointer can be attached to
+give each WhatsApp group its own persistent conversation thread — all with zero changes to the
+underlying agent functions.
+
+---
 
 ## State Shape (`HomlyState`)
 
 | Field | Type | Why it exists |
 |-------|------|---------------|
-| `household_id` | `str` | Every query is scoped to a household; all DB reads/writes use this as the partition key. |
-| `group_jid` | `Optional[str]` | WhatsApp group JID — needed so nodes that send messages back know where to deliver them. |
-| `query` | `Optional[str]` | Raw text from a WhatsApp message or API call; populated when the trigger is a text message. |
-| `image_bytes` | `Optional[bytes]` | Raw image payload; populated when the trigger is an image (receipt or recipe photo). |
-| `image_mime` | `Optional[str]` | MIME type of the image (e.g. `image/jpeg`) — required by the vision model API. |
-| `message_type` | `Optional[str]` | Classification output: `"receipt"`, `"recipe"`, `"text_query"`, `"pantry_command"`, `"unknown"`. Drives conditional routing after `classify`. |
-| `agent_results` | `Annotated[list, add]` | Reducer-merged list so multiple parallel agent nodes can each append their output without overwriting each other. |
-| `response` | `Optional[str]` | Final WhatsApp-ready text assembled by `synthesise`. The bot sends this string to the group. |
-| `context` | `Optional[list]` | Last N conversation turns stored as `[{role, content}]` pairs; passed to the LLM for follow-up queries. |
-| `error` | `Optional[str]` | Non-fatal error description; `synthesise` can fall back to a user-friendly message when set. |
+| `household_id` | `str` | Partition key for every DB read/write. All agents scope queries with this. |
+| `group_jid` | `Optional[str]` | WhatsApp group JID — needed when a node or the caller needs to route a reply. |
+| `query` | `Optional[str]` | Raw text from a WhatsApp message or API call. Populated when the trigger is text. |
+| `image_bytes` | `Optional[bytes]` | Raw image/PDF payload. Populated when the trigger is a media message. |
+| `image_mime` | `Optional[str]` | MIME type (e.g. `image/jpeg`) — required by the vision model API. |
+| `message_type` | `Optional[str]` | Set by `classify_node`. Drives the conditional edge out of classify. One of `"receipt"`, `"recipe"`, `"text_query"`, `"pantry_command"`, `"unknown"`. |
+| `agent_results` | `Annotated[list, add]` | Reducer-merged list so parallel agent nodes can each append without overwriting each other. |
+| `response` | `Optional[str]` | Final WhatsApp-ready string, assembled by `synthesise_node`. The bot sends this to the group. |
+| `context` | `Optional[list]` | Last N conversation turns as `[{role, content}]` pairs. Passed to the LLM for follow-up awareness. |
+| `error` | `Optional[str]` | Non-fatal error description. `synthesise_node` can fall back to a user-friendly message when set. |
 
 ---
 
-## Planned Node Structure
+## Node Responsibilities
 
 ```
 __start__
     │
     ▼
-┌─────────┐
-│ classify │  LLM or heuristic → sets message_type
-└────┬────┘
-     │
-     ├─── "receipt"        ──► receipt_agent  ──► synthesise ──► __end__
-     ├─── "recipe"         ──► recipe_agent   ──► synthesise ──► __end__
-     ├─── "text_query"     ──► query_agent    ──► synthesise ──► __end__
-     ├─── "pantry_command" ──► pantry_agent   ──► synthesise ──► __end__
-     └─── "unknown"        ──────────────────────────────────► __end__
+┌──────────┐
+│ classify │  LLM (image) or keyword match (text) → sets message_type
+└────┬─────┘
+     ├── "receipt"        ──► receipt_node  ──► synthesise ──► __end__
+     ├── "recipe"         ──► recipe_node   ──► synthesise ──► __end__
+     ├── "text_query"     ──► query_node    ──► synthesise ──► __end__
+     ├── "pantry_command" ──► pantry_node   ──► synthesise ──► __end__
+     └── "unknown"        ──────────────────────────────────► __end__
 ```
 
-### Phase A (current) — Scaffolding
-- `HomlyState` defined.
-- `classify_node` stub: always returns `message_type = "unknown"`.
-- `synthesise_node` stub: returns `response = "stub response"`.
-- Graph compiles and routes `unknown` → `END` without touching `synthesise`.
-
-### Phase B — Classifier
-- Replace `classify_node` stub with an LLM call (or fast heuristic) that inspects `query` / presence of `image_bytes` and sets `message_type`.
-- Add conditional edges for all five message types.
-
-### Phase C — Agent Nodes
-- Implement `receipt_agent`, `recipe_agent`, `query_agent`, `pantry_agent` nodes.
-- Each appends a structured dict to `agent_results`.
-- Wire all into graph with edges to `synthesise`.
-
-### Phase D — Synthesise
-- Replace `synthesise_node` stub with a node that reads `agent_results` and formats a WhatsApp-friendly reply into `response`.
-
-### Phase E — API Integration
-- Mount `graph.invoke()` inside the FastAPI receipt/message flow.
-- Optionally add Postgres checkpointer for conversation memory.
+| Node | Source function | What it does |
+|------|-----------------|--------------|
+| `classify` | `classify_node` | Image → vision LLM classifies as receipt/food_photo/other. Text → pure keyword match (no LLM). |
+| `receipt` | `receipt_agent.analyse_receipt` | Vision OCR → structured receipt JSON. |
+| `recipe` | `recipe_agent.analyse_dish_with_pantry` | Vision → dish identification + pantry cross-reference. |
+| `query` | `router_agent.run_query` | LLM router dispatches to GroceryQueryAgent / InsuranceQueryAgent / etc. |
+| `pantry` | `router_agent.run_query` | Same router, specialised for pantry update commands. |
+| `synthesise` | `synthesise_node` | Reads `agent_results`, formats a WhatsApp-friendly string into `response`. |
 
 ---
 
-## Graph Diagram (Phase A)
+## How to Add a New Agent Node
+
+1. Create the agent function (e.g. `agents/budget_agent.py`).
+2. In `homly_graph.py`:
+   - Add a node function (e.g. `budget_node`) that calls the agent and appends `{"agent": "budget", "data": result}` to `agent_results`.
+   - Register it: `_builder.add_node("budget", budget_node)`.
+   - Add a new classification branch in `classify_node` (or a new keyword prefix in `_PANTRY_PREFIXES` / `_QUERY_PREFIXES`).
+   - Wire the conditional edge: `"budget_query": "budget"`.
+   - Add `_builder.add_edge("budget", "synthesise")`.
+3. Handle the new agent in `synthesise_node`'s `if agent == "budget":` branch.
+
+No other files need changing.
+
+---
+
+## Checkpointer Setup
+
+LangGraph's `PostgresSaver` stores conversation checkpoints in the same Postgres database as the
+rest of the app.  It creates its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`)
+via `checkpointer.setup()` on first use.
+
+```
+SUPABASE_DB_URL=postgresql://postgres:[password]@db.[project-ref].supabase.co:5432/postgres
+```
+
+Get the value from: Supabase dashboard → Settings → Database → Connection string (direct).
+
+If `SUPABASE_DB_URL` is not set the system falls back silently to a stateless graph — no memory,
+no error.  All functionality works; only cross-message context is lost.
+
+---
+
+## `thread_id` Convention
+
+Each WhatsApp group JID is used as the `thread_id` passed to the LangGraph checkpointer config:
+
+```python
+config = {"configurable": {"thread_id": group_jid}}
+```
+
+This means every group has its own independent conversation thread.  A follow-up question like
+"what about last month?" will have access to the previous exchange within the same group.
+
+The `/query` API endpoint uses `with_memory=False` (stateless) because the frontend doesn't yet
+pass a stable `thread_id`.
+
+---
+
+## Graph Diagram
 
 ```mermaid
 graph TD;
     __start__ --> classify;
     classify -. unknown .-> __end__;
+    classify -. pantry_command .-> pantry;
+    classify -. text_query .-> query;
+    classify -.-> receipt;
+    classify -.-> recipe;
+    pantry --> synthesise;
+    query --> synthesise;
+    receipt --> synthesise;
+    recipe --> synthesise;
+    synthesise --> __end__;
 ```
-
-`synthesise` is defined but unreachable until Phase B wires in the other message-type edges.

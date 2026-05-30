@@ -32,6 +32,7 @@ SKIP_AUTH_PATHS = [
     "/setup/reset-qr",
     "/internal/shopping-list",
     "/internal/pantry",
+    "/internal/graph-invoke",
     "/waitlist",
 ]
 

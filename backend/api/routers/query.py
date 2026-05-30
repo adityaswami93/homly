@@ -45,11 +45,29 @@ async def query_endpoint(request: Request, body: QueryRequest):
     if not body.query.strip():
         raise HTTPException(status_code=400, detail="query must not be empty")
 
-    from agents.router_agent import run_query
+    from agents.homly_graph import get_graph
 
-    result = await asyncio.to_thread(run_query, body.query, household_id, body.context)
+    g = get_graph(with_memory=False)
+    state = {
+        "household_id": household_id,
+        "group_jid": body.group_jid,
+        "query": body.query,
+        "image_bytes": None,
+        "image_mime": None,
+        "agent_results": [],
+        "context": body.context or [],
+        "response": None,
+        "error": None,
+    }
+    result = await asyncio.to_thread(g.invoke, state)
+
+    ar = result.get("agent_results") or []
+    agent_result = next((r for r in ar if r.get("agent") in ("query", "pantry")), None)
+    sources = agent_result["data"].get("sources", []) if agent_result else []
+    handled = agent_result["data"].get("handled", False) if agent_result else False
+
     return {
-        "response": result.response,
-        "sources": result.sources,
-        "handled": result.handled,
+        "response": result.get("response") or "I couldn't process that query.",
+        "sources": sources,
+        "handled": handled,
     }

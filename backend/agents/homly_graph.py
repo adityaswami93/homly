@@ -1,14 +1,24 @@
 import json
 import logging
 import os
+from datetime import datetime, timezone as tz
 from operator import add
 from typing import Annotated, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
+from langgraph.types import interrupt
 
 logger = logging.getLogger(__name__)
 
 # ── State ─────────────────────────────────────────────────────────────────────
+
+_GROCERY_VENDORS = frozenset({
+    "fairprice", "cold storage", "giant", "sheng siong", "redmart",
+    "mustafa", "prime supermarket", "market place", "marketplace",
+    "jasons", "jason's", "little farms",
+})
+
+_NON_PANTRY_KEYWORDS = ("plastic bag", "carrier bag", "voucher", "gift card", "receipt")
 
 
 class HomlyState(TypedDict):
@@ -40,6 +50,13 @@ class HomlyState(TypedDict):
 
     # Error state
     error: Optional[str]
+
+    # Phase 3 — pantry confirmation flow
+    receipt_id: Optional[str]
+    receipt_category: Optional[str]       # "grocery" | "non_grocery"
+    pantry_candidates: Optional[list]     # items extracted from receipt for pantry
+    pantry_confirmation_pending: Optional[bool]
+    confirmed_items: Optional[list]       # items the user approved
 
 
 # ── Classify ──────────────────────────────────────────────────────────────────
@@ -125,7 +142,10 @@ def receipt_node(state: HomlyState) -> dict:
         sender_name=state.get("sender_name"),
         sender_phone=state.get("sender_phone"),
     )
-    return {"agent_results": [{"agent": "receipt", "data": result}]}
+    return {
+        "agent_results": [{"agent": "receipt", "data": result}],
+        "receipt_id": result.get("receipt_id"),
+    }
 
 
 def recipe_node(state: HomlyState) -> dict:
@@ -187,6 +207,177 @@ def pantry_node(state: HomlyState) -> dict:
     }}]}
 
 
+# ── Phase 3 — Pantry confirmation nodes ──────────────────────────────────────
+
+
+def classify_receipt_type_node(state: HomlyState) -> dict:
+    results = state.get("agent_results") or []
+    if not results:
+        return {"receipt_category": "non_grocery"}
+
+    data = results[0].get("data", {})
+    if data.get("status") in ("duplicate", "error"):
+        return {"receipt_category": "non_grocery"}
+
+    vendor = (data.get("vendor") or "").lower()
+    if any(g in vendor for g in _GROCERY_VENDORS):
+        return {"receipt_category": "grocery"}
+
+    items = data.get("items") or []
+    if not items:
+        return {"receipt_category": "non_grocery"}
+
+    grocery_total = sum(
+        float(i.get("line_total") or 0)
+        for i in items
+        if (i.get("category") or "").lower() == "groceries"
+    )
+    grand_total = sum(float(i.get("line_total") or 0) for i in items)
+
+    if grand_total > 0 and (grocery_total / grand_total) > 0.5:
+        return {"receipt_category": "grocery"}
+
+    return {"receipt_category": "non_grocery"}
+
+
+def extract_pantry_candidates_node(state: HomlyState) -> dict:
+    results = state.get("agent_results") or []
+    data = results[0].get("data", {}) if results else {}
+    items = data.get("items") or []
+
+    candidates = []
+    for item in items:
+        category = (item.get("category") or "").lower()
+        if category == "food & beverage":
+            continue
+        line_total = float(item.get("line_total") or 0)
+        if line_total < 0.50:
+            continue
+        canonical = (item.get("canonical_name") or item.get("name") or "").strip().lower()
+        if not canonical:
+            continue
+        if any(kw in canonical for kw in _NON_PANTRY_KEYWORDS):
+            continue
+        candidates.append({
+            "canonical_name": canonical,
+            "category":       item.get("category"),
+            "unit_price":     item.get("unit_price"),
+            "qty":            item.get("qty"),
+            "unit":           item.get("unit"),
+        })
+
+    return {"pantry_candidates": candidates}
+
+
+def send_pantry_confirmation_node(state: HomlyState) -> dict:
+    from services.whatsapp_client import send_text_sync
+
+    candidates = state.get("pantry_candidates") or []
+    data = (state.get("agent_results") or [{}])[0].get("data", {})
+    vendor = data.get("vendor") or "grocery store"
+    total = data.get("total")
+    total_str = f"SGD {total}" if total else ""
+
+    header = f"🛒 *Grocery receipt saved* — {vendor}{', ' + total_str if total_str else ''}"
+    lines = "\n".join(
+        f"{i + 1}. {c['canonical_name'].title()}"
+        + (f" ({c['qty']} {c['unit']})" if c.get("qty") and c.get("unit") else
+           f" ({c['qty']})" if c.get("qty") else "")
+        for i, c in enumerate(candidates)
+    )
+    footer = (
+        "\nReply *yes* to add all, *no* to skip, "
+        "or list numbers to add specific items (e.g. *1,3,5*)"
+    )
+    message = f"{header}\n\nAdd these items to your pantry?\n\n{lines}{footer}"
+
+    group_jid = state.get("group_jid")
+    if group_jid:
+        send_text_sync(group_jid, message)
+
+    interrupt({"waiting_for": "pantry_confirmation", "group_jid": group_jid})
+
+    return {"pantry_confirmation_pending": False}
+
+
+def resume_from_confirmation_node(state: HomlyState) -> dict:
+    candidates = state.get("pantry_candidates") or []
+    reply = (state.get("query") or "").strip().lower()
+
+    if not reply or reply in ("yes", "y", "ok", "yeah", "sure", "yep", "yup"):
+        return {"confirmed_items": list(candidates)}
+
+    if reply in ("no", "n", "nope", "skip", "nah"):
+        return {"confirmed_items": []}
+
+    # Comma-separated numbers
+    if all(part.strip().isdigit() for part in reply.split(",") if part.strip()):
+        indices = [int(p.strip()) - 1 for p in reply.split(",") if p.strip().isdigit()]
+        selected = [candidates[i] for i in indices if 0 <= i < len(candidates)]
+        return {"confirmed_items": selected}
+
+    # Fuzzy name match
+    tokens = [t.strip() for t in reply.split(",")]
+    selected = [
+        c for c in candidates
+        if any(t in c["canonical_name"] or c["canonical_name"] in t for t in tokens)
+    ]
+    if selected:
+        return {"confirmed_items": selected}
+
+    # Unrecognised — bias toward adding all
+    return {"confirmed_items": list(candidates)}
+
+
+def update_pantry_node(state: HomlyState) -> dict:
+    from supabase import create_client
+    db = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+
+    confirmed = state.get("confirmed_items") or []
+    if not confirmed:
+        return {"agent_results": [{"agent": "pantry_update", "data": {"updated": [], "count": 0}}]}
+
+    household_id = state["household_id"]
+    now = datetime.now(tz.utc).isoformat()
+    rows = [
+        {
+            "household_id":   household_id,
+            "canonical_name": item["canonical_name"],
+            "category":       item.get("category"),
+            "status":         "in_stock",
+            "quantity":       item.get("qty"),
+            "unit":           item.get("unit"),
+            "added_by":       "receipt",
+            "last_updated":   now,
+        }
+        for item in confirmed
+    ]
+    try:
+        db.table("pantry_items").upsert(rows, on_conflict="household_id,canonical_name").execute()
+    except Exception as e:
+        logger.error(f"[update_pantry_node] upsert failed: {e}")
+
+    names = [item["canonical_name"] for item in confirmed]
+    return {"agent_results": [{"agent": "pantry_update", "data": {"updated": names, "count": len(names)}}]}
+
+
+def confirm_to_user_node(state: HomlyState) -> dict:
+    results = state.get("agent_results") or []
+    pantry_result = next((r for r in results if r.get("agent") == "pantry_update"), None)
+    if not pantry_result:
+        return {"response": "👍 Pantry not updated"}
+
+    count = pantry_result["data"].get("count", 0)
+    names = pantry_result["data"].get("updated", [])
+    if count == 0:
+        return {"response": "👍 Pantry not updated"}
+
+    name_list = ", ".join(n.title() for n in names[:6])
+    if len(names) > 6:
+        name_list += f" and {len(names) - 6} more"
+    return {"response": f"✅ Added {count} item{'s' if count != 1 else ''} to your pantry: {name_list}"}
+
+
 # ── Synthesise ────────────────────────────────────────────────────────────────
 
 
@@ -244,6 +435,10 @@ def synthesise_node(state: HomlyState) -> dict:
     if not results:
         return {"response": None}
 
+    # Pantry confirmation path already set response in confirm_to_user_node
+    if state.get("confirmed_items") is not None:
+        return {}
+
     ar = results[0]
     agent = ar.get("agent")
     data = ar.get("data", {})
@@ -277,6 +472,15 @@ def route_by_type(state: HomlyState) -> str:
     return state.get("message_type") or "unknown"
 
 
+def route_after_receipt_classify(state: HomlyState) -> str:
+    if state.get("receipt_category") != "grocery":
+        return "synthesise"
+    candidates = state.get("pantry_candidates")
+    if not candidates:
+        return "synthesise"
+    return "send_pantry_confirmation"
+
+
 _builder = StateGraph(HomlyState)
 _builder.add_node("classify", classify_node)
 _builder.add_node("receipt", receipt_node)
@@ -284,6 +488,14 @@ _builder.add_node("recipe", recipe_node)
 _builder.add_node("query", query_node)
 _builder.add_node("pantry", pantry_node)
 _builder.add_node("synthesise", synthesise_node)
+
+# Phase 3 nodes
+_builder.add_node("classify_receipt_type", classify_receipt_type_node)
+_builder.add_node("extract_pantry_candidates", extract_pantry_candidates_node)
+_builder.add_node("send_pantry_confirmation", send_pantry_confirmation_node)
+_builder.add_node("resume_from_confirmation", resume_from_confirmation_node)
+_builder.add_node("update_pantry", update_pantry_node)
+_builder.add_node("confirm_to_user", confirm_to_user_node)
 
 _builder.set_entry_point("classify")
 _builder.add_conditional_edges("classify", route_by_type, {
@@ -293,7 +505,25 @@ _builder.add_conditional_edges("classify", route_by_type, {
     "pantry_command": "pantry",
     "unknown": END,
 })
-_builder.add_edge("receipt", "synthesise")
+
+# Receipt path: receipt → classify_receipt_type → extract_pantry_candidates → conditional
+_builder.add_edge("receipt", "classify_receipt_type")
+_builder.add_edge("classify_receipt_type", "extract_pantry_candidates")
+_builder.add_conditional_edges(
+    "extract_pantry_candidates",
+    route_after_receipt_classify,
+    {
+        "synthesise": "synthesise",
+        "send_pantry_confirmation": "send_pantry_confirmation",
+    },
+)
+
+# Pantry confirmation path (resumes after interrupt)
+_builder.add_edge("send_pantry_confirmation", "resume_from_confirmation")
+_builder.add_edge("resume_from_confirmation", "update_pantry")
+_builder.add_edge("update_pantry", "confirm_to_user")
+_builder.add_edge("confirm_to_user", "synthesise")
+
 _builder.add_edge("recipe", "synthesise")
 _builder.add_edge("query", "synthesise")
 _builder.add_edge("pantry", "synthesise")

@@ -34,6 +34,7 @@ export const apps: App[] = [
     href: "/expenses",
     nav: [
       { label: "Overview", href: "/expenses" },
+      { label: "Pantry", href: "/expenses/pantry" },
       { label: "History", href: "/expenses/history" },
       { label: "Members", href: "/expenses/members" },
       { label: "Analytics", href: "/expenses/analytics" },

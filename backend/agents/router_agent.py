@@ -9,6 +9,7 @@ from supabase import create_client
 from agents.base_agent import AgentResult, BaseQueryAgent
 from agents.query.grocery_agent import GroceryQueryAgent
 from agents.query.insurance_query_agent import InsuranceQueryAgent
+from agents.query.pantry_agent import PantryQueryAgent
 from services.llm_client import get_completion, get_tool_completion
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ def _db():
 _AGENTS: list[BaseQueryAgent] = [
     GroceryQueryAgent(),
     InsuranceQueryAgent(),
+    PantryQueryAgent(),
 ]
 _AGENT_MAP: dict[str, BaseQueryAgent] = {a.manifest.tool_name: a for a in _AGENTS}
 

@@ -7,7 +7,7 @@ from typing import Optional
 from supabase import create_client
 import logging
 
-from agents.recipe_agent import analyse_dish
+from agents.recipe_agent import analyse_dish_with_pantry
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,16 +56,21 @@ async def scan_recipe(
             detail=f"Unsupported file type: {content_type}. Accepted: images only."
         )
 
-    analysis = analyse_dish(image_bytes, mime_type=content_type)
+    analysis = analyse_dish_with_pantry(image_bytes, content_type, household_id, _db())
 
     if "error" in analysis and not analysis.get("ingredients") and analysis.get("dish") is None:
         logger.warning(f"[recipe/scan] analysis error: {analysis.get('error')}")
 
     ingredients = analysis.get("ingredients") or []
-    non_staples = [i for i in ingredients if not i.get("pantry_staple")]
 
     added_count = 0
-    for ing in non_staples:
+    for ing in ingredients:
+        if ing.get("pantry_staple"):
+            continue
+        # Only add to shopping list if not already in stock
+        pantry_status = ing.get("pantry_status", "unknown")
+        if pantry_status == "in_stock":
+            continue
         canonical = (ing.get("canonical_name") or ing.get("name") or "").strip().lower()
         if not canonical:
             continue

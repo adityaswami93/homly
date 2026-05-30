@@ -202,7 +202,7 @@ async function processRecipeImage(msg, sock) {
       timeout: 60000,
     });
 
-    const { dish, confidence, ingredients, notes } = res.data;
+    const { dish, confidence, ingredients, need_to_buy, running_low, already_have, items_added_to_shopping_list } = res.data;
 
     if (!ingredients || ingredients.length === 0) {
       await sock.sendMessage(groupJid, {
@@ -211,28 +211,53 @@ async function processRecipeImage(msg, sock) {
       return;
     }
 
-    const nonStaples = ingredients.filter(i => !i.pantry_staple);
-    const staples    = ingredients.filter(i =>  i.pantry_staple);
-
-    const formatQty = (i) => {
-      const q = i.qty != null ? i.qty : "";
-      const u = i.unit ? ` ${i.unit}` : "";
-      return q ? `(${q}${u})` : "";
-    };
-
-    const itemLines = nonStaples.map(i => `- ${i.name} ${formatQty(i)}`.trimEnd()).join("\n");
+    const staples = (ingredients || []).filter(i => i.pantry_staple);
     const stapleNames = staples.map(i => i.name).join(", ");
+
+    // Determine if pantry cross-reference was useful (any ingredient had a known pantry status)
+    const nonStaples = (ingredients || []).filter(i => !i.pantry_staple);
+    const allUnknown = nonStaples.every(i => !i.pantry_status || i.pantry_status === "unknown");
 
     let reply = "";
     if (confidence === "low") {
       reply += "⚠️ _Not sure about this dish — here's my best guess:_\n\n";
     }
     reply += `🍽️ *${dish || "Unknown dish"}*\n\n`;
-    reply += `🛒 *Shopping list:*\n${itemLines}`;
-    if (stapleNames) {
-      reply += `\n\n✅ Skipped pantry staples (${stapleNames})`;
+
+    if (allUnknown) {
+      // Phase 1 fallback — no pantry data, show raw list
+      const formatQty = (i) => {
+        const q = i.qty != null ? i.qty : "";
+        const u = i.unit ? ` ${i.unit}` : "";
+        return q ? `(${q}${u})` : "";
+      };
+      const itemLines = nonStaples.map(i => `- ${i.name} ${formatQty(i)}`.trimEnd()).join("\n");
+      reply += `🛒 *Shopping list:*\n${itemLines}`;
+      if (stapleNames) {
+        reply += `\n\n✅ Skipped pantry staples (${stapleNames} etc.)`;
+      }
+      reply += "\n\n_Added to your Homly shopping list_";
+      reply += "\n_Tip: tell me what you have (e.g. \"added rice\") to get smarter suggestions_";
+    } else if ((need_to_buy || []).length === 0 && (running_low || []).length === 0) {
+      // Everything in stock
+      reply += "✅ You have everything to make this!";
+      if (stapleNames) {
+        reply += `\n\n_Pantry staples (${stapleNames} etc.) assumed present_`;
+      }
+    } else {
+      // Pantry-aware reply
+      const buyItems = [...(need_to_buy || []), ...(running_low || []).map(n => `${n} (running low)`)];
+      const buyLines = buyItems.map(n => `- ${n}`).join("\n");
+      reply += `🛒 *Need to buy:*\n${buyLines}`;
+      if ((already_have || []).length > 0) {
+        reply += `\n\n✅ *Already have:*\n${already_have.join(", ")}`;
+      }
+      if (stapleNames) {
+        reply += `\n\n_Pantry staples (${stapleNames} etc.) skipped_`;
+      }
+      const count = items_added_to_shopping_list || 0;
+      reply += `\n_Added ${count} item${count !== 1 ? "s" : ""} to your Homly shopping list_`;
     }
-    reply += "\n\n_Added to your Homly shopping list_";
 
     await sock.sendMessage(groupJid, { text: reply });
     console.log(`[bot] Recipe scan done — ${dish || "unknown"}, ${nonStaples.length} items added`);

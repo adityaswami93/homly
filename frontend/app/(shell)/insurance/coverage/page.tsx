@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
@@ -45,7 +45,7 @@ function ConfidenceBadge({ confidence }: { confidence: string }) {
   );
 }
 
-export default function CoveragePage() {
+function CoveragePageInner() {
   const [user, setUser] = useState<any>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -277,5 +277,13 @@ export default function CoveragePage() {
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
+  );
+}
+
+export default function CoveragePage() {
+  return (
+    <Suspense>
+      <CoveragePageInner />
+    </Suspense>
   );
 }

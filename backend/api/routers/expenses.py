@@ -212,6 +212,28 @@ async def process_receipt(
             if price_history_rows:
                 _db().table("price_history").insert(price_history_rows).execute()
 
+            # Upsert receipt items into pantry as in_stock
+            from datetime import datetime, timezone as tz
+            now = datetime.now(tz.utc).isoformat()
+            pantry_rows = []
+            for ins in inserted_items:
+                canonical = ins.get("canonical_name") or (ins.get("name") or "").strip().lower() or None
+                if not canonical:
+                    continue
+                pantry_rows.append({
+                    "household_id":   household_id,
+                    "canonical_name": canonical,
+                    "category":       ins.get("category"),
+                    "status":         "in_stock",
+                    "added_by":       "receipt",
+                    "last_updated":   now,
+                })
+            if pantry_rows:
+                _db().table("pantry_items").upsert(
+                    pantry_rows,
+                    on_conflict="household_id,canonical_name",
+                ).execute()
+
     return {
         "status":     "ok",
         "receipt_id": receipt_id,

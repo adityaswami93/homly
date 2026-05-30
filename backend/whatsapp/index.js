@@ -70,17 +70,29 @@ async function pushConnected(groups) {
 }
 
 // ── Outgoing message poll ────────────────────────────────────
-function startMessagePoller(sock) {
+let _messagePollerStarted = false;
+
+function startMessagePoller() {
+  if (_messagePollerStarted) return;
+  _messagePollerStarted = true;
+
   setInterval(async () => {
+    if (!currentSock || !isConnected) return;
+    let messages = [];
     try {
       const res = await axios.get(`${FASTAPI_URL}/internal/messages`, { headers: iHeaders });
-      for (const msg of res.data.messages || []) {
-        if (msg.group_jid) {
-          await sock.sendMessage(msg.group_jid, { text: msg.text });
-        }
+      messages = res.data.messages || [];
+    } catch { /* backend may not be up yet */ return; }
+
+    for (const msg of messages) {
+      if (!msg.group_jid) continue;
+      try {
+        await currentSock.sendMessage(msg.group_jid, { text: msg.text });
+      } catch (e) {
+        console.error("[bot] sendMessage failed:", e.message);
       }
-    } catch { /* backend may not be up yet */ }
-  }, 10000);
+    }
+  }, 5000);
 }
 
 // ── Household query engine ───────────────────────────────────
@@ -313,7 +325,7 @@ async function startSock() {
       connectedGroups = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
       isConnected = true;
       await pushConnected(connectedGroups);
-      startMessagePoller(sock);
+      startMessagePoller();
     }
 
     if (connection === "close") {

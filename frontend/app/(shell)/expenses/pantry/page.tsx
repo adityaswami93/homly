@@ -266,6 +266,9 @@ export default function PantryPage() {
                   {item.added_by === "recipe" && (
                     <span title="Added from recipe" className="text-xs">🍽️</span>
                   )}
+                  {item.added_by === "fridge_scan" && (
+                    <span title="Added from fridge scan" className="text-xs">🧊</span>
+                  )}
                 </p>
                 <p className="text-stone-500 text-xs mt-0.5">
                   {item.category || "uncategorised"} · {relativeDate(item.last_updated)}

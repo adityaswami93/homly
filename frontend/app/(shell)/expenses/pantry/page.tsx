@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import api from "@/lib/axios";
 import { useToast } from "@/lib/toast";
+import Toast from "@/app/components/Toast";
 
 interface PantryItem {
   id: string;
@@ -59,7 +60,7 @@ export default function PantryPage() {
   const [addCategory, setAddCategory] = useState("");
   const [addStatus, setAddStatus] = useState<"in_stock" | "low" | "out_of_stock">("in_stock");
   const [adding, setAdding] = useState(false);
-  const { showToast } = useToast();
+  const { toasts, dismissToast, toast } = useToast();
 
   useEffect(() => {
     fetchItems();
@@ -70,7 +71,7 @@ export default function PantryPage() {
       const res = await api.get("/pantry");
       setItems(res.data);
     } catch {
-      showToast("Failed to load pantry", "error");
+      toast.error("Failed to load pantry");
     } finally {
       setLoading(false);
     }
@@ -91,7 +92,7 @@ export default function PantryPage() {
     try {
       await api.patch(`/pantry/${encodeURIComponent(item.canonical_name)}`, { status });
     } catch {
-      showToast("Failed to update status", "error");
+      toast.error("Failed to update status");
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: item.status } : i)));
     }
   }
@@ -100,9 +101,9 @@ export default function PantryPage() {
     setItems((prev) => prev.filter((i) => i.id !== item.id));
     try {
       await api.delete(`/pantry/${encodeURIComponent(item.canonical_name)}`);
-      showToast(`Removed ${item.canonical_name}`, "success");
+      toast.success(`Removed ${item.canonical_name}`);
     } catch {
-      showToast("Failed to delete item", "error");
+      toast.error("Failed to delete item");
       setItems((prev) => [...prev, item].sort((a, b) => a.canonical_name.localeCompare(b.canonical_name)));
     }
   }
@@ -123,9 +124,9 @@ export default function PantryPage() {
       setAddCategory("");
       setAddStatus("in_stock");
       setShowAddForm(false);
-      showToast(`Added ${name}`, "success");
+      toast.success(`Added ${name}`);
     } catch {
-      showToast("Failed to add item", "error");
+      toast.error("Failed to add item");
     } finally {
       setAdding(false);
     }
@@ -305,6 +306,8 @@ export default function PantryPage() {
           ))}
         </div>
       )}
+
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

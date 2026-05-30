@@ -70,17 +70,29 @@ async function pushConnected(groups) {
 }
 
 // ── Outgoing message poll ────────────────────────────────────
-function startMessagePoller(sock) {
+let _messagePollerStarted = false;
+
+function startMessagePoller() {
+  if (_messagePollerStarted) return;
+  _messagePollerStarted = true;
+
   setInterval(async () => {
+    if (!currentSock || !isConnected) return;
+    let messages = [];
     try {
       const res = await axios.get(`${FASTAPI_URL}/internal/messages`, { headers: iHeaders });
-      for (const msg of res.data.messages || []) {
-        if (msg.group_jid) {
-          await sock.sendMessage(msg.group_jid, { text: msg.text });
-        }
+      messages = res.data.messages || [];
+    } catch { /* backend may not be up yet */ return; }
+
+    for (const msg of messages) {
+      if (!msg.group_jid) continue;
+      try {
+        await currentSock.sendMessage(msg.group_jid, { text: msg.text });
+      } catch (e) {
+        console.error("[bot] sendMessage failed:", e.message);
       }
-    } catch { /* backend may not be up yet */ }
-  }, 10000);
+    }
+  }, 5000);
 }
 
 // ── Household query engine ───────────────────────────────────
@@ -145,6 +157,90 @@ async function forwardText(msg) {
     );
   } catch (e) {
     console.error("[bot] forwardText failed:", e.message);
+  }
+}
+
+// ── Recipe image ────────────────────────────────────────────
+const RECIPE_TRIGGERS = /^(🛒|cook|recipe|ingredients|what do i need)/i;
+
+function isRecipeCaption(caption) {
+  return RECIPE_TRIGGERS.test((caption || "").trim());
+}
+
+async function processRecipeImage(msg, sock) {
+  const groupJid = msg.key.remoteJid;
+  const imgMsg   =
+    msg.message?.imageMessage ||
+    msg.message?.viewOnceMessage?.message?.imageMessage ||
+    msg.message?.viewOnceMessageV2?.message?.imageMessage ||
+    msg.message?.ephemeralMessage?.message?.imageMessage ||
+    msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
+
+  if (!imgMsg) return;
+
+  const mimeType    = (imgMsg.mimetype || "image/jpeg").toLowerCase();
+  const senderJid   = msg.key.participant || groupJid;
+  const senderPhone = senderJid.includes("@") ? senderJid.split("@")[0] : null;
+  const pushName    = msg.pushName || null;
+
+  console.log(`[bot] Recipe scan from ${pushName || senderPhone} in ${groupJid}`);
+
+  try {
+    const buffer = await downloadMediaMessage(
+      msg, "buffer", {},
+      { logger: pino({ level: "silent" }), reuploadRequest: sock.updateMediaMessage },
+    );
+
+    const form = new FormData();
+    form.append("file", buffer, { filename: "food.jpg", contentType: mimeType });
+    form.append("group_jid", groupJid);
+    if (pushName)    form.append("sender_name",  pushName);
+    if (senderPhone) form.append("sender_phone", senderPhone);
+
+    const res = await axios.post(`${FASTAPI_URL}/recipe/scan`, form, {
+      headers: { ...form.getHeaders(), Authorization: `Bearer ${SERVICE_KEY}` },
+      timeout: 60000,
+    });
+
+    const { dish, confidence, ingredients, notes } = res.data;
+
+    if (!ingredients || ingredients.length === 0) {
+      await sock.sendMessage(groupJid, {
+        text: "Could not identify a dish in this photo. Try a clearer image, or add a caption like \"recipe 🛒\".",
+      });
+      return;
+    }
+
+    const nonStaples = ingredients.filter(i => !i.pantry_staple);
+    const staples    = ingredients.filter(i =>  i.pantry_staple);
+
+    const formatQty = (i) => {
+      const q = i.qty != null ? i.qty : "";
+      const u = i.unit ? ` ${i.unit}` : "";
+      return q ? `(${q}${u})` : "";
+    };
+
+    const itemLines = nonStaples.map(i => `- ${i.name} ${formatQty(i)}`.trimEnd()).join("\n");
+    const stapleNames = staples.map(i => i.name).join(", ");
+
+    let reply = "";
+    if (confidence === "low") {
+      reply += "⚠️ _Not sure about this dish — here's my best guess:_\n\n";
+    }
+    reply += `🍽️ *${dish || "Unknown dish"}*\n\n`;
+    reply += `🛒 *Shopping list:*\n${itemLines}`;
+    if (stapleNames) {
+      reply += `\n\n✅ Skipped pantry staples (${stapleNames})`;
+    }
+    reply += "\n\n_Added to your Homly shopping list_";
+
+    await sock.sendMessage(groupJid, { text: reply });
+    console.log(`[bot] Recipe scan done — ${dish || "unknown"}, ${nonStaples.length} items added`);
+  } catch (err) {
+    console.error(`[bot] Recipe scan failed:`, err.response?.data || err.message);
+    await sock.sendMessage(groupJid, {
+      text: "Could not analyse this recipe — please try again.",
+    });
   }
 }
 
@@ -313,7 +409,7 @@ async function startSock() {
       connectedGroups = Object.values(groups).map(g => ({ id: g.id, name: g.subject }));
       isConnected = true;
       await pushConnected(connectedGroups);
-      startMessagePoller(sock);
+      startMessagePoller();
     }
 
     if (connection === "close") {
@@ -362,8 +458,14 @@ async function startSock() {
       if (msg.key.fromMe && !hasImage && !hasPDF) continue;
 
       if (hasImage) {
-        console.log(`[bot] Image received in ${remoteJid} — processing as receipt`);
-        await processReceiptImage(msg, sock);
+        const imgCaption = hasImage?.caption || "";
+        if (isRecipeCaption(imgCaption)) {
+          console.log(`[bot] Recipe trigger detected in ${remoteJid} — processing as recipe`);
+          await processRecipeImage(msg, sock);
+        } else {
+          console.log(`[bot] Image received in ${remoteJid} — processing as receipt`);
+          await processReceiptImage(msg, sock);
+        }
       } else if (hasPDF) {
         console.log(`[bot] PDF document received in ${remoteJid} — processing as receipt`);
         await processReceiptDocument(msg, sock);

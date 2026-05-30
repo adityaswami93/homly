@@ -37,7 +37,7 @@ class HomlyState(TypedDict):
     sender_phone: Optional[str]
 
     # Classification result
-    message_type: Optional[str]  # "receipt"|"recipe"|"text_query"|"pantry_command"|"unknown"
+    message_type: Optional[str]  # "receipt"|"recipe"|"text_query"|"pantry_command"|"fridge_scan"|"unknown"
 
     # Outputs from agents — reducer lets multiple agents append independently
     agent_results: Annotated[list, add]
@@ -73,6 +73,11 @@ _PANTRY_PREFIXES = (
     "finished ", "out of", "low on",
 )
 
+_FRIDGE_SCAN_KEYWORDS = (
+    "fridge", "pantry", "shelf", "stock", "groceries",
+    "what do we have", "what's in", "inventory", "cupboard",
+)
+
 _QUERY_PREFIXES = (
     "what", "how", "when", "where", "who", "which",
     "show", "tell", "list", "find", "total",
@@ -95,6 +100,11 @@ def _classify_text(text: str) -> str:
 def classify_node(state: HomlyState) -> dict:
     try:
         if state.get("image_bytes"):
+            # Caption-based fridge scan detection takes priority over vision classifier
+            caption = (state.get("query") or "").lower()
+            if any(kw in caption for kw in _FRIDGE_SCAN_KEYWORDS):
+                return {"message_type": "fridge_scan"}
+
             from services.llm_client import get_vision_completion
             img_bytes = state["image_bytes"]
             img_mime = state.get("image_mime") or "image/jpeg"
@@ -273,23 +283,36 @@ def send_pantry_confirmation_node(state: HomlyState) -> dict:
     from services.whatsapp_client import send_text_sync
 
     candidates = state.get("pantry_candidates") or []
+    receipt_category = state.get("receipt_category")
     data = (state.get("agent_results") or [{}])[0].get("data", {})
-    vendor = data.get("vendor") or "grocery store"
-    total = data.get("total")
-    total_str = f"SGD {total}" if total else ""
 
-    header = f"🛒 *Grocery receipt saved* — {vendor}{', ' + total_str if total_str else ''}"
-    lines = "\n".join(
-        f"{i + 1}. {c['canonical_name'].title()}"
-        + (f" ({c['qty']} {c['unit']})" if c.get("qty") and c.get("unit") else
-           f" ({c['qty']})" if c.get("qty") else "")
-        for i, c in enumerate(candidates)
-    )
+    if receipt_category == "fridge_scan":
+        header = f"📦 *Found {len(candidates)} item{'s' if len(candidates) != 1 else ''} in your fridge/pantry:*"
+        lines = "\n".join(
+            f"{i + 1}. {'⚠️ ' if c.get('confidence') == 'low' else ''}{c['canonical_name'].title()}"
+            + (f" ({c['quantity']} {c['unit']})" if c.get("quantity") and c.get("unit") else
+               f" ({c['quantity']})" if c.get("quantity") else "")
+            for i, c in enumerate(candidates)
+        )
+    else:
+        vendor = data.get("vendor") or "grocery store"
+        total = data.get("total")
+        total_str = f"SGD {total}" if total else ""
+        header = f"🛒 *Grocery receipt saved* — {vendor}{', ' + total_str if total_str else ''}"
+        lines = "\n".join(
+            f"{i + 1}. {c['canonical_name'].title()}"
+            + (f" ({c.get('qty')} {c.get('unit')})" if c.get("qty") and c.get("unit") else
+               f" ({c.get('qty')})" if c.get("qty") else "")
+            for i, c in enumerate(candidates)
+        )
     footer = (
         "\nReply *yes* to add all, *no* to skip, "
         "or list numbers to add specific items (e.g. *1,3,5*)"
     )
-    message = f"{header}\n\nAdd these items to your pantry?\n\n{lines}{footer}"
+    if receipt_category == "fridge_scan":
+        message = f"{header}\n\nAdd to pantry?\n\n{lines}{footer}"
+    else:
+        message = f"{header}\n\nAdd these items to your pantry?\n\n{lines}{footer}"
 
     group_jid = state.get("group_jid")
     if group_jid:
@@ -345,9 +368,9 @@ def update_pantry_node(state: HomlyState) -> dict:
             "canonical_name": item["canonical_name"],
             "category":       item.get("category"),
             "status":         "in_stock",
-            "quantity":       item.get("qty"),
+            "quantity":       item.get("qty") or item.get("quantity"),
             "unit":           item.get("unit"),
-            "added_by":       "receipt",
+            "added_by":       item.get("source", "receipt"),
             "last_updated":   now,
         }
         for item in confirmed
@@ -376,6 +399,44 @@ def confirm_to_user_node(state: HomlyState) -> dict:
     if len(names) > 6:
         name_list += f" and {len(names) - 6} more"
     return {"response": f"✅ Added {count} item{'s' if count != 1 else ''} to your pantry: {name_list}"}
+
+
+# ── Fridge scan node ─────────────────────────────────────────────────────────
+
+
+def fridge_scan_node(state: HomlyState) -> dict:
+    from agents.fridge_agent import scan_fridge
+    try:
+        result = scan_fridge(state["image_bytes"], state.get("image_mime") or "image/jpeg")
+        items = result.get("items") or []
+
+        candidates = [
+            {
+                "canonical_name": item["canonical_name"],
+                "category": item.get("category"),
+                "quantity": item.get("quantity"),
+                "unit": item.get("unit"),
+                "confidence": item.get("confidence", "high"),
+                "source": "fridge_scan",
+            }
+            for item in items
+        ]
+
+        return {
+            "agent_results": [{"agent": "fridge_scan", "data": result}],
+            "pantry_candidates": candidates,
+            "receipt_category": "fridge_scan",
+        }
+    except Exception as e:
+        logger.error(f"[fridge_scan_node] error: {e}")
+        return {"error": str(e), "pantry_candidates": []}
+
+
+def route_after_fridge_scan(state: HomlyState) -> str:
+    candidates = state.get("pantry_candidates") or []
+    if not candidates:
+        return "synthesise"
+    return "send_pantry_confirmation"
 
 
 # ── Synthesise ────────────────────────────────────────────────────────────────
@@ -459,6 +520,23 @@ def synthesise_node(state: HomlyState) -> dict:
             response = f"✅ {vendor} — SGD {total}"
     elif agent == "recipe":
         response = _format_recipe(data)
+    elif agent == "fridge_scan":
+        items = data.get("items") or []
+        scan_confidence = data.get("scan_confidence", "high")
+        notes = data.get("notes")
+        if not items or (scan_confidence == "low" and not items):
+            response = (
+                "📷 Could not identify food items clearly. "
+                "Try a well-lit photo from straight on, or add a caption like \"fridge 🧊\""
+            )
+        else:
+            # Items were found but user declined — confirm_to_user_node handles the success path
+            response = "👍 Pantry not updated"
+        if notes and scan_confidence == "low" and not items:
+            response = (
+                "📷 Could not identify food items clearly. "
+                "Try a well-lit photo from straight on, or add a caption like \"fridge 🧊\""
+            )
     else:
         response = None
 
@@ -490,6 +568,7 @@ _builder.add_node("pantry", pantry_node)
 _builder.add_node("synthesise", synthesise_node)
 
 # Phase 3 nodes
+_builder.add_node("fridge_scan", fridge_scan_node)
 _builder.add_node("classify_receipt_type", classify_receipt_type_node)
 _builder.add_node("extract_pantry_candidates", extract_pantry_candidates_node)
 _builder.add_node("send_pantry_confirmation", send_pantry_confirmation_node)
@@ -503,6 +582,7 @@ _builder.add_conditional_edges("classify", route_by_type, {
     "recipe": "recipe",
     "text_query": "query",
     "pantry_command": "pantry",
+    "fridge_scan": "fridge_scan",
     "unknown": END,
 })
 
@@ -523,6 +603,11 @@ _builder.add_edge("send_pantry_confirmation", "resume_from_confirmation")
 _builder.add_edge("resume_from_confirmation", "update_pantry")
 _builder.add_edge("update_pantry", "confirm_to_user")
 _builder.add_edge("confirm_to_user", "synthesise")
+
+_builder.add_conditional_edges("fridge_scan", route_after_fridge_scan, {
+    "synthesise": "synthesise",
+    "send_pantry_confirmation": "send_pantry_confirmation",
+})
 
 _builder.add_edge("recipe", "synthesise")
 _builder.add_edge("query", "synthesise")

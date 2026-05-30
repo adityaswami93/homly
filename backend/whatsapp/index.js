@@ -160,7 +160,7 @@ async function handleMessage(msg, sock) {
         thread_id: remoteJid,
         image_b64: buffer.toString("base64"),
         image_mime: mimeType,
-        query: null,
+        query: (imgMsg?.caption || docMsg?.caption || null),
         whatsapp_message_id: msg.key.id,
         sender_name: senderName,
         sender_phone: senderPhone,

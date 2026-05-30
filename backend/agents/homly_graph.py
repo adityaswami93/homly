@@ -79,10 +79,16 @@ def classify_node(state: HomlyState) -> dict:
     try:
         if state.get("image_bytes"):
             from services.llm_client import get_vision_completion
+            img_bytes = state["image_bytes"]
+            img_mime = state.get("image_mime") or "image/jpeg"
+            # PDFs must be converted to JPEG before the vision model can classify them
+            if img_mime == "application/pdf":
+                from agents.receipt_agent import pdf_to_image_bytes
+                img_bytes, img_mime = pdf_to_image_bytes(img_bytes)
             raw = get_vision_completion(
                 _CLASSIFY_PROMPT,
-                state["image_bytes"],
-                state.get("image_mime") or "image/jpeg",
+                img_bytes,
+                img_mime,
             )
             clean = raw.strip()
             if clean.startswith("```"):
@@ -126,12 +132,38 @@ def recipe_node(state: HomlyState) -> dict:
     from agents.recipe_agent import analyse_dish_with_pantry
     from supabase import create_client
     db = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    household_id = state["household_id"]
     result = analyse_dish_with_pantry(
         state["image_bytes"],
         state.get("image_mime") or "image/jpeg",
-        state["household_id"],
+        household_id,
         db,
     )
+
+    # Add missing/low-stock ingredients to the household shopping list
+    added_count = 0
+    for ing in result.get("ingredients") or []:
+        if ing.get("pantry_staple") or ing.get("pantry_status") == "in_stock":
+            continue
+        canonical = (ing.get("canonical_name") or ing.get("name") or "").strip().lower()
+        if not canonical:
+            continue
+        try:
+            db.table("shopping_list").upsert(
+                {
+                    "household_id":   household_id,
+                    "canonical_name": canonical,
+                    "category":       ing.get("category", "other"),
+                    "added_by":       "recipe",
+                    "checked":        False,
+                },
+                on_conflict="household_id,canonical_name",
+            ).execute()
+            added_count += 1
+        except Exception as e:
+            logger.error(f"[recipe_node] shopping list upsert failed for {canonical}: {e}")
+
+    result["items_added_to_shopping_list"] = added_count
     return {"agent_results": [{"agent": "recipe", "data": result}]}
 
 

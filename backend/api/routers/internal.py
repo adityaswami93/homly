@@ -59,6 +59,9 @@ class GraphInvokeRequest(BaseModel):
     query: Optional[str] = None
     image_b64: Optional[str] = None
     image_mime: Optional[str] = None
+    whatsapp_message_id: Optional[str] = None
+    sender_name: Optional[str] = None
+    sender_phone: Optional[str] = None
 
 
 @router.post("/internal/graph-invoke")
@@ -75,6 +78,9 @@ async def graph_invoke(request: Request, body: GraphInvokeRequest):
         "query": body.query,
         "image_bytes": image_bytes,
         "image_mime": body.image_mime,
+        "whatsapp_message_id": body.whatsapp_message_id,
+        "sender_name": body.sender_name,
+        "sender_phone": body.sender_phone,
         "agent_results": [],
         "context": [],
         "response": None,

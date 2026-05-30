@@ -21,6 +21,11 @@ class HomlyState(TypedDict):
     image_bytes: Optional[bytes]
     image_mime: Optional[str]
 
+    # WhatsApp message metadata (needed for dedup + attribution when saving receipts)
+    whatsapp_message_id: Optional[str]
+    sender_name: Optional[str]
+    sender_phone: Optional[str]
+
     # Classification result
     message_type: Optional[str]  # "receipt"|"recipe"|"text_query"|"pantry_command"|"unknown"
 
@@ -74,10 +79,16 @@ def classify_node(state: HomlyState) -> dict:
     try:
         if state.get("image_bytes"):
             from services.llm_client import get_vision_completion
+            img_bytes = state["image_bytes"]
+            img_mime = state.get("image_mime") or "image/jpeg"
+            # PDFs must be converted to JPEG before the vision model can classify them
+            if img_mime == "application/pdf":
+                from agents.receipt_agent import pdf_to_image_bytes
+                img_bytes, img_mime = pdf_to_image_bytes(img_bytes)
             raw = get_vision_completion(
                 _CLASSIFY_PROMPT,
-                state["image_bytes"],
-                state.get("image_mime") or "image/jpeg",
+                img_bytes,
+                img_mime,
             )
             clean = raw.strip()
             if clean.startswith("```"):
@@ -105,10 +116,14 @@ def classify_node(state: HomlyState) -> dict:
 
 
 def receipt_node(state: HomlyState) -> dict:
-    from agents.receipt_agent import analyse_receipt
-    result = analyse_receipt(
-        state["image_bytes"],
-        state.get("image_mime") or "image/jpeg",
+    from services.receipt_service import save_receipt
+    result = save_receipt(
+        image_bytes=state["image_bytes"],
+        mime_type=state.get("image_mime") or "image/jpeg",
+        household_id=state["household_id"],
+        whatsapp_message_id=state.get("whatsapp_message_id"),
+        sender_name=state.get("sender_name"),
+        sender_phone=state.get("sender_phone"),
     )
     return {"agent_results": [{"agent": "receipt", "data": result}]}
 
@@ -117,12 +132,38 @@ def recipe_node(state: HomlyState) -> dict:
     from agents.recipe_agent import analyse_dish_with_pantry
     from supabase import create_client
     db = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    household_id = state["household_id"]
     result = analyse_dish_with_pantry(
         state["image_bytes"],
         state.get("image_mime") or "image/jpeg",
-        state["household_id"],
+        household_id,
         db,
     )
+
+    # Add missing/low-stock ingredients to the household shopping list
+    added_count = 0
+    for ing in result.get("ingredients") or []:
+        if ing.get("pantry_staple") or ing.get("pantry_status") == "in_stock":
+            continue
+        canonical = (ing.get("canonical_name") or ing.get("name") or "").strip().lower()
+        if not canonical:
+            continue
+        try:
+            db.table("shopping_list").upsert(
+                {
+                    "household_id":   household_id,
+                    "canonical_name": canonical,
+                    "category":       ing.get("category", "other"),
+                    "added_by":       "recipe",
+                    "checked":        False,
+                },
+                on_conflict="household_id,canonical_name",
+            ).execute()
+            added_count += 1
+        except Exception as e:
+            logger.error(f"[recipe_node] shopping list upsert failed for {canonical}: {e}")
+
+    result["items_added_to_shopping_list"] = added_count
     return {"agent_results": [{"agent": "recipe", "data": result}]}
 
 
@@ -210,6 +251,8 @@ def synthesise_node(state: HomlyState) -> dict:
     if agent in ("query", "pantry"):
         response = data.get("response") or "I couldn't process that query."
     elif agent == "receipt":
+        if data.get("status") == "duplicate":
+            return {"response": None}
         vendor = data.get("vendor") or "unknown"
         total = data.get("total")
         if data.get("flagged"):

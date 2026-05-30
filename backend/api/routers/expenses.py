@@ -1,6 +1,5 @@
 import os
 import sys
-import uuid
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form, Query
@@ -11,7 +10,6 @@ from isoweek import Week
 import logging
 
 from api.dependencies.limiter import limiter
-from agents.receipt_agent import analyse_receipt
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,29 +30,10 @@ def get_reimbursable(sender_name: str | None, sender_phone: str | None, settings
         phone_match = sender_phone and sender_phone         in helper_list
         return bool(name_match or phone_match)
     return True
-def upload_receipt_image(
-    file_bytes: bytes,
-    mime_type: str,
-    household_id: str,
-) -> "str | None":
-    """Upload receipt image to Supabase Storage. Returns storage path or None."""
-    try:
-        ext      = mime_type.split("/")[-1].replace("jpeg", "jpg")
-        today    = date.today().isoformat()
-        filename = f"{uuid.uuid4().hex}.{ext}"
-        path     = f"{household_id}/{today}/{filename}"
-        _db().storage.from_("receipts").upload(
-            path=path,
-            file=file_bytes,
-            file_options={"content-type": mime_type, "upsert": "false"},
-        )
-        return path
-    except Exception as e:
-        print(f"Image upload failed: {e}")
-        return None
 
 
 _supabase = None
+
 
 def _db():
     global _supabase
@@ -96,21 +75,6 @@ async def process_receipt(
         raise HTTPException(status_code=403, detail="No household found")
     household_id = resolved_household
 
-    # Auto-generate a dedup key for direct web uploads (no WhatsApp message ID)
-    if not whatsapp_message_id:
-        whatsapp_message_id = f"web-{uuid.uuid4().hex}"
-
-    from api.routers.settings import get_or_create_settings
-    settings = get_or_create_settings(household_id)
-    reimbursable = get_reimbursable(sender_name, sender_phone, settings)
-
-    existing = _db().table("receipts")\
-        .select("id")\
-        .eq("whatsapp_message_id", whatsapp_message_id)\
-        .execute()
-    if existing.data:
-        return {"status": "duplicate", "receipt_id": existing.data[0]["id"]}
-
     image_bytes = await file.read()
     if len(image_bytes) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
@@ -122,128 +86,25 @@ async def process_receipt(
             detail=f"Unsupported file type: {content_type}. Accepted: images and PDF."
         )
 
-    # Upload image to Supabase Storage
-    image_path = upload_receipt_image(image_bytes, content_type, household_id)
+    from api.routers.settings import get_or_create_settings
+    settings = get_or_create_settings(household_id)
 
-    analysis = analyse_receipt(image_bytes, mime_type=content_type)
+    from services.receipt_service import save_receipt
+    result = save_receipt(
+        image_bytes=image_bytes,
+        mime_type=content_type,
+        household_id=household_id,
+        whatsapp_message_id=whatsapp_message_id,
+        sender_name=sender_name,
+        sender_phone=sender_phone,
+        user_id=user_id,
+        settings=settings,
+    )
 
-    if "error" in analysis and "vendor" not in analysis:
-        raise HTTPException(status_code=422, detail=f"OCR failed: {analysis['error']}")
+    if result.get("status") == "error":
+        raise HTTPException(status_code=422, detail=f"OCR failed: {result.get('error')}")
 
-    receipt_date = None
-    if analysis.get("date"):
-        try:
-            receipt_date = date.fromisoformat(analysis["date"])
-        except ValueError:
-            receipt_date = date.today()
-    else:
-        receipt_date = date.today()
-
-    week_num, year = _week_for_date(receipt_date)
-
-    receipt_row = {
-        "user_id":              user_id,
-        "household_id":         household_id,
-        "vendor":               analysis.get("vendor"),
-        "date":                 receipt_date.isoformat(),
-        "subtotal":             analysis.get("subtotal"),
-        "tax":                  analysis.get("tax"),
-        "total":                analysis.get("total"),
-        "currency":             analysis.get("currency", "SGD"),
-        "confidence":           analysis.get("confidence", "medium"),
-        "notes":                analysis.get("notes"),
-        "image_filename":       file.filename,
-        "whatsapp_message_id":  whatsapp_message_id,
-        "week_number":          week_num,
-        "year":                 year,
-        "flagged":              analysis.get("flagged", False),
-        "sender_name":          sender_name or None,
-        "sender_phone":         sender_phone or None,
-        "reimbursable":         reimbursable,
-        "image_path":           image_path,
-    }
-
-    receipt_res = _db().table("receipts").insert(receipt_row).execute()
-    receipt_id = receipt_res.data[0]["id"]
-
-    items = analysis.get("items") or []
-    if items:
-        item_rows = [
-            {
-                "receipt_id":     receipt_id,
-                "household_id":   household_id,
-                "name":           item.get("name"),
-                "canonical_name": (item.get("canonical_name") or item.get("name") or "").strip().lower() or None,
-                "brand":          item.get("brand"),
-                "variant":        item.get("variant"),
-                "qty":            item.get("qty", 1),
-                "unit_price":     item.get("unit_price"),
-                "line_total":     item.get("line_total"),
-                "category":       item.get("category", "other"),
-                "vendor":         analysis.get("vendor"),
-                "receipt_date":   receipt_date.isoformat(),
-                "week_number":    week_num,
-                "year":           year,
-            }
-            for item in items if item.get("name")
-        ]
-        if item_rows:
-            items_res = _db().table("items").insert(item_rows).execute()
-            inserted_items = items_res.data or []
-
-            price_history_rows = []
-            for ins in inserted_items:
-                canonical = ins.get("canonical_name") or (ins.get("name") or "").strip().lower() or None
-                if not canonical or ins.get("unit_price") is None:
-                    continue
-                price_history_rows.append({
-                    "household_id":   household_id,
-                    "receipt_id":     receipt_id,
-                    "item_id":        ins["id"],
-                    "canonical_name": canonical,
-                    "brand":          ins.get("brand"),
-                    "variant":        ins.get("variant"),
-                    "category":       ins.get("category"),
-                    "vendor":         ins.get("vendor"),
-                    "unit_price":     ins.get("unit_price"),
-                    "quantity":       ins.get("qty") or 1,
-                    "bought_at":      receipt_date.isoformat(),
-                })
-            if price_history_rows:
-                _db().table("price_history").insert(price_history_rows).execute()
-
-            # Upsert receipt items into pantry as in_stock
-            from datetime import datetime, timezone as tz
-            now = datetime.now(tz.utc).isoformat()
-            pantry_rows = []
-            for ins in inserted_items:
-                canonical = ins.get("canonical_name") or (ins.get("name") or "").strip().lower() or None
-                if not canonical:
-                    continue
-                pantry_rows.append({
-                    "household_id":   household_id,
-                    "canonical_name": canonical,
-                    "category":       ins.get("category"),
-                    "status":         "in_stock",
-                    "added_by":       "receipt",
-                    "last_updated":   now,
-                })
-            if pantry_rows:
-                _db().table("pantry_items").upsert(
-                    pantry_rows,
-                    on_conflict="household_id,canonical_name",
-                ).execute()
-
-    return {
-        "status":     "ok",
-        "receipt_id": receipt_id,
-        "vendor":     analysis.get("vendor"),
-        "total":      analysis.get("total"),
-        "confidence": analysis.get("confidence"),
-        "flagged":    analysis.get("flagged"),
-        "week":       week_num,
-        "year":       year,
-    }
+    return result
 
 
 @router.get("/weeks")

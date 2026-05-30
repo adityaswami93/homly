@@ -127,6 +127,10 @@ async function handleMessage(msg, sock) {
     return;
   }
 
+  const senderJid   = msg.key.participant || remoteJid;
+  const senderPhone = senderJid.includes("@") ? senderJid.split("@")[0] : null;
+  const senderName  = msg.pushName || null;
+
   const imgMsg =
     msg.message?.imageMessage ||
     msg.message?.viewOnceMessage?.message?.imageMessage ||
@@ -157,6 +161,9 @@ async function handleMessage(msg, sock) {
         image_b64: buffer.toString("base64"),
         image_mime: mimeType,
         query: null,
+        whatsapp_message_id: msg.key.id,
+        sender_name: senderName,
+        sender_phone: senderPhone,
       };
     } catch (e) {
       console.error("[bot] media download failed:", e.message);
@@ -192,6 +199,9 @@ async function handleMessage(msg, sock) {
 
     if (result.data?.response) {
       await sock.sendMessage(remoteJid, { text: result.data.response });
+    } else if (!payload.image_b64 && result.data?.message_type === "unknown") {
+      // Text message the graph couldn't classify — forward to webhook as before
+      await forwardText(msg);
     }
   } catch (e) {
     await sock.sendPresenceUpdate("paused", remoteJid).catch(() => {});
@@ -229,41 +239,40 @@ async function handleMessage(msg, sock) {
 //   return /^(what|how|when|where|who|which|show|tell|list|find|give|total|summarize|summarise|compare|any|are|is|do|did|have|has)\b/i.test(t);
 // }
 
-// LANGGRAPH MIGRATION - kept for rollback
-// async function forwardText(msg) {
-//   const remoteJid = msg.key.remoteJid;
-//   const senderJid = msg.key.participant || remoteJid;
-//   const text =
-//     msg.message?.conversation ||
-//     msg.message?.extendedTextMessage?.text ||
-//     msg.message?.ephemeralMessage?.message?.conversation ||
-//     msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
-//     "";
-//
-//   if (!text.trim()) return;
-//
-//   try {
-//     await axios.post(
-//       `${FASTAPI_URL}/webhook/whatsapp`,
-//       {
-//         typeWebhook: "incomingMessageReceived",
-//         idMessage: msg.key.id,
-//         senderData: {
-//           chatId: remoteJid,
-//           sender: senderJid,
-//           senderName: msg.pushName || null,
-//         },
-//         messageData: {
-//           typeMessage: "textMessage",
-//           textMessageData: { textMessage: text },
-//         },
-//       },
-//       { headers: iHeaders },
-//     );
-//   } catch (e) {
-//     console.error("[bot] forwardText failed:", e.message);
-//   }
-// }
+async function forwardText(msg) {
+  const remoteJid = msg.key.remoteJid;
+  const senderJid = msg.key.participant || remoteJid;
+  const text =
+    msg.message?.conversation ||
+    msg.message?.extendedTextMessage?.text ||
+    msg.message?.ephemeralMessage?.message?.conversation ||
+    msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+    "";
+
+  if (!text.trim()) return;
+
+  try {
+    await axios.post(
+      `${FASTAPI_URL}/webhook/whatsapp`,
+      {
+        typeWebhook: "incomingMessageReceived",
+        idMessage: msg.key.id,
+        senderData: {
+          chatId: remoteJid,
+          sender: senderJid,
+          senderName: msg.pushName || null,
+        },
+        messageData: {
+          typeMessage: "textMessage",
+          textMessageData: { textMessage: text },
+        },
+      },
+      { headers: iHeaders },
+    );
+  } catch (e) {
+    console.error("[bot] forwardText failed:", e.message);
+  }
+}
 
 // LANGGRAPH MIGRATION - kept for rollback
 // const RECIPE_TRIGGERS = /^(🛒|cook|recipe|ingredients|what do i need)/i;
@@ -358,7 +367,18 @@ async function startSock() {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const msg of messages) {
-      if (msg.key.fromMe) continue;
+      // Skip own non-media messages (bot confirmations, etc.) but allow own images/PDFs
+      const hasImage =
+        msg.message?.imageMessage ||
+        msg.message?.viewOnceMessage?.message?.imageMessage ||
+        msg.message?.viewOnceMessageV2?.message?.imageMessage ||
+        msg.message?.ephemeralMessage?.message?.imageMessage ||
+        msg.message?.ephemeralMessage?.message?.viewOnceMessage?.message?.imageMessage;
+      const docMsg =
+        msg.message?.documentMessage ||
+        msg.message?.ephemeralMessage?.message?.documentMessage;
+      const hasPDF = docMsg && PDF_MIME_TYPES.has((docMsg.mimetype || "").toLowerCase());
+      if (msg.key.fromMe && !hasImage && !hasPDF) continue;
       await handleMessage(msg, sock);
     }
   });

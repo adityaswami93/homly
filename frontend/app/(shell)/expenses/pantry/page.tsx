@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import api from "@/lib/axios";
 import { useToast } from "@/lib/toast";
-import Toast from "@/app/components/Toast";
+import { ToastContainer } from "@/app/components/Toast";
 
 interface PantryItem {
   id: string;
@@ -307,7 +307,7 @@ export default function PantryPage() {
         </div>
       )}
 
-      <Toast toasts={toasts} onDismiss={dismissToast} />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

@@ -21,6 +21,11 @@ class HomlyState(TypedDict):
     image_bytes: Optional[bytes]
     image_mime: Optional[str]
 
+    # WhatsApp message metadata (needed for dedup + attribution when saving receipts)
+    whatsapp_message_id: Optional[str]
+    sender_name: Optional[str]
+    sender_phone: Optional[str]
+
     # Classification result
     message_type: Optional[str]  # "receipt"|"recipe"|"text_query"|"pantry_command"|"unknown"
 
@@ -105,10 +110,14 @@ def classify_node(state: HomlyState) -> dict:
 
 
 def receipt_node(state: HomlyState) -> dict:
-    from agents.receipt_agent import analyse_receipt
-    result = analyse_receipt(
-        state["image_bytes"],
-        state.get("image_mime") or "image/jpeg",
+    from services.receipt_service import save_receipt
+    result = save_receipt(
+        image_bytes=state["image_bytes"],
+        mime_type=state.get("image_mime") or "image/jpeg",
+        household_id=state["household_id"],
+        whatsapp_message_id=state.get("whatsapp_message_id"),
+        sender_name=state.get("sender_name"),
+        sender_phone=state.get("sender_phone"),
     )
     return {"agent_results": [{"agent": "receipt", "data": result}]}
 
@@ -210,6 +219,8 @@ def synthesise_node(state: HomlyState) -> dict:
     if agent in ("query", "pantry"):
         response = data.get("response") or "I couldn't process that query."
     elif agent == "receipt":
+        if data.get("status") == "duplicate":
+            return {"response": None}
         vendor = data.get("vendor") or "unknown"
         total = data.get("total")
         if data.get("flagged"):

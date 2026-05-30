@@ -127,6 +127,10 @@ async function handleMessage(msg, sock) {
     return;
   }
 
+  const senderJid   = msg.key.participant || remoteJid;
+  const senderPhone = senderJid.includes("@") ? senderJid.split("@")[0] : null;
+  const senderName  = msg.pushName || null;
+
   const imgMsg =
     msg.message?.imageMessage ||
     msg.message?.viewOnceMessage?.message?.imageMessage ||
@@ -157,6 +161,9 @@ async function handleMessage(msg, sock) {
         image_b64: buffer.toString("base64"),
         image_mime: mimeType,
         query: null,
+        whatsapp_message_id: msg.key.id,
+        sender_name: senderName,
+        sender_phone: senderPhone,
       };
     } catch (e) {
       console.error("[bot] media download failed:", e.message);

@@ -10,6 +10,10 @@ import Topbar from "@/app/components/shell/Topbar";
 import BottomTabBar from "@/app/components/shell/BottomTabBar";
 import { getActiveApp, getPageTitle } from "@/config/apps";
 import Link from "next/link";
+import { isNativeApp } from "@/lib/platform";
+import { PushNotifications } from "@capacitor/push-notifications";
+import { StatusBar, Style } from "@capacitor/status-bar";
+import { SplashScreen } from "@capacitor/splash-screen";
 
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null);
@@ -38,6 +42,54 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
         }
       })
       .catch(() => null);
+  }, []);
+
+  // Native push notifications (Steps 7)
+  useEffect(() => {
+    if (!isNativeApp()) return;
+
+    const setupPushNotifications = async () => {
+      const permission = await PushNotifications.requestPermissions();
+      if (permission.receive !== "granted") return;
+
+      await PushNotifications.register();
+
+      PushNotifications.addListener("registration", (token) => {
+        // TODO Issue 013: persist token to backend for server-side FCM delivery
+        console.log("Push token:", token.value);
+      });
+
+      PushNotifications.addListener("registrationError", (error) => {
+        console.error("Push registration error:", error);
+      });
+
+      PushNotifications.addListener("pushNotificationReceived", (notification) => {
+        console.log("Notification received in foreground:", notification);
+      });
+
+      PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
+        console.log("Notification tapped:", action);
+      });
+    };
+
+    setupPushNotifications();
+
+    return () => {
+      PushNotifications.removeAllListeners();
+    };
+  }, []);
+
+  // Native status bar + splash screen (Step 8)
+  useEffect(() => {
+    if (!isNativeApp()) return;
+
+    const setupNativeChrome = async () => {
+      await StatusBar.setStyle({ style: Style.Dark });
+      await StatusBar.setBackgroundColor({ color: "#111827" });
+      await SplashScreen.hide();
+    };
+
+    setupNativeChrome();
   }, []);
 
   const handleSignOut = async () => {

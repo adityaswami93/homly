@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
+import { isNativeApp } from "@/lib/platform";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 
 const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 
@@ -465,6 +467,57 @@ export default function ExpensesOverview() {
   const router = useRouter();
   const { toasts, dismissToast, toast } = useToast();
 
+  const submitReceiptBlob = async (blob: Blob, filename: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const formData = new FormData();
+    formData.append("file", blob, filename);
+    try {
+      setUploading(true);
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/process-receipt`,
+        {
+          method: "POST",
+          body: formData,
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }
+      );
+      const result = await res.json();
+      if (result.status === "duplicate") {
+        toast.error("Receipt already uploaded.");
+      } else {
+        toast.success("Receipt submitted — it will appear shortly.");
+        // Reload the current week to pick up the new receipt
+        if (currentWeek) loadWeek(currentWeek.year, currentWeek.week);
+      }
+    } catch {
+      toast.error("Upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const captureReceiptNative = async () => {
+    try {
+      const photo = await Camera.getPhoto({
+        quality: 85,
+        allowEditing: false,
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Camera,
+      });
+      if (!photo.base64String) return;
+      const byteCharacters = atob(photo.base64String);
+      const byteArray = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteArray[i] = byteCharacters.charCodeAt(i);
+      }
+      const blob = new Blob([byteArray], { type: "image/jpeg" });
+      await submitReceiptBlob(blob, "receipt.jpg");
+    } catch (error) {
+      console.error("Camera error:", error);
+    }
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
@@ -693,24 +746,45 @@ export default function ExpensesOverview() {
             className="hidden"
             onChange={handleUploadFile}
           />
-          <button
-            onClick={() => uploadRef.current?.click()}
-            disabled={uploading}
-            title="Upload a receipt (image or PDF)"
-            className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 min-h-[36px]"
-          >
-            {uploading ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin" />
-                <span className="hidden sm:inline">Uploading…</span>
-              </>
-            ) : (
-              <>
-                <span>📎</span>
-                <span className="hidden sm:inline">Upload receipt</span>
-              </>
-            )}
-          </button>
+          {/* Native camera on device, upload button on web */}
+          {isNativeApp() ? (
+            <button
+              onClick={captureReceiptNative}
+              disabled={uploading}
+              className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 min-h-[36px]"
+            >
+              {uploading ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="hidden sm:inline">Uploading…</span>
+                </>
+              ) : (
+                <>
+                  <span>📷</span>
+                  <span className="hidden sm:inline">Capture receipt</span>
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={() => uploadRef.current?.click()}
+              disabled={uploading}
+              title="Upload a receipt (image or PDF)"
+              className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 min-h-[36px]"
+            >
+              {uploading ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="hidden sm:inline">Uploading…</span>
+                </>
+              ) : (
+                <>
+                  <span>📎</span>
+                  <span className="hidden sm:inline">Upload receipt</span>
+                </>
+              )}
+            </button>
+          )}
           <button
             onClick={handleSendTotal}
             disabled={sending || !week || week.receipt_count === 0}

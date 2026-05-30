@@ -29,5 +29,10 @@ def pop_outgoing() -> list[dict]:
     return msgs
 
 
+def send_text_sync(chat_id: str, text: str) -> None:
+    """Synchronous wrapper for send_text — safe to call from graph nodes."""
+    _outgoing.append({"group_jid": chat_id, "text": text})
+
+
 def is_configured() -> bool:
     return True

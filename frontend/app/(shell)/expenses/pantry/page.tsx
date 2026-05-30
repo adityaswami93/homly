@@ -13,6 +13,7 @@ interface PantryItem {
   quantity: number | null;
   unit: string | null;
   notes: string | null;
+  added_by: string | null;
   last_updated: string;
 }
 
@@ -257,8 +258,14 @@ export default function PantryPage() {
 
               {/* Name + meta */}
               <div className="flex-1 min-w-0">
-                <p className="text-stone-100 text-sm font-medium capitalize truncate">
+                <p className="text-stone-100 text-sm font-medium capitalize truncate flex items-center gap-1.5">
                   {item.canonical_name}
+                  {item.added_by === "receipt" && (
+                    <span title="Added from receipt" className="text-xs">🧾</span>
+                  )}
+                  {item.added_by === "recipe" && (
+                    <span title="Added from recipe" className="text-xs">🍽️</span>
+                  )}
                 </p>
                 <p className="text-stone-500 text-xs mt-0.5">
                   {item.category || "uncategorised"} · {relativeDate(item.last_updated)}

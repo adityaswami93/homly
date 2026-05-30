@@ -111,6 +111,7 @@ def save_receipt(
     receipt_res = _db().table("receipts").insert(receipt_row).execute()
     receipt_id = receipt_res.data[0]["id"]
 
+    inserted_items: list = []
     items = analysis.get("items") or []
     if items:
         item_rows = [
@@ -157,26 +158,6 @@ def save_receipt(
             if price_history_rows:
                 _db().table("price_history").insert(price_history_rows).execute()
 
-            now = datetime.now(tz.utc).isoformat()
-            pantry_rows = []
-            for ins in inserted_items:
-                canonical = ins.get("canonical_name") or (ins.get("name") or "").strip().lower() or None
-                if not canonical:
-                    continue
-                pantry_rows.append({
-                    "household_id":   household_id,
-                    "canonical_name": canonical,
-                    "category":       ins.get("category"),
-                    "status":         "in_stock",
-                    "added_by":       "receipt",
-                    "last_updated":   now,
-                })
-            if pantry_rows:
-                _db().table("pantry_items").upsert(
-                    pantry_rows,
-                    on_conflict="household_id,canonical_name",
-                ).execute()
-
     return {
         "status":     "ok",
         "receipt_id": receipt_id,
@@ -186,4 +167,5 @@ def save_receipt(
         "flagged":    analysis.get("flagged"),
         "week":       week_num,
         "year":       year,
+        "items":      inserted_items,
     }

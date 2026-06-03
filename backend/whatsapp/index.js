@@ -116,6 +116,34 @@ function startMessagePoller() {
   }, 5000);
 }
 
+// ── Custom commands cache ────────────────────────────────────
+// { household_id: { trigger: response } }
+let customCommandsCache = {};
+
+async function refreshCustomCommands() {
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/internal/commands`, { headers: iHeaders });
+    customCommandsCache = res.data?.commands || {};
+    const total = Object.values(customCommandsCache).reduce((s, m) => s + Object.keys(m).length, 0);
+    console.log(`[bot] customCommands refreshed — ${total} command(s) across ${Object.keys(customCommandsCache).length} household(s)`);
+  } catch (e) {
+    console.error("[bot] refreshCustomCommands failed:", e.message);
+  }
+}
+
+// Refresh on start and every 2 minutes
+setInterval(refreshCustomCommands, 2 * 60 * 1000);
+
+async function handleCustomCommand(text, household_id, remoteJid, sock) {
+  if (!text.startsWith("/")) return false;
+  const trigger = text.slice(1).split(/\s+/)[0].toLowerCase().trim();
+  if (!trigger) return false;
+  const response = customCommandsCache[household_id]?.[trigger];
+  if (!response) return false;
+  await sock.sendMessage(remoteJid, { text: response });
+  return true;
+}
+
 // ── Reminder helpers ─────────────────────────────────────────
 const REMIND_RE = /^\/remind\s+(.+)/i;
 
@@ -259,6 +287,7 @@ async function handleMessage(msg, sock) {
 
     // Handle bot commands before forwarding to LangGraph
     if (await handleReminderCommand(text, remoteJid, senderJid, senderName, sock)) return;
+    if (await handleCustomCommand(text, household_id, remoteJid, sock)) return;
 
     payload = {
       household_id,
@@ -420,6 +449,7 @@ async function startSock() {
       isConnected = true;
       await pushConnected(connectedGroups);
       await refreshGroupMap();
+      await refreshCustomCommands();
       startMessagePoller();
     }
 

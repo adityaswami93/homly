@@ -42,6 +42,7 @@ export const apps: App[] = [
       { label: "Budgets", href: "/expenses/budgets" },
       { label: "Price Intelligence", href: "/expenses/price-intelligence" },
       { label: "Reimburse", href: "/expenses/reimburse" },
+      { label: "Commands", href: "/expenses/commands" },
     ],
   },
   {

@@ -10,6 +10,19 @@ The first module is expense tracking. Household members photograph receipts in a
 
 ---
 
+## Screenshots
+
+**Expenses — weekly overview**
+![Expenses overview](docs/screenshots/expenses-overview.png)
+
+**Insurance — policy manager**
+![Insurance policies](docs/screenshots/insurance-policies.png)
+
+**Insurance — AI coverage checker**
+![Coverage checker](docs/screenshots/coverage-checker.png)
+
+---
+
 ## Modules
 
 ### Expenses

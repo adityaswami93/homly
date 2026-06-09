@@ -93,9 +93,9 @@ homly/
 │   └── lib/
 │       ├── supabase.ts
 │       └── axios.ts                 # Shared axios with JWT interceptor
-└── whatsapp/
-    ├── index.js                     # Bot: QR connect, receipt processing, crons
-    └── package.json
+│   └── whatsapp/
+│       ├── index.js                 # Bot: QR connect, receipt processing, crons
+│       └── package.json
 ```
 
 ---
@@ -139,11 +139,12 @@ uvicorn api.main:app --reload --port 8000
 ### 3. WhatsApp Bot
 
 ```bash
-cd whatsapp
+cd backend/whatsapp
 npm install
 
-# Create whatsapp/.env
+# Create backend/whatsapp/.env
 FASTAPI_URL=http://localhost:8000
+SUPABASE_URL=https://yourproject.supabase.co
 SUPABASE_KEY=your_service_role_key
 INTERNAL_KEY=homly-internal
 
@@ -174,7 +175,7 @@ npm run dev
 
 1. Create two Railway services from the same repo:
    - **FastAPI**: root `backend/`, start command `uvicorn api.main:app --host 0.0.0.0 --port $PORT`
-   - **WhatsApp bot**: root `whatsapp/`, start command `npm start`
+   - **WhatsApp bot**: root `backend/whatsapp/`, start command `npm start`
 2. Add env variables to each service; set the bot's `FASTAPI_URL` to the FastAPI Railway URL
 3. First run: open Railway logs for the bot service and scan the QR code
 

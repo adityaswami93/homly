@@ -44,21 +44,40 @@ The first module is expense tracking. Household members photograph receipts in a
 
 ## Architecture
 
-```
-WhatsApp group image
-        ↓
-   Baileys bot (Node.js)
-        ↓ POST /process-receipt
-   FastAPI backend
-        ↓
-   OpenRouter vision model → structured JSON
-        ↓
-   Supabase (receipts + items tables)
-        ↓
-   Next.js dashboard
+```mermaid
+graph TD
+    WA["📱 WhatsApp Group"]
+
+    subgraph Railway
+        BOT["WhatsApp Bot\nNode.js · Baileys"]
+        API["Backend API\nFastAPI · Python"]
+    end
+
+    subgraph External
+        LLM["OpenRouter\nVision LLM"]
+    end
+
+    subgraph Supabase
+        DB["PostgreSQL"]
+        AUTH["Auth"]
+        STORAGE["Storage\n(receipt images)"]
+    end
+
+    FE["Dashboard\nNext.js · Vercel"]
+
+    WA -->|"receipt photo"| BOT
+    BOT -->|"POST /process-receipt"| API
+    API -->|"vision OCR request"| LLM
+    LLM -->|"structured JSON"| API
+    API --> DB
+    API --> STORAGE
+    BOT -->|"weekly summary / renewal reminder"| WA
+    BOT -->|"polls /internal/settings every 5 min"| API
+    FE -->|"JWT requests"| API
+    AUTH -->|"JWT verification"| API
 ```
 
-The bot also polls `/internal/settings` every 5 minutes to pick up schedule changes, and runs a per-household cron to deliver weekly summaries and insurance renewal reminders.
+The bot maintains a `groupJid → household` map to route incoming messages to the right tenant. A per-household cron delivers weekly expense summaries and insurance renewal reminders back to each WhatsApp group.
 
 ---
 

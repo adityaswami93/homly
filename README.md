@@ -1,19 +1,29 @@
 # Homly
 
-A multi-tenant household expense tracker powered by WhatsApp. Household members photograph receipts in a shared WhatsApp group; the bot OCR-analyses them, stores structured data, and delivers weekly expense summaries back to the group. A web dashboard lets members view spending by category, manage reimbursements, track insurance policies, and configure the bot.
+Homly is a **family operating system** — a platform that brings together the financial and administrative life of a household into one place, meeting families where they already are: WhatsApp.
+
+The first module is expense tracking. Household members photograph receipts in a shared WhatsApp group; the bot OCR-analyses them, stores structured data, and delivers weekly summaries back to the group. A web dashboard covers spending analytics, reimbursements, insurance policy management, and bot configuration. The architecture is intentionally modular — built to grow new modules (tasks, documents, calendars, etc.) on top of the same multi-tenant shell.
 
 ---
 
-## Features
+## Modules
 
-- **WhatsApp receipt capture** — send a receipt photo to your household group; the bot OCRs it automatically
-- **Structured line items** — vendor, total, tax, individual items, categories (groceries, transport, etc.)
-- **Weekly summaries** — scheduled digest sent back to the WhatsApp group with category totals and flagged receipts
-- **Expense dashboard** — this week's spending, transaction history, analytics with category/vendor breakdown
+### Expenses
+- **WhatsApp receipt capture** — photo a receipt in the group; the bot OCRs and categorises it automatically
+- **Structured line items** — vendor, total, tax, individual items, categories (groceries, transport, F&B, etc.)
+- **Weekly summaries** — scheduled digest sent to the WhatsApp group with category totals and flagged receipts
+- **Dashboard** — this week's spending, full transaction history, analytics by category and vendor
 - **Reimbursement tracking** — mark receipts as reimbursable and track outstanding amounts
-- **Insurance manager** — store policies with renewal dates; bot sends renewal reminders at 30 and 7 days out
+- **Price intelligence** — cross-household item price comparison and trends (super-admin)
+
+### Insurance
+- **Policy manager** — store policies with provider, coverage type, premium, and renewal date
+- **Renewal reminders** — bot proactively messages the group at 30 days and 7 days before renewal
+
+### Platform
 - **Multi-household** — one backend serves multiple households; all data is strictly isolated by `household_id`
 - **Invite system** — admins invite members by email; role-based access (admin / member)
+- **Extensible shell** — two-level nav (rail + subnav) designed to accommodate new modules without layout changes
 
 ---
 

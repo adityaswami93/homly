@@ -1,258 +1,195 @@
 # Homly
 
-## Development process
-
-Features are tracked and documented under `documents/`. Each feature has:
-- `implementation.md` — the Claude Code prompt and technical decisions
-- `release.md` — what was built, files changed, migrations, known issues
-
-See [documents/README.md](documents/README.md) for the full index.
+A multi-tenant household expense tracker powered by WhatsApp. Household members photograph receipts in a shared WhatsApp group; the bot OCR-analyses them, stores structured data, and delivers weekly expense summaries back to the group. A web dashboard lets members view spending by category, manage reimbursements, track insurance policies, and configure the bot.
 
 ---
 
-WhatsApp-based household expense tracker. Your helper sends receipt photos to a WhatsApp group → automatic OCR → weekly dashboard with category breakdown and reimbursement total.
+## Features
 
-## How it works
-
-1. Helper posts a receipt photo to the WhatsApp group
-2. Homly detects the image, runs OCR via Gemini Flash
-3. Receipt is saved to the database (vendor, total, line items, category)
-4. Dashboard shows this week's spending by category
-5. Every Friday at 6pm SGT, a summary is sent back to the WhatsApp group
+- **WhatsApp receipt capture** — send a receipt photo to your household group; the bot OCRs it automatically
+- **Structured line items** — vendor, total, tax, individual items, categories (groceries, transport, etc.)
+- **Weekly summaries** — scheduled digest sent back to the WhatsApp group with category totals and flagged receipts
+- **Expense dashboard** — this week's spending, transaction history, analytics with category/vendor breakdown
+- **Reimbursement tracking** — mark receipts as reimbursable and track outstanding amounts
+- **Insurance manager** — store policies with renewal dates; bot sends renewal reminders at 30 and 7 days out
+- **Multi-household** — one backend serves multiple households; all data is strictly isolated by `household_id`
+- **Invite system** — admins invite members by email; role-based access (admin / member)
 
 ---
 
-## Project structure
+## Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 14, React, TypeScript, Tailwind CSS |
+| Backend | FastAPI, Python 3.11 |
+| Database | Supabase (PostgreSQL + Auth + Storage) |
+| WhatsApp bot | Node.js, Baileys (WA multi-device) |
+| LLM (vision) | OpenRouter (vision model for receipt OCR) |
+| Hosting | Vercel (frontend) · Railway (backend + bot) |
+
+---
+
+## Architecture
+
+```
+WhatsApp group image
+        ↓
+   Baileys bot (Node.js)
+        ↓ POST /process-receipt
+   FastAPI backend
+        ↓
+   OpenRouter vision model → structured JSON
+        ↓
+   Supabase (receipts + items tables)
+        ↓
+   Next.js dashboard
+```
+
+The bot also polls `/internal/settings` every 5 minutes to pick up schedule changes, and runs a per-household cron to deliver weekly summaries and insurance renewal reminders.
+
+---
+
+## Project Structure
+
+```
 homly/
 ├── backend/
-│   ├── agents/
-│   │   └── receipt_agent.py       # Gemini Flash OCR logic
 │   ├── api/
-│   │   ├── middleware/
-│   │   │   └── auth.py            # Supabase JWT verification
-│   │   ├── dependencies/
-│   │   │   └── limiter.py         # Rate limiting
+│   │   ├── main.py                  # FastAPI app, CORS, router mounting
+│   │   ├── middleware/auth.py        # Supabase JWT + service key auth
 │   │   └── routers/
-│   │       └── expenses.py        # All API endpoints
-│   ├── migrations/
-│   │   └── 001_homly.sql          # DB schema
-│   ├── services/
-│   │   └── llm_client.py          # OpenRouter facade
-│   ├── whatsapp/
-│   │   ├── index.js               # Baileys listener + cron summary
-│   │   ├── package.json
-│   │   └── .env.example
-│   ├── main.py                    # FastAPI entrypoint
-│   ├── requirements.txt
-│   └── .env.example
-└── frontend/
-    ├── app/
-    │   ├── dashboard/page.tsx     # This week view
-    │   ├── history/page.tsx       # Past weeks
-    │   ├── login/page.tsx         # Auth
-    │   └── components/
-    │       └── Navbar.tsx
-    ├── lib/
-    │   ├── supabase.ts            # Supabase client
-    │   └── axios.ts               # Axios with JWT interceptor
-    └── .env.example
+│   │       ├── expenses.py          # Receipt ingestion + week queries
+│   │       ├── households.py        # Members, invites
+│   │       ├── settings.py          # Household settings
+│   │       ├── insurance.py         # Insurance policies + renewal endpoint
+│   │       ├── setup.py             # WhatsApp QR flow (SSE)
+│   │       ├── messages.py          # Queued WhatsApp messages
+│   │       └── internal.py          # Bot ↔ backend internal endpoints
+│   ├── agents/receipt_agent.py      # Vision LLM → structured receipt JSON
+│   ├── services/llm_client.py       # OpenRouter facade
+│   ├── migrations/                  # Numbered SQL migrations (run manually in Supabase)
+│   └── requirements.txt
+├── frontend/
+│   ├── config/apps.ts               # Navigation config (single source of truth)
+│   ├── app/
+│   │   ├── (shell)/                 # Auth-guarded shell layout
+│   │   │   ├── expenses/            # Overview, Transactions, Members, Summary, Insights
+│   │   │   ├── insurance/           # Policies list, Renewals countdown
+│   │   │   ├── admin/               # Super-admin: households, invites, price intelligence
+│   │   │   ├── settings/page.tsx    # Household settings + WhatsApp config
+│   │   │   └── setup/page.tsx       # QR scan + group selection
+│   │   └── components/shell/        # Rail, Subnav, Topbar, BottomTabBar
+│   └── lib/
+│       ├── supabase.ts
+│       └── axios.ts                 # Shared axios with JWT interceptor
+└── whatsapp/
+    ├── index.js                     # Bot: QR connect, receipt processing, crons
+    └── package.json
+```
 
 ---
 
-## Prerequisites
+## Local Development
+
+### Prerequisites
 
 - Node.js 18+
 - Python 3.11+
 - A [Supabase](https://supabase.com) project (free tier)
-- An [OpenRouter](https://openrouter.ai) account with Gemini Flash enabled (~$5 credit lasts months)
-- A [Railway](https://railway.app) account (for backend + WhatsApp bot)
-- A [Vercel](https://vercel.com) account (for frontend)
+- An [OpenRouter](https://openrouter.ai) API key
 
----
+### 1. Database
 
-## 1. Supabase setup
+In the Supabase SQL Editor, run the migration files in order:
 
-1. Create a new Supabase project at [supabase.com](https://supabase.com)
-2. Go to **SQL Editor** and run the contents of `backend/migrations/001_homly.sql`
-3. Go to **Authentication → Users** and create a user (your login for the dashboard)
-4. Note down from **Project Settings → API**:
-   - Project URL
-   - `anon` key (public)
-   - `service_role` key (secret — used by backend only)
-   - JWT secret (under **Data API** → **JWT Settings**)
-5. Note the user's UUID from Authentication → Users (you'll need it as `HOMLY_USER_ID`)
+```
+backend/migrations/001_homly.sql
+backend/migrations/002_soft_delete.sql
+...through...
+backend/migrations/015_insurance_policies.sql
+```
 
----
+### 2. Backend
 
-## 2. OpenRouter setup
-
-1. Sign up at [openrouter.ai](https://openrouter.ai)
-2. Add $5 credit (lasts ~6 months at typical usage)
-3. Create an API key under **Keys**
-
----
-
-## 3. Run locally
-
-### Backend (FastAPI)
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env
-# Fill in .env (see variables below)
-
-uvicorn api.main:app --reload --port 8000
-```
-
-Backend env variables (`backend/.env`):
-```
+# Create backend/.env
 SUPABASE_URL=https://yourproject.supabase.co
 SUPABASE_KEY=your_service_role_key
 SUPABASE_JWT_SECRET=your_jwt_secret
 OPENROUTER_API_KEY=your_openrouter_key
-INTERNAL_KEY=homly-internal            # shared secret for /internal/* endpoints
+INTERNAL_KEY=homly-internal
+
+uvicorn api.main:app --reload --port 8000
 ```
 
-### WhatsApp bot
+### 3. WhatsApp Bot
+
 ```bash
-cd backend/whatsapp
+cd whatsapp
 npm install
 
-cp .env.example .env
-# Fill in .env (see variables below)
+# Create whatsapp/.env
+FASTAPI_URL=http://localhost:8000
+SUPABASE_KEY=your_service_role_key
+INTERNAL_KEY=homly-internal
 
 npm start
-# Scan the QR code with WhatsApp → Linked Devices → Link a Device
+# Scan the QR code in your terminal with WhatsApp → Linked Devices → Link a Device
 ```
 
-WhatsApp bot env variables (`backend/whatsapp/.env`):
-```
-FASTAPI_URL=http://localhost:8000
-SUPABASE_KEY=your_service_role_key     # same key as backend — never expires, no refresh needed
-INTERNAL_KEY=homly-internal            # shared secret for /internal/* endpoints
-```
+### 4. Frontend
 
-### Frontend (Next.js)
 ```bash
 cd frontend
 npm install
 
-cp .env.example .env.local
-# Fill in .env.local (see variables below)
+# Create frontend/.env.local
+NEXT_PUBLIC_SUPABASE_URL=https://yourproject.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+NEXT_PUBLIC_API_URL=http://localhost:8000
 
 npm run dev
 # Open http://localhost:3000
 ```
 
-Frontend env variables (`frontend/.env.local`):
-```
-NEXT_PUBLIC_SUPABASE_URL=https://yourproject.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
 ---
 
-## 4. Deploy to production
+## Deployment
 
-### Backend → Railway
+### Backend + Bot → Railway
 
-1. Push repo to GitHub
-2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
-3. Create **Service 1** (FastAPI):
-   - Root directory: `backend`
-   - Start command: `uvicorn api.main:app --host 0.0.0.0 --port $PORT`
-   - Add all backend env variables
-4. Create **Service 2** (WhatsApp bot):
-   - Root directory: `backend/whatsapp`
-   - Start command: `npm start`
-   - Add all WhatsApp env variables
-   - Set `FASTAPI_URL` to your Railway FastAPI service URL
-   - Open logs → scan QR code with WhatsApp
+1. Create two Railway services from the same repo:
+   - **FastAPI**: root `backend/`, start command `uvicorn api.main:app --host 0.0.0.0 --port $PORT`
+   - **WhatsApp bot**: root `whatsapp/`, start command `npm start`
+2. Add env variables to each service; set the bot's `FASTAPI_URL` to the FastAPI Railway URL
+3. First run: open Railway logs for the bot service and scan the QR code
 
 ### Frontend → Vercel
 
-1. Go to [vercel.com](https://vercel.com) → New Project → Import repo
-2. Root directory: `frontend`
-3. Add env variables:
-   ```
-   NEXT_PUBLIC_SUPABASE_URL=...
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-   NEXT_PUBLIC_API_URL=https://your-railway-fastapi-url.up.railway.app
-   ```
-4. Deploy
-
-Update CORS in `backend/api/main.py` to include your Vercel URL:
-```python
-allow_origins=[
-    "https://your-app.vercel.app",
-    "http://localhost:3000",
-],
-```
+1. Import the repo, set root directory to `frontend/`
+2. Add env variables (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`)
+3. Update CORS in `backend/api/main.py` to include your Vercel deployment URL
 
 ---
 
-## 5. Test the OCR manually
-```bash
-cd backend
-python -m agents.receipt_agent path/to/receipt.jpg
-```
-
-This prints the full JSON output — useful for verifying Gemini Flash is working before connecting WhatsApp.
-
----
-
-## API endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/process-receipt` | Upload receipt image (called by WhatsApp bot) |
-| GET | `/this-week` | Current week summary |
-| GET | `/weeks` | List all weeks with receipts |
-| GET | `/weeks/{year}/{week}` | Full detail for a specific week |
-| GET | `/receipts/{id}` | Single receipt with line items |
-| PATCH | `/receipts/{id}/flag` | Toggle flagged status |
-
-All endpoints except `/process-receipt` require a Supabase JWT in the `Authorization: Bearer` header.
-
----
-
-## Estimated costs
+## Estimated Running Cost
 
 | Service | Cost |
 |---------|------|
-| Railway (backend + WhatsApp) | ~$5/month |
+| Railway (backend + bot) | ~$5/month |
 | Supabase | Free tier |
 | Vercel | Free tier |
-| OpenRouter (Gemini Flash) | ~$0.10/month (20 receipts/week) |
+| OpenRouter (vision OCR) | ~$0.10/month (≈20 receipts/week) |
 | **Total** | **~$5/month** |
 
 ---
 
-## Troubleshooting
+## Authentication
 
-**WhatsApp bot not detecting images**
-- Check `GROUP_NAME` matches exactly (case-sensitive, including spaces)
-- Make sure the bot account is a member of the group
-- Check Railway logs for connection errors
-
-**OCR returning low confidence**
-- Receipt image too blurry or dark → ask helper to retake
-- Partially cut off → ensure full receipt is in frame
-- Handwritten receipts → limited support, flag manually
-
-**QR code won't appear / spinner stuck**
-- Click **"Generate QR code"** on the setup page — this signals the bot to restart its connection
-- If the button doesn't help, check Railway logs for the WhatsApp bot service; the bot may have crashed
-- After the bot reconnects, the QR appears on the setup page within ~10 seconds
-
-**QR code expired before scanning**
-- Click **"QR expired? Generate a new one"** on the setup page
-- WhatsApp QR codes expire after ~20 seconds; the bot will generate a fresh one immediately
-
-**Receipt flagged for review**
-- Open dashboard → click the receipt → toggle flag after manual verification
-- Flagged receipts are still included in weekly totals
+- **Users** — Supabase JWT; the frontend attaches it as `Authorization: Bearer` on every request
+- **WhatsApp bot** — uses the Supabase service role key (never expires); endpoints read `household_id` from the request body/query param
+- **Internal endpoints** (`/internal/*`, `/setup/*`) — validated via `X-Internal-Key` header, not JWT

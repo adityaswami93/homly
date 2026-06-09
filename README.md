@@ -4,6 +4,8 @@ Homly is a **family operating system** — a platform that brings together the f
 
 The first module is expense tracking. Household members photograph receipts in a shared WhatsApp group; the bot OCR-analyses them, stores structured data, and delivers weekly summaries back to the group. A web dashboard covers spending analytics, reimbursements, insurance policy management, and bot configuration. The architecture is intentionally modular — built to grow new modules (tasks, documents, calendars, etc.) on top of the same multi-tenant shell.
 
+→ [How AI is used](AI.md) · [Roadmap](ROADMAP.md)
+
 ---
 
 ## Modules

@@ -4,7 +4,22 @@ Homly is a **family operating system** — a platform that brings together the f
 
 The first module is expense tracking. Household members photograph receipts in a shared WhatsApp group; the bot OCR-analyses them, stores structured data, and delivers weekly summaries back to the group. A web dashboard covers spending analytics, reimbursements, insurance policy management, and bot configuration. The architecture is intentionally modular — built to grow new modules (tasks, documents, calendars, etc.) on top of the same multi-tenant shell.
 
-→ [How AI is used](AI.md) · [Roadmap](ROADMAP.md)
+**[Live demo →](https://homly-six.vercel.app)** · [How AI is used](AI.md) · [Roadmap](ROADMAP.md)
+
+> Demo credentials available on request.
+
+---
+
+## Screenshots
+
+**Expenses — weekly overview**
+![Expenses overview](docs/screenshots/expenses-overview.png)
+
+**Insurance — policy manager**
+![Insurance policies](docs/screenshots/insurance-policies.png)
+
+**Insurance — AI coverage checker**
+![Coverage checker](docs/screenshots/coverage-checker.png)
 
 ---
 
@@ -14,13 +29,20 @@ The first module is expense tracking. Household members photograph receipts in a
 - **WhatsApp receipt capture** — photo a receipt in the group; the bot OCRs and categorises it automatically
 - **Structured line items** — vendor, total, tax, individual items, categories (groceries, transport, F&B, etc.)
 - **Weekly summaries** — scheduled digest sent to the WhatsApp group with category totals and flagged receipts
-- **Dashboard** — this week's spending, full transaction history, analytics by category and vendor
-- **Reimbursement tracking** — mark receipts as reimbursable and track outstanding amounts
-- **Price intelligence** — cross-household item price comparison and trends (super-admin)
+- **Overview** — this week's spending by category with receipt list
+- **History** — full transaction history across all weeks
+- **Analytics** — category and vendor breakdown with charts
+- **Insights** — price trends and spending patterns over time
+- **Pantry** — household stock tracker (in stock / low / out) auto-updated from receipts
+- **Budgets** — set monthly category budgets; track burn rate in real time
+- **Price Intelligence** — cross-household item price comparison by vendor
+- **Reimburse** — mark receipts as reimbursable; track and settle outstanding amounts
 
 ### Insurance
-- **Policy manager** — store policies with provider, coverage type, premium, and renewal date
-- **Renewal reminders** — bot proactively messages the group at 30 days and 7 days before renewal
+- **Policies** — store policies with provider, coverage type, premium, renewal date, and insured person
+- **Renewals** — countdown sorted by date; bot sends reminders to the WhatsApp group at 30 and 7 days out
+- **Coverage Checker** — ask a plain-English question ("am I covered for overseas hospitalisation?"); AI answers based on your household's actual policies
+- **Gaps** — analyses your household profile against your policies to surface coverage gaps
 
 ### Platform
 - **Multi-household** — one backend serves multiple households; all data is strictly isolated by `household_id`

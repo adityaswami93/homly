@@ -47,6 +47,28 @@ Cross-household item price data is aggregated (anonymised, opt-in) to surface pr
 
 ---
 
+## Coverage Checker (shipped)
+
+The Insurance → Coverage page lets any household member ask a plain-English question about their coverage — "am I covered if I'm hospitalised overseas?", "what is my total death benefit?" — and get an answer grounded in their household's actual policies.
+
+The flow:
+1. User submits a natural language question
+2. Backend retrieves the household's active policies
+3. LLM receives both the question and policy data, and returns a structured answer with `confidence` and `relevant_policies` (the specific policies cited)
+4. UI renders the answer with the supporting policy excerpts highlighted
+
+This is a RAG (retrieval-augmented generation) pattern — the model never answers from general knowledge alone; every answer is anchored to the household's own data.
+
+---
+
+## Coverage Gap Analysis (shipped)
+
+The Insurance → Gaps page analyses the household's profile (age, marital status, number of children, employment type, mortgage, car ownership) against their active policies and identifies coverage gaps — e.g. no income protection, no critical illness cover, insufficient life cover given dependants.
+
+The LLM receives the household profile and the full policy list and returns a prioritised list of gaps with reasoning, giving households a personalised risk map without requiring a financial advisor.
+
+---
+
 ## Planned
 
 ### Anomaly Detection

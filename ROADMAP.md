@@ -6,9 +6,23 @@ Homly is a family operating system — a platform for the financial and administ
 
 ## Now — v1 (shipped)
 
-- **Expenses** — WhatsApp receipt capture, OCR, category breakdown, weekly summaries, reimbursement tracking, price intelligence
-- **Insurance** — policy manager with automated renewal reminders via WhatsApp
-- **Platform shell** — multi-tenant architecture, invite system, role-based access, extensible two-level nav
+**Expenses**
+- WhatsApp receipt capture → OCR → structured line items with category
+- Weekly summaries delivered back to the WhatsApp group
+- Overview, History, Analytics, Insights — full spending visibility
+- Pantry tracker — stock levels auto-updated from receipts
+- Budgets — monthly category budgets with real-time burn rate
+- Price Intelligence — cross-household item price comparison by vendor
+- Reimburse — track and settle reimbursable amounts
+
+**Insurance**
+- Policy manager with provider, coverage type, premium, and renewal date
+- Renewal reminders via WhatsApp at 30 and 7 days out
+- Coverage Checker — AI answers plain-English coverage questions against your actual policies
+- Gap Analysis — AI identifies coverage gaps based on household profile
+
+**Platform**
+- Multi-tenant architecture, invite system, role-based access, extensible two-level nav
 
 ---
 
@@ -19,9 +33,6 @@ Assign recurring household tasks to members. Track completion. Bot sends reminde
 
 ### Document Vault
 Store household documents (lease, warranties, utility contracts) with expiry dates. Bot alerts the group before anything lapses.
-
-### Budget Planning
-Set monthly category budgets. Dashboard shows burn rate against budget in real time. Bot sends an alert when a category hits 80%.
 
 ---
 

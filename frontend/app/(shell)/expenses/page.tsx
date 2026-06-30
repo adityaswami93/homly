@@ -19,10 +19,10 @@ function toDateStr(d: Date): string {
 }
 
 function getCustomWeekStart(date: Date, summaryDay: number): Date {
-  // summaryDay marks the END of the cycle (payout day).
-  // New cycle starts the day after, so week runs (summaryDay+1)→summaryDay.
-  // summaryDay: 0=Mon…6=Sun (backend) → JS day: 1=Mon…0=Sun → start = +2
-  const jsTarget = (summaryDay + 2) % 7;
+  // summaryDay is the payout/start day; the week runs summaryDay→(summaryDay+6).
+  // Sunday after a Saturday payout is already day-2 of the new cycle.
+  // summaryDay: 0=Mon…6=Sun (backend) → JS day: 1=Mon…0=Sun
+  const jsTarget = (summaryDay + 1) % 7;
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   const diff = (d.getDay() - jsTarget + 7) % 7;

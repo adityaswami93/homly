@@ -85,11 +85,19 @@ _QUERY_PREFIXES = (
     "any", "are", "is", "do", "did", "have", "has",
 )
 
+# Exact phrases the household member sends to confirm the weekly payout
+_PAYMENT_EXACT = frozenset({
+    "paid", "reimbursed", "payment made", "payment done", "all paid",
+    "paid up", "settled", "yes paid", "done paying", "payment settled",
+})
+
 
 def _classify_text(text: str) -> str:
-    t = text.strip().lower()
+    t = text.strip().lower().rstrip("!.✓ ")
     if not t:
         return "unknown"
+    if t in _PAYMENT_EXACT:
+        return "payment_confirmation"
     if any(t.startswith(p) for p in _PANTRY_PREFIXES):
         return "pantry_command"
     if t.endswith("?") or any(t.startswith(p) for p in _QUERY_PREFIXES):
@@ -439,6 +447,100 @@ def route_after_fridge_scan(state: HomlyState) -> str:
     return "send_pantry_confirmation"
 
 
+# ── Payment confirmation ──────────────────────────────────────────────────────
+
+
+def payment_confirm_node(state: HomlyState) -> dict:
+    """Mark the most recently completed expense cycle as reimbursed."""
+    import os
+    from datetime import date, timedelta
+    from supabase import create_client as _create
+
+    db = _create(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    household_id = state["household_id"]
+
+    # Get summary_day so we know when each cycle starts (0=Mon…6=Sun, Python weekday)
+    try:
+        s = db.table("settings").select("summary_day").eq("household_id", household_id).execute()
+        summary_day = (s.data or [{}])[0].get("summary_day", 5)  # default Saturday
+    except Exception as e:
+        logger.error(f"[payment_confirm_node] settings fetch: {e}")
+        return {"response": "❌ Something went wrong. Please try again."}
+
+    # The completed cycle: from (current_week_start - 7d) to (current_week_start - 1d).
+    # current_week_start = most recent date whose weekday == summary_day (0=Mon, 6=Sun).
+    today = date.today()
+    days_since = (today.weekday() - summary_day) % 7
+    current_week_start = today if days_since == 0 else today - timedelta(days=days_since)
+    cycle_start = current_week_start - timedelta(days=7)
+    cycle_end   = current_week_start - timedelta(days=1)
+
+    def _fmt(d: date) -> str:
+        return f"{d.day} {d.strftime('%b')}"
+
+    period = f"{_fmt(cycle_start)} – {_fmt(cycle_end)}"
+
+    # Fetch total reimbursable for the completed cycle
+    try:
+        r = (
+            db.table("receipts")
+            .select("total, reimbursable")
+            .eq("household_id", household_id)
+            .eq("deleted", False)
+            .gte("date", cycle_start.isoformat())
+            .lte("date", cycle_end.isoformat())
+            .execute()
+        )
+        receipts = r.data or []
+    except Exception as e:
+        logger.error(f"[payment_confirm_node] receipts fetch: {e}")
+        return {"response": "❌ Something went wrong fetching receipts. Please try again."}
+
+    if not receipts:
+        return {"response": f"📋 No receipts found for {period}.\n\nNothing to mark as paid."}
+
+    total = round(sum((rec.get("total") or 0) for rec in receipts if rec.get("reimbursable", True)), 2)
+
+    # Check for duplicate confirmation
+    iso = cycle_start.isocalendar()
+    try:
+        existing = (
+            db.table("reimbursements")
+            .select("amount")
+            .eq("household_id", household_id)
+            .eq("year", iso.year)
+            .eq("week_number", iso.week)
+            .execute()
+        )
+        if existing.data:
+            already = sum(r["amount"] for r in existing.data)
+            return {"response": f"✅ Already recorded — {period} was marked as paid (SGD {already:.2f})."}
+    except Exception as e:
+        logger.error(f"[payment_confirm_node] duplicate check: {e}")
+
+    # Record the reimbursement
+    try:
+        db.table("reimbursements").insert({
+            "household_id": household_id,
+            "year":         iso.year,
+            "week_number":  iso.week,
+            "amount":       total,
+            "note":         f"{period} reimbursed via WhatsApp",
+            "created_by":   None,
+        }).execute()
+    except Exception as e:
+        logger.error(f"[payment_confirm_node] insert: {e}")
+        return {"response": "❌ Failed to record payment. Please try again or use the app."}
+
+    return {
+        "response": (
+            f"✅ *Payment confirmed!*\n\n"
+            f"SGD {total:.2f} marked as reimbursed for {period}.\n\n"
+            f"New cycle starts today — fresh slate! 🎉"
+        )
+    }
+
+
 # ── Synthesise ────────────────────────────────────────────────────────────────
 
 
@@ -565,6 +667,7 @@ _builder.add_node("receipt", receipt_node)
 _builder.add_node("recipe", recipe_node)
 _builder.add_node("query", query_node)
 _builder.add_node("pantry", pantry_node)
+_builder.add_node("payment_confirm", payment_confirm_node)
 _builder.add_node("synthesise", synthesise_node)
 
 # Phase 3 nodes
@@ -583,6 +686,7 @@ _builder.add_conditional_edges("classify", route_by_type, {
     "text_query": "query",
     "pantry_command": "pantry",
     "fridge_scan": "fridge_scan",
+    "payment_confirmation": "payment_confirm",
     "unknown": END,
 })
 
@@ -612,6 +716,7 @@ _builder.add_conditional_edges("fridge_scan", route_after_fridge_scan, {
 _builder.add_edge("recipe", "synthesise")
 _builder.add_edge("query", "synthesise")
 _builder.add_edge("pantry", "synthesise")
+_builder.add_edge("payment_confirm", END)
 _builder.add_edge("synthesise", END)
 
 # Stateless graph — used for API calls that don't need memory

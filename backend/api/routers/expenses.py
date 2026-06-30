@@ -388,6 +388,54 @@ def last_7_days(request: Request, household_id: Optional[str] = Query(default=No
     }
 
 
+@router.get("/receipts/daterange")
+def get_receipts_by_daterange(start: str, end: str, request: Request):
+    household_id = request.state.user.get("household_id")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
+    receipts_res = _db().table("receipts")\
+        .select("*")\
+        .eq("household_id", household_id)\
+        .eq("deleted", False)\
+        .gte("date", start)\
+        .lte("date", end)\
+        .order("date", desc=False)\
+        .execute()
+
+    receipt_ids = [r["id"] for r in receipts_res.data]
+    if receipt_ids:
+        items_res = _db().table("items")\
+            .select("category, line_total, receipt_id")\
+            .in_("receipt_id", receipt_ids)\
+            .execute()
+        items_data = items_res.data
+    else:
+        items_data = []
+
+    category_totals: dict[str, float] = {}
+    for item in items_data:
+        cat = item["category"] or "other"
+        category_totals[cat] = round(
+            category_totals.get(cat, 0) + (item["line_total"] or 0), 2
+        )
+
+    total = sum(r["total"] or 0 for r in receipts_res.data)
+    flagged_count = sum(1 for r in receipts_res.data if r.get("flagged"))
+
+    return {
+        "start_date":         start,
+        "end_date":           end,
+        "total":              round(total, 2),
+        "reimbursable_total": round(sum(r["total"] or 0 for r in receipts_res.data if r.get("reimbursable")), 2),
+        "own_total":          round(sum(r["total"] or 0 for r in receipts_res.data if not r.get("reimbursable")), 2),
+        "receipt_count":      len(receipts_res.data),
+        "flagged_count":      flagged_count,
+        "receipts":           receipts_res.data,
+        "category_totals":    category_totals,
+    }
+
+
 @router.get("/receipts/{receipt_id}/image")
 def get_receipt_image_url(receipt_id: str, request: Request):
     household_id = request.state.user.get("household_id")

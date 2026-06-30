@@ -116,6 +116,113 @@ function startMessagePoller() {
   }, 5000);
 }
 
+// ── Custom commands cache ────────────────────────────────────
+// { household_id: { trigger: response } }
+let customCommandsCache = {};
+
+async function refreshCustomCommands() {
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/internal/commands`, { headers: iHeaders });
+    customCommandsCache = res.data?.commands || {};
+    const total = Object.values(customCommandsCache).reduce((s, m) => s + Object.keys(m).length, 0);
+    console.log(`[bot] customCommands refreshed — ${total} command(s) across ${Object.keys(customCommandsCache).length} household(s)`);
+  } catch (e) {
+    console.error("[bot] refreshCustomCommands failed:", e.message);
+  }
+}
+
+// Refresh on start and every 2 minutes
+setInterval(refreshCustomCommands, 2 * 60 * 1000);
+
+async function handleCustomCommand(text, household_id, remoteJid, sock) {
+  if (!text.startsWith("/")) return false;
+  const trigger = text.slice(1).split(/\s+/)[0].toLowerCase().trim();
+  if (!trigger) return false;
+  const response = customCommandsCache[household_id]?.[trigger];
+  if (!response) return false;
+  await sock.sendMessage(remoteJid, { text: response });
+  return true;
+}
+
+// ── Reminder helpers ─────────────────────────────────────────
+const REMIND_RE = /^\/remind\s+(.+)/i;
+
+function parseRemindDuration(raw) {
+  const text = raw.trim();
+  // Match leading duration tokens like 30m, 2h, 1d, 1h30m
+  const durationRe = /^(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?/i;
+  const m = text.match(durationRe);
+  if (!m || (!m[1] && !m[2] && !m[3])) return null;
+
+  const days    = parseInt(m[1] || 0, 10);
+  const hours   = parseInt(m[2] || 0, 10);
+  const minutes = parseInt(m[3] || 0, 10);
+
+  if (days === 0 && hours === 0 && minutes === 0) return null;
+
+  const totalMs = ((days * 24 + hours) * 60 + minutes) * 60 * 1000;
+  const reminderText = text.slice(m[0].length).trim();
+  return { ms: totalMs, message: reminderText || "(no message)" };
+}
+
+async function handleReminderCommand(text, remoteJid, senderJid, senderName, sock) {
+  const m = text.match(REMIND_RE);
+  if (!m) return false;
+
+  const args = m[1].trim();
+  const parsed = parseRemindDuration(args);
+
+  if (!parsed || !parsed.message) {
+    await sock.sendMessage(remoteJid, {
+      text: "⏰ *Reminder format:* `/remind <duration> <message>`\nExamples:\n• `/remind 30m buy milk`\n• `/remind 2h call doctor`\n• `/remind 1d renew passport`\n• `/remind 1h30m check the oven`",
+    });
+    return true;
+  }
+
+  const remindAt = new Date(Date.now() + parsed.ms);
+
+  try {
+    await supabase.from("reminders").insert({
+      household_id: groupMap.get(remoteJid),
+      group_jid: remoteJid,
+      sender_jid: senderJid,
+      sender_name: senderName,
+      message: parsed.message,
+      remind_at: remindAt.toISOString(),
+      sent: false,
+    });
+
+    const when = remindAt.toLocaleString("en-SG", { timeZone: "Asia/Singapore", hour12: true });
+    await sock.sendMessage(remoteJid, {
+      text: `⏰ Reminder set! I'll remind you at *${when}*:\n_${parsed.message}_`,
+    });
+  } catch (e) {
+    console.error("[bot] reminder insert failed:", e.message);
+    await sock.sendMessage(remoteJid, { text: "❌ Failed to set reminder. Please try again." });
+  }
+  return true;
+}
+
+// Poll for due reminders every 60 seconds
+setInterval(async () => {
+  if (!currentSock || !isConnected) return;
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/internal/reminders/due`, { headers: iHeaders });
+    const due = res.data?.reminders || [];
+    for (const reminder of due) {
+      try {
+        await currentSock.sendMessage(reminder.group_jid, {
+          text: `⏰ *Reminder* (set by ${reminder.sender_name || reminder.sender_jid}):\n${reminder.message}`,
+        });
+      } catch (e) {
+        console.error("[bot] reminder send failed:", e.message);
+      }
+    }
+  } catch (e) {
+    console.error("[bot] reminder poll failed:", e.message);
+  }
+}, 60 * 1000);
+
 // ── LangGraph message handler ────────────────────────────────
 async function handleMessage(msg, sock) {
   const remoteJid = msg.key.remoteJid;
@@ -177,6 +284,10 @@ async function handleMessage(msg, sock) {
       msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
       "";
     if (!text.trim()) return;
+
+    // Handle bot commands before forwarding to LangGraph
+    if (await handleReminderCommand(text, remoteJid, senderJid, senderName, sock)) return;
+    if (await handleCustomCommand(text, household_id, remoteJid, sock)) return;
 
     payload = {
       household_id,
@@ -338,6 +449,7 @@ async function startSock() {
       isConnected = true;
       await pushConnected(connectedGroups);
       await refreshGroupMap();
+      await refreshCustomCommands();
       startMessagePoller();
     }
 

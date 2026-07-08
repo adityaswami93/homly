@@ -11,6 +11,7 @@ import BottomTabBar from "@/app/components/shell/BottomTabBar";
 import { getActiveApp, getPageTitle } from "@/config/apps";
 import Link from "next/link";
 import { isNativeApp } from "@/lib/platform";
+import { HouseholdProvider } from "@/lib/HouseholdContext";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { SplashScreen } from "@capacitor/splash-screen";
@@ -103,6 +104,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
   if (!user) return null;
 
   return (
+    <HouseholdProvider>
     <div className="flex h-[100dvh] overflow-hidden bg-[#0f0e0c]">
       {/* Rail */}
       <Rail activeApp={activeApp} isSuperAdmin={isSuperAdmin} />
@@ -155,5 +157,6 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
       {/* Bottom tab bar — mobile only */}
       <BottomTabBar activeApp={activeApp} isSuperAdmin={isSuperAdmin} />
     </div>
+    </HouseholdProvider>
   );
 }

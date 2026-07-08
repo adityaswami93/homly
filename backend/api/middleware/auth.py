@@ -84,16 +84,31 @@ class AuthMiddleware(BaseHTTPMiddleware):
         user_meta = payload.get("user_metadata", {})
         is_super_admin = user_meta.get("is_super_admin", False)
 
-        # Get household membership
+        # Get all household memberships for this user (a user may belong to
+        # several households — e.g. their own household plus their parents')
         household_id = None
         role = None
         try:
-            member = supabase.table("household_members")\
-                .select("household_id, role")\
+            memberships = supabase.table("household_members")\
+                .select("household_id, role, joined_at")\
                 .eq("user_id", user_id)\
+                .order("joined_at")\
                 .execute()
-            household_id = member.data[0]["household_id"] if member.data else None
-            role = member.data[0]["role"] if member.data else None
+            rows = memberships.data or []
+
+            requested_household_id = request.headers.get("X-Household-Id")
+            if requested_household_id:
+                match = next((r for r in rows if r["household_id"] == requested_household_id), None)
+                if not match:
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Not a member of the requested household"},
+                    )
+                household_id = match["household_id"]
+                role = match["role"]
+            elif rows:
+                household_id = rows[0]["household_id"]
+                role = rows[0]["role"]
         except Exception as e:
             logger.error(f"Failed to fetch household for user {user_id}: {e}")
 

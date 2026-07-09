@@ -27,6 +27,9 @@ async def _send_weekly_summary(group_jid: str, household_id: str, cutoff_mode: s
             text = await build_last7days_total(household_id)
         else:
             text = await build_week_total(household_id)
+        # Only prompt for confirmation if there are actually receipts to pay
+        if not text.startswith("No receipts"):
+            text += "\n\n💳 Reply *paid* once reimbursed to close this cycle."
         await send_text(group_jid, text)
         logger.info(f"[scheduler] Summary sent to {group_jid}")
     except Exception as e:

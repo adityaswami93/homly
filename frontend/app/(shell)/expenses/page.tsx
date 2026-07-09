@@ -11,6 +11,38 @@ import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 
 const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 
+function toDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function getCustomWeekStart(date: Date, summaryDay: number): Date {
+  // summaryDay is the payout/start day; the week runs summaryDay→(summaryDay+6).
+  // Sunday after a Saturday payout is already day-2 of the new cycle.
+  // summaryDay: 0=Mon…6=Sun (backend) → JS day: 1=Mon…0=Sun
+  const jsTarget = (summaryDay + 1) % 7;
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const diff = (d.getDay() - jsTarget + 7) % 7;
+  d.setDate(d.getDate() - diff);
+  return d;
+}
+
+function getCustomWeekEnd(start: Date): Date {
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  return end;
+}
+
+function formatCustomWeekRange(start: Date): string {
+  const end = getCustomWeekEnd(start);
+  const s = start.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
+  const e = end.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
+  return `${s} – ${e}`;
+}
+
 interface Item {
   id: string;
   name: string;
@@ -40,8 +72,8 @@ interface Receipt {
 }
 
 interface WeekData {
-  year: number;
-  week_number: number;
+  start_date?: string;
+  end_date?: string;
   total: number;
   reimbursable_total: number;
   own_total: number;
@@ -98,41 +130,6 @@ function fmtDate(iso: string | null) {
   });
 }
 
-function getISOWeek(date: Date): { week: number; year: number } {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-  const week1 = new Date(d.getFullYear(), 0, 4);
-  return {
-    week:
-      1 +
-      Math.round(
-        ((d.getTime() - week1.getTime()) / 86400000 -
-          3 +
-          ((week1.getDay() + 6) % 7)) /
-          7
-      ),
-    year: d.getFullYear(),
-  };
-}
-
-function getWeekRange(year: number, week: number): { start: Date; end: Date } {
-  const jan4 = new Date(year, 0, 4);
-  const startOfWeek1 = new Date(jan4);
-  startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-  const start = new Date(startOfWeek1);
-  start.setDate(startOfWeek1.getDate() + (week - 1) * 7);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  return { start, end };
-}
-
-function formatWeekRange(year: number, week: number): string {
-  const { start, end } = getWeekRange(year, week);
-  const s = start.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
-  const e = end.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
-  return `${s} – ${e}`;
-}
 
 function ReceiptDrawer({
   receipt,
@@ -456,7 +453,8 @@ export default function ExpensesOverview() {
   const [week, setWeek] = useState<WeekData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
-  const [currentWeek, setCurrentWeek] = useState<{ week: number; year: number } | null>(null);
+  const [weekStart, setWeekStart] = useState<Date | null>(null);
+  const [summaryDay, setSummaryDay] = useState(0);
   const [isCurrentWeek, setIsCurrentWeek] = useState(true);
   const [totalPaid, setTotalPaid] = useState(0);
   const [sending, setSending] = useState(false);
@@ -487,8 +485,7 @@ export default function ExpensesOverview() {
         toast.error("Receipt already uploaded.");
       } else {
         toast.success("Receipt submitted — it will appear shortly.");
-        // Reload the current week to pick up the new receipt
-        if (currentWeek) loadWeek(currentWeek.year, currentWeek.week);
+        if (weekStart) loadDateRange(weekStart);
       }
     } catch {
       toast.error("Upload failed. Please try again.");
@@ -538,20 +535,35 @@ export default function ExpensesOverview() {
         router.push("/onboarding");
         return;
       }
-      const now = getISOWeek(new Date());
-      setCurrentWeek(now);
+      let day = 0;
+      try {
+        const settingsRes = await api.get("/settings");
+        day = settingsRes.data?.summary_day ?? 0;
+      } catch { /* use Monday default */ }
+      setSummaryDay(day);
+      setWeekStart(getCustomWeekStart(new Date(), day));
+      setIsCurrentWeek(true);
     });
   }, [router]);
 
-  const loadWeek = useCallback(async (year: number, weekNum: number) => {
+  const loadDateRange = useCallback(async (start: Date) => {
     setLoading(true);
     try {
-      const weekRes = await api.get(`/weeks/${year}/${weekNum}`);
+      const startStr = toDateStr(start);
+      const endStr = toDateStr(getCustomWeekEnd(start));
+      const weekRes = await api.get(`/receipts/daterange?start=${startStr}&end=${endStr}`);
       const data = weekRes.data;
 
       let paid = 0;
       try {
-        const reimbRes = await api.get(`/reimbursements/week/${year}/${weekNum}`);
+        // Reimbursements are stored by ISO week; use start date's ISO week as proxy
+        const d = new Date(start);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+        const week1 = new Date(d.getFullYear(), 0, 4);
+        const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+        const isoYear = d.getFullYear();
+        const reimbRes = await api.get(`/reimbursements/week/${isoYear}/${isoWeek}`);
         paid = reimbRes.data?.total_paid ?? 0;
       } catch {
         // reimbursements fetch failed — show gross total, mark-as-paid still works
@@ -570,37 +582,38 @@ export default function ExpensesOverview() {
   }, []);
 
   useEffect(() => {
-    if (user && currentWeek) loadWeek(currentWeek.year, currentWeek.week);
-  }, [user, currentWeek, loadWeek]);
+    if (user && weekStart) loadDateRange(weekStart);
+  }, [user, weekStart, loadDateRange]);
 
   const navigate = (delta: number) => {
-    if (!currentWeek) return;
-    let { week: w, year } = currentWeek;
-    w += delta;
-    if (w < 1) { year -= 1; w = 52; }
-    if (w > 52) { year += 1; w = 1; }
-    const newWeek = { week: w, year };
-    setCurrentWeek(newWeek);
-    const now = getISOWeek(new Date());
-    setIsCurrentWeek(newWeek.week === now.week && newWeek.year === now.year);
-    loadWeek(year, w);
+    if (!weekStart) return;
+    const newStart = new Date(weekStart);
+    newStart.setDate(newStart.getDate() + delta * 7);
+    const currentStart = getCustomWeekStart(new Date(), summaryDay);
+    setIsCurrentWeek(newStart.getTime() === currentStart.getTime());
+    setWeekStart(newStart);
   };
 
   const goToCurrentWeek = () => {
-    const now = getISOWeek(new Date());
-    setCurrentWeek(now);
+    const start = getCustomWeekStart(new Date(), summaryDay);
+    setWeekStart(start);
     setIsCurrentWeek(true);
-    loadWeek(now.year, now.week);
   };
 
   const handleSendTotal = async () => {
-    if (!week || !currentWeek) return;
+    if (!week || !weekStart) return;
     setSending(true);
     try {
+      // Use ISO week of week start date for the message endpoint
+      const d = new Date(weekStart);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+      const week1 = new Date(d.getFullYear(), 0, 4);
+      const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
       await api.post("/messages/send", {
         type: "week_total",
-        year: currentWeek.year,
-        week_number: currentWeek.week,
+        year: d.getFullYear(),
+        week_number: isoWeek,
       });
       toast.success("Summary sent to WhatsApp group");
     } catch {
@@ -611,14 +624,19 @@ export default function ExpensesOverview() {
   };
 
   const handleMarkPaid = async () => {
-    if (!week || !currentWeek) return;
+    if (!week || !weekStart) return;
     setPaying(true);
     try {
+      const d = new Date(weekStart);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+      const week1 = new Date(d.getFullYear(), 0, 4);
+      const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
       await api.post("/reimbursements", {
-        year: currentWeek.year,
-        week_number: currentWeek.week,
+        year: d.getFullYear(),
+        week_number: isoWeek,
         amount: week.reimbursable_total,
-        note: `Week ${currentWeek.week} reimbursement`,
+        note: `Week of ${toDateStr(weekStart)} reimbursement`,
       });
       setPaid(true);
       toast.success(`SGD ${week.reimbursable_total.toFixed(2)} marked as paid`);
@@ -672,8 +690,11 @@ export default function ExpensesOverview() {
     });
   };
 
-  const handleDateChange = (id: string, newDate: string, weekNumber: number, year: number) => {
-    if (!currentWeek || weekNumber !== currentWeek.week || year !== currentWeek.year) {
+  const handleDateChange = (id: string, newDate: string, _weekNumber: number, _year: number) => {
+    if (!weekStart) return;
+    const newD = new Date(newDate + "T00:00:00");
+    const weekEnd = getCustomWeekEnd(weekStart);
+    if (newD < weekStart || newD > weekEnd) {
       handleDelete(id);
       setSelectedReceipt(null);
     } else {
@@ -704,7 +725,7 @@ export default function ExpensesOverview() {
 
   const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !currentWeek) return;
+    if (!file || !weekStart) return;
 
     // Reset input so same file can be re-selected
     e.target.value = "";
@@ -717,7 +738,7 @@ export default function ExpensesOverview() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       toast.success("Receipt uploaded successfully");
-      loadWeek(currentWeek.year, currentWeek.week);
+      loadDateRange(weekStart);
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       toast.error(detail ?? "Upload failed — please try again");
@@ -726,7 +747,7 @@ export default function ExpensesOverview() {
     }
   };
 
-  if (!user || !currentWeek) return null;
+  if (!user || !weekStart) return null;
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
@@ -734,7 +755,7 @@ export default function ExpensesOverview() {
       <div className="flex items-start justify-between mb-6 gap-3">
         <div>
           <p className="text-stone-500 text-sm">
-            {formatWeekRange(currentWeek.year, currentWeek.week)}
+            {formatCustomWeekRange(weekStart)}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

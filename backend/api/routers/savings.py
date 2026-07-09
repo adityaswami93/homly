@@ -37,6 +37,14 @@ def get_household_id(request: Request) -> str:
     return household_id
 
 
+def require_admin(request: Request) -> None:
+    # Backend calls use the Supabase service role key, which bypasses RLS —
+    # the "household admins can manage" policy on savings_accounts provides
+    # no protection on its own, so mutations must be gated here too.
+    if request.state.user.get("role") != "admin" and not request.state.user.get("is_super_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
 def validate_account(data: dict) -> None:
     if data.get("account_type") and data["account_type"] not in VALID_ACCOUNT_TYPES:
         raise HTTPException(status_code=422, detail=f"Invalid account_type: {data['account_type']}")
@@ -77,6 +85,7 @@ def list_accounts(request: Request):
 def create_account(request: Request, body: AccountIn):
     """Create a new savings/investment account for the user's household."""
     household_id = get_household_id(request)
+    require_admin(request)
     user_id = request.state.user.get("sub")
 
     data = body.model_dump(exclude_none=True)
@@ -101,6 +110,7 @@ def create_account(request: Request, body: AccountIn):
 def update_account(account_id: str, request: Request, body: AccountIn):
     """Update an existing savings/investment account (must belong to the user's household)."""
     household_id = get_household_id(request)
+    require_admin(request)
 
     existing = (
         supabase.table("savings_accounts")
@@ -137,6 +147,7 @@ def update_account(account_id: str, request: Request, body: AccountIn):
 def deactivate_account(account_id: str, request: Request):
     """Soft-delete an account by marking is_active = false."""
     household_id = get_household_id(request)
+    require_admin(request)
 
     existing = (
         supabase.table("savings_accounts")
@@ -155,7 +166,7 @@ def deactivate_account(account_id: str, request: Request):
 
 @router.get("/savings/networth")
 def get_net_worth(request: Request):
-    """Aggregate current balances by account_type + grand total for the household."""
+    """Aggregate current balances by currency, and by account_type within each currency."""
     household_id = get_household_id(request)
     res = (
         supabase.table("savings_accounts")
@@ -166,26 +177,39 @@ def get_net_worth(request: Request):
     )
     accounts = res.data or []
 
-    by_type: dict[str, float] = {}
-    total = 0.0
+    # Balances are never summed across currencies — a household can hold
+    # accounts in more than one currency (the default is per-household, but
+    # it can be overridden per account), so totals are grouped by currency.
+    totals_by_currency: dict[str, float] = {}
+    by_type: dict[str, dict[str, float]] = {}
     for a in accounts:
-        by_type[a["account_type"]] = by_type.get(a["account_type"], 0) + (a["current_balance"] or 0)
-        total += a["current_balance"] or 0
-
-    currency = accounts[0]["currency"] if accounts else get_household_currency(household_id)
+        currency = a["currency"]
+        balance = a["current_balance"] or 0
+        totals_by_currency[currency] = totals_by_currency.get(currency, 0) + balance
+        by_type.setdefault(currency, {})
+        by_type[currency][a["account_type"]] = by_type[currency].get(a["account_type"], 0) + balance
 
     return {
-        "total": round(total, 2),
-        "currency": currency,
-        "by_type": {k: round(v, 2) for k, v in by_type.items()},
+        "totals_by_currency": {c: round(v, 2) for c, v in totals_by_currency.items()},
+        "by_type": {c: {t: round(v, 2) for t, v in types.items()} for c, types in by_type.items()},
         "account_count": len(accounts),
     }
 
 
 @router.get("/savings/history")
 def get_net_worth_history(request: Request):
-    """Net worth over time — daily sum of all accounts' latest balance up to each recorded date."""
+    """Net worth over time, grouped by currency — daily sum of all accounts'
+    latest balance up to each recorded date, per currency."""
     household_id = get_household_id(request)
+
+    accounts_res = (
+        supabase.table("savings_accounts")
+        .select("id, currency")
+        .eq("household_id", household_id)
+        .execute()
+    )
+    currency_by_account = {a["id"]: a["currency"] for a in (accounts_res.data or [])}
+
     res = (
         supabase.table("savings_balance_history")
         .select("account_id, balance, recorded_at")
@@ -195,17 +219,24 @@ def get_net_worth_history(request: Request):
     )
     rows = res.data or []
 
-    # Roll up to one net-worth point per day: for each day, carry forward the
-    # latest known balance per account and sum across accounts.
+    # Roll up to one point per day: for each day, carry forward the latest
+    # known balance per account, then sum within each currency.
     latest_by_account: dict[str, float] = {}
-    points = []
     seen_days: dict[str, dict] = {}
     for row in rows:
         day = row["recorded_at"][:10]
         latest_by_account[row["account_id"]] = row["balance"]
         seen_days[day] = dict(latest_by_account)
 
+    points = []
     for day, balances in seen_days.items():
-        points.append({"date": day, "net_worth": round(sum(balances.values()), 2)})
+        totals_by_currency: dict[str, float] = {}
+        for account_id, balance in balances.items():
+            currency = currency_by_account.get(account_id, "SGD")
+            totals_by_currency[currency] = totals_by_currency.get(currency, 0) + balance
+        points.append({
+            "date": day,
+            "totals_by_currency": {c: round(v, 2) for c, v in totals_by_currency.items()},
+        })
 
     return {"points": points}

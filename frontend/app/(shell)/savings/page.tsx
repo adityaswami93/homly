@@ -335,8 +335,12 @@ export default function SavingsPage() {
   if (!user) return null;
 
   const defaultCurrency = activeHousehold?.default_currency ?? "SGD";
-  const currency = accounts[0]?.currency ?? defaultCurrency;
-  const total = accounts.reduce((s, a) => s + (a.current_balance || 0), 0);
+  // Balances are never summed across currencies — a household can hold
+  // accounts in more than one, so totals are grouped by currency.
+  const totalsByCurrency = accounts.reduce<Record<string, number>>((acc, a) => {
+    acc[a.currency] = (acc[a.currency] || 0) + (a.current_balance || 0);
+    return acc;
+  }, {});
   const grouped = ACCOUNT_TYPES.map((t) => ({
     type: t.value,
     label: t.label,
@@ -368,11 +372,16 @@ export default function SavingsPage() {
           {/* Net worth summary */}
           <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 mb-6">
             <p className="text-xs text-stone-500 font-medium mb-1">Net Worth</p>
-            <p className="text-3xl font-bold text-stone-100 font-mono">
-              {currency} {total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </p>
+            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+              {Object.entries(totalsByCurrency).map(([cur, amt]) => (
+                <p key={cur} className="text-3xl font-bold text-stone-100 font-mono">
+                  {cur} {amt.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              ))}
+            </div>
             <p className="text-xs text-stone-500 mt-1">
               across {accounts.length} account{accounts.length === 1 ? "" : "s"}
+              {Object.keys(totalsByCurrency).length > 1 ? " (multiple currencies)" : ""}
             </p>
           </div>
 

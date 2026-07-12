@@ -21,15 +21,28 @@ The Homly web app is wrapped as a native Android and iOS app using [Capacitor](h
 
 ## Environment variables
 
-Create `frontend/.env.local` (copy from `frontend/.env.example` and fill in):
+Create `frontend/.env.local` (copy from `frontend/.env.example` and fill in) with the vars shared across dev and build:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-NEXT_PUBLIC_API_URL=https://your-backend.railway.app
 ```
 
 These values are baked into the static build at compile time. The app talks to the hosted FastAPI backend over HTTPS — nothing runs locally on-device.
+
+### Running a local backend alongside the mobile build
+
+`NEXT_PUBLIC_API_URL` is the one var that should usually differ between local web dev and what ships to the mobile app. Next.js loads mode-specific env files automatically, so you don't need to hand-edit `.env.local` when switching between the two:
+
+```bash
+# .env.development.local — only used by `npm run dev`
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# .env.production.local — only used by `npm run build` (i.e. what cap sync ships to the native app)
+NEXT_PUBLIC_API_URL=https://your-backend.railway.app
+```
+
+`npm run dev` now always points at your local FastAPI, and `npm run build && npx cap sync` always bakes in the Railway URL — no manual swapping required. Both files are gitignored since they're per-developer.
 
 ---
 

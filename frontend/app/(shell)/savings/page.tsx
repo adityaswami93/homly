@@ -48,6 +48,20 @@ const SCHEME_PLACEHOLDER: Record<string, string> = {
   mutual_fund: "e.g. fund/scheme name",
 };
 
+// A guided checklist for getting started: rather than a blank form, walk
+// through the categories one at a time so it's clear what to ask parents
+// about. Order is roughly "easiest to find out about" first.
+const CHECKLIST_HINTS: Record<string, string> = {
+  bank_savings: "Which banks do they have savings accounts with?",
+  fixed_deposit: "Any fixed or term deposits? Check FD receipts or bank statements.",
+  retirement_fund: "Check their CPF / EPF / PPF / NPS statement for the balance.",
+  stocks: "Any demat or trading account? Check the latest statement.",
+  mutual_fund: "Any SIPs or mutual fund folios?",
+  bonds: "Any government bonds, corporate bonds, or savings certificates?",
+  property: "Any property beyond their home — rental, land, etc.?",
+  other: "Anything else — gold, informal savings, etc.?",
+};
+
 const EMPTY_FORM = {
   account_type: "bank_savings",
   scheme_name: "",
@@ -63,11 +77,13 @@ const EMPTY_FORM = {
 function AccountModal({
   account,
   defaultCurrency,
+  initialType,
   onClose,
   onSave,
 }: {
   account?: Account;
   defaultCurrency: string;
+  initialType?: string;
   onClose: () => void;
   onSave: (data: any) => Promise<void>;
 }) {
@@ -84,7 +100,7 @@ function AccountModal({
           maturity_date: account.maturity_date?.slice(0, 10) ?? "",
           notes: account.notes ?? "",
         }
-      : { ...EMPTY_FORM, currency: defaultCurrency }
+      : { ...EMPTY_FORM, currency: defaultCurrency, account_type: initialType ?? EMPTY_FORM.account_type }
   );
   const [saving, setSaving] = useState(false);
 
@@ -273,12 +289,64 @@ function AccountModal({
   );
 }
 
+function ChecklistCard({
+  accounts,
+  onAsk,
+}: {
+  accounts: Account[];
+  onAsk: (type: string) => void;
+}) {
+  const coveredTypes = new Set(accounts.map((a) => a.account_type));
+  const doneCount = ACCOUNT_TYPES.filter((t) => coveredTypes.has(t.value)).length;
+
+  if (doneCount === ACCOUNT_TYPES.length) return null;
+
+  return (
+    <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 mb-6">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold text-stone-200">Getting started</h2>
+        <span className="text-xs text-stone-500">{doneCount} of {ACCOUNT_TYPES.length} covered</span>
+      </div>
+      <p className="text-xs text-stone-500 mb-4">
+        Not sure where to start? Work through this list with your parents — check off what
+        you find, one conversation at a time.
+      </p>
+      <div className="space-y-1">
+        {ACCOUNT_TYPES.map((t) => {
+          const done = coveredTypes.has(t.value);
+          return (
+            <div
+              key={t.value}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${done ? "opacity-60" : "hover:bg-stone-800/50"}`}
+            >
+              <span className="text-lg shrink-0">{done ? "✅" : TYPE_EMOJI[t.value]}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-stone-200">{t.label}</p>
+                {!done && <p className="text-xs text-stone-500 truncate">{CHECKLIST_HINTS[t.value]}</p>}
+              </div>
+              {!done && (
+                <button
+                  onClick={() => onAsk(t.value)}
+                  className="shrink-0 text-xs font-medium text-emerald-400 hover:text-emerald-300 px-3 py-1.5 rounded-lg hover:bg-emerald-900/30 transition-colors min-h-[36px]"
+                >
+                  Add
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function SavingsPage() {
   const [user, setUser] = useState<any>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | undefined>();
+  const [presetType, setPresetType] = useState<string | undefined>();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const router = useRouter();
   const { toasts, dismissToast, toast } = useToast();
@@ -347,28 +415,38 @@ export default function SavingsPage() {
     accounts: accounts.filter((a) => a.account_type === t.value),
   })).filter((g) => g.accounts.length > 0);
 
+  const openChecklistItem = (type: string) => {
+    setEditAccount(undefined);
+    setPresetType(type);
+    setShowModal(true);
+  };
+
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto">
       {loading ? (
         <div className="text-stone-500 text-sm py-12 text-center">Loading…</div>
       ) : accounts.length === 0 ? (
-        <div className="bg-stone-900 border border-stone-800 rounded-xl p-16 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-900/30 flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">🐷</span>
+        <>
+          <ChecklistCard accounts={accounts} onAsk={openChecklistItem} />
+          <div className="bg-stone-900 border border-stone-800 rounded-xl p-10 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-900/30 flex items-center justify-center mx-auto mb-3">
+              <span className="text-2xl">🐷</span>
+            </div>
+            <p className="text-stone-500 text-sm">
+              Nothing added yet — work through the checklist above, or add an account directly.
+            </p>
+            <button
+              onClick={() => { setPresetType(undefined); setShowModal(true); }}
+              className="mt-4 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-6 py-2.5 rounded-xl transition-colors min-h-[44px]"
+            >
+              Add an account
+            </button>
           </div>
-          <h3 className="text-stone-200 font-semibold mb-2">No savings accounts added yet</h3>
-          <p className="text-stone-500 text-sm mb-6">
-            Add bank accounts, fixed deposits, retirement funds and investments to track net worth.
-          </p>
-          <button
-            onClick={() => setShowModal(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-6 py-2.5 rounded-xl transition-colors min-h-[44px]"
-          >
-            Add your first account
-          </button>
-        </div>
+        </>
       ) : (
         <>
+          <ChecklistCard accounts={accounts} onAsk={openChecklistItem} />
+
           {/* Net worth summary */}
           <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 mb-6">
             <p className="text-xs text-stone-500 font-medium mb-1">Net Worth</p>
@@ -388,7 +466,7 @@ export default function SavingsPage() {
           {/* Add button */}
           <div className="flex justify-end mb-4">
             <button
-              onClick={() => { setEditAccount(undefined); setShowModal(true); }}
+              onClick={() => { setEditAccount(undefined); setPresetType(undefined); setShowModal(true); }}
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors min-h-[44px]"
             >
               <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
@@ -498,7 +576,8 @@ export default function SavingsPage() {
         <AccountModal
           account={editAccount}
           defaultCurrency={defaultCurrency}
-          onClose={() => { setShowModal(false); setEditAccount(undefined); }}
+          initialType={presetType}
+          onClose={() => { setShowModal(false); setEditAccount(undefined); setPresetType(undefined); }}
           onSave={editAccount ? handleUpdate : handleCreate}
         />
       )}

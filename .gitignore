@@ -15,3 +15,5 @@ backend/evals/__pycache__
 backend/receipts
 backend/whatsapp/auth_state
 backend/whatsapp/node_modules
+.gitignore
+frontend/android/.idea

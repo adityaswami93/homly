@@ -33,6 +33,8 @@ SKIP_AUTH_PATHS = [
     "/internal/shopping-list",
     "/internal/pantry",
     "/internal/graph-invoke",
+    "/internal/commands",
+    "/internal/reminders/due",
     "/waitlist",
 ]
 

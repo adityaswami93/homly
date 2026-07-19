@@ -251,7 +251,7 @@ function ReceiptDrawer({
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-2 mt-0.5">
                 <p className="text-stone-500 text-sm">{fmtDate(receipt.date)}</p>
                 {isAdmin && (
                   <button
@@ -259,9 +259,9 @@ function ReceiptDrawer({
                       setDateValue(receipt.date?.slice(0, 10) ?? "");
                       setEditingDate(true);
                     }}
-                    className="text-stone-600 hover:text-stone-500 text-xs"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-stone-300 hover:text-emerald-400 border border-stone-700 hover:border-emerald-700 rounded-md px-1.5 py-0.5 min-h-[26px] transition-colors"
                   >
-                    Edit
+                    ✎ Edit
                   </button>
                 )}
               </div>

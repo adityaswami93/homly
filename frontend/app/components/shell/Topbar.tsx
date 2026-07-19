@@ -1,6 +1,7 @@
 "use client";
 
 import { type App } from "@/config/apps";
+import HouseholdSwitcher from "@/app/components/shell/HouseholdSwitcher";
 
 interface TopbarProps {
   pageTitle: string;
@@ -17,6 +18,8 @@ export default function Topbar({ pageTitle, activeApp, user, onSignOut }: Topbar
       <h1 className="text-base font-semibold text-stone-100 truncate">{pageTitle}</h1>
 
       <div className="flex items-center gap-3">
+        <HouseholdSwitcher />
+
         {/* User email — hidden on mobile */}
         {user?.email && (
           <span className="hidden sm:block text-xs text-stone-500 truncate max-w-[180px]">

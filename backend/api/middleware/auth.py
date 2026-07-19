@@ -86,16 +86,35 @@ class AuthMiddleware(BaseHTTPMiddleware):
         user_meta = payload.get("user_metadata", {})
         is_super_admin = user_meta.get("is_super_admin", False)
 
-        # Get household membership
+        # Get all household memberships for this user (a user may belong to
+        # several households — e.g. their own household plus their parents')
         household_id = None
         role = None
         try:
-            member = supabase.table("household_members")\
-                .select("household_id, role")\
+            memberships = supabase.table("household_members")\
+                .select("household_id, role, joined_at")\
                 .eq("user_id", user_id)\
+                .order("joined_at")\
                 .execute()
-            household_id = member.data[0]["household_id"] if member.data else None
-            role = member.data[0]["role"] if member.data else None
+            rows = memberships.data or []
+
+            # A stale/invalid X-Household-Id (leftover in localStorage from a
+            # previous user, or a household this user was removed from) must
+            # not hard-block the request — that would strand the user on
+            # discovery/onboarding calls like GET /households and
+            # POST /household. Silently fall back to their first membership
+            # instead; this never grants access to a household they're not
+            # actually in, since we only ever honor a header that matches one
+            # of their own membership rows.
+            requested_household_id = request.headers.get("X-Household-Id")
+            match = None
+            if requested_household_id:
+                match = next((r for r in rows if r["household_id"] == requested_household_id), None)
+
+            active = match or (rows[0] if rows else None)
+            if active:
+                household_id = active["household_id"]
+                role = active["role"]
         except Exception as e:
             logger.error(f"Failed to fetch household for user {user_id}: {e}")
 

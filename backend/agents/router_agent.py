@@ -10,6 +10,7 @@ from agents.base_agent import AgentResult, BaseQueryAgent
 from agents.query.grocery_agent import GroceryQueryAgent
 from agents.query.insurance_query_agent import InsuranceQueryAgent
 from agents.query.pantry_agent import PantryQueryAgent
+from agents.query.savings_query_agent import SavingsQueryAgent
 from services.llm_client import get_completion, get_tool_completion
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ _AGENTS: list[BaseQueryAgent] = [
     GroceryQueryAgent(),
     InsuranceQueryAgent(),
     PantryQueryAgent(),
+    SavingsQueryAgent(),
 ]
 _AGENT_MAP: dict[str, BaseQueryAgent] = {a.manifest.tool_name: a for a in _AGENTS}
 

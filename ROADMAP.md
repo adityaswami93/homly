@@ -23,6 +23,12 @@ Homly is a family operating system — a platform for the financial and administ
 
 **Platform**
 - Multi-tenant architecture, invite system, role-based access, extensible two-level nav
+- Multi-Household Access — one login manages several households (e.g. your own household plus each set of parents), with a household switcher and a per-household default currency
+
+**Savings & Investments**
+- Net worth tracker: bank accounts, fixed deposits, retirement funds (CPF/EPF/PPF/NPS and equivalents), stocks, mutual funds, bonds, property — country-agnostic account types with a household-level default currency
+- Net worth trend over time, breakdown by account type
+- WhatsApp queries — "what's our net worth", account listing, type breakdown
 
 ---
 
@@ -31,8 +37,14 @@ Homly is a family operating system — a platform for the financial and administ
 ### Tasks & Chores
 Assign recurring household tasks to members. Track completion. Bot sends reminders and weekly chore summaries to the group.
 
-### Document Vault
-Store household documents (lease, warranties, utility contracts) with expiry dates. Bot alerts the group before anything lapses.
+### Document & Estate Vault
+Store household documents — leases, warranties, utility contracts, and (extended scope) wills, power of attorney, nominations, IDs, and property deeds — with expiry dates. Bot alerts the group before anything lapses.
+
+### Health & Medications
+Medication schedule with refill reminders, doctor/appointment tracking, and a vitals log — aimed at retired household members. Needs a recurring-schedule model (the existing one-off `reminders` table isn't sufficient on its own).
+
+### Emergency & Care Contacts
+A directory of doctors, specialists, caregivers, and next-of-kin, queryable via WhatsApp (e.g. "what's mum's cardiologist's number").
 
 ---
 
@@ -50,7 +62,13 @@ Native iOS/Android app for receipt capture directly from the camera roll, push n
 - Identify subscriptions hiding in receipts
 
 ### Vendor Negotiations
-AI-drafted comparison summaries for recurring bills (electricity, broadband, insurance) using cross-household price data, ready to share with providers.
+AI-drafted comparison summaries for recurring bills and subscriptions (electricity, broadband, insurance) using cross-household price data, ready to share with providers — covers Bills & Subscriptions tracking rather than needing a separate module.
+
+---
+
+## Known gaps
+
+- The WhatsApp bot's `/remind` command hardcodes `Asia/Singapore` for timestamp display regardless of which household's group it's replying in — incorrect for households outside Singapore (e.g. India-based households). Should read the household's timezone (already stored per-household as `settings.summary_timezone`) instead of hardcoding it.
 
 ---
 

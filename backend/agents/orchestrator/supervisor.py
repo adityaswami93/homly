@@ -109,7 +109,7 @@ def finalize_node(state: SupervisorState) -> dict:
         return {
             "response": (
                 "I'm not sure how to answer that. Try asking about your grocery spending, "
-                "insurance policies, or expense summaries."
+                "insurance policies, savings accounts, or expense summaries."
             )
         }
 

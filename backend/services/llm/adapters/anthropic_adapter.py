@@ -6,12 +6,15 @@ from langchain_openai import ChatOpenAI
 # this goes through ChatOpenAI pointed at OpenRouter rather than ChatAnthropic — the
 # adapter's name/slot in the factory is unchanged, only the transport underneath it.
 #
+# Default is Sonnet, not Opus — Opus is off the table for now. Override per-deployment
+# via AGENT_MODEL without touching this file (see services/llm/factory.py).
+#
 # NOTE: this slug is OpenRouter's naming convention (anthropic/claude-<name>), not
 # Anthropic's own model ID — could not verify it against OpenRouter's live catalog from
 # this environment (outbound access to openrouter.ai is blocked here). Confirm this
-# resolves to Claude Opus 4.8 before relying on it; a wrong slug fails loudly (400) on
+# resolves to Claude Sonnet 5 before relying on it; a wrong slug fails loudly (400) on
 # first call rather than silently, but override via AGENT_MODEL either way if it's off.
-DEFAULT_MODEL = "anthropic/claude-opus-4.8"
+DEFAULT_MODEL = "anthropic/claude-sonnet-5"
 
 
 def build() -> ChatOpenAI:

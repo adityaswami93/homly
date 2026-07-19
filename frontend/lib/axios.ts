@@ -5,11 +5,17 @@ const api = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL
 })
 
-// Attach token to every request automatically
+// Attach token + active household to every request automatically
 api.interceptors.request.use(async (config) => {
     const { data: { session } } = await supabase.auth.getSession()
     if (session?.access_token) {
         config.headers.Authorization = `Bearer ${session.access_token}`
+    }
+    const activeHouseholdId = typeof window !== "undefined"
+        ? localStorage.getItem("homly_active_household_id")
+        : null
+    if (activeHouseholdId) {
+        config.headers["X-Household-Id"] = activeHouseholdId
     }
     return config
 })

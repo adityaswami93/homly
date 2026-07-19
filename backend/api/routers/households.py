@@ -127,17 +127,43 @@ def get_my_household(request: Request):
     return {**household.data[0], "members": enriched}
 
 
+@router.get("/households")
+def list_my_households(request: Request):
+    user_id = request.state.user["sub"]
+    memberships = supabase.table("household_members")\
+        .select("household_id, role, joined_at")\
+        .eq("user_id", user_id)\
+        .order("joined_at")\
+        .execute()
+    household_ids = [m["household_id"] for m in memberships.data]
+    if not household_ids:
+        return []
+    households = supabase.table("households")\
+        .select("id, name, default_currency")\
+        .in_("id", household_ids)\
+        .execute()
+    household_map = {h["id"]: h for h in households.data}
+    return [
+        {
+            "id": m["household_id"],
+            "role": m["role"],
+            "name": household_map.get(m["household_id"], {}).get("name"),
+            "default_currency": household_map.get(m["household_id"], {}).get("default_currency"),
+        }
+        for m in memberships.data
+        if m["household_id"] in household_map
+    ]
+
+
 @router.post("/household")
 def create_household(request: Request, body: dict):
     user_id = request.state.user["sub"]
-    existing = supabase.table("household_members")\
-        .select("household_id")\
-        .eq("user_id", user_id)\
-        .execute()
-    if existing.data:
-        raise HTTPException(status_code=400, detail="User already belongs to a household")
     name = body.get("name", "Home")
-    household = supabase.table("households").insert({"name": name}).execute()
+    default_currency = body.get("default_currency", "SGD")
+    household = supabase.table("households").insert({
+        "name": name,
+        "default_currency": default_currency,
+    }).execute()
     household_id = household.data[0]["id"]
     supabase.table("household_members").insert({
         "household_id": household_id,

@@ -1,14 +1,15 @@
 from operator import add
-from typing import Annotated, Optional, TypedDict
+from typing import Annotated, TypedDict
+
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 
 from agents.base_agent import AgentResult
 
 
 class SupervisorState(TypedDict):
     household_id: str
-    query: str
-    context: Optional[list[dict]]
-    pending_tool_calls: Optional[list[dict]]
+    messages: Annotated[list[BaseMessage], add_messages]
     agents_called: Annotated[list[str], add]
     agent_results: Annotated[list[AgentResult], add]
-    response: Optional[str]
+    iterations: int

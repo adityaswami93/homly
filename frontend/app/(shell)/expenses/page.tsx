@@ -251,7 +251,7 @@ function ReceiptDrawer({
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-2 mt-0.5">
                 <p className="text-stone-500 text-sm">{fmtDate(receipt.date)}</p>
                 {isAdmin && (
                   <button
@@ -259,9 +259,9 @@ function ReceiptDrawer({
                       setDateValue(receipt.date?.slice(0, 10) ?? "");
                       setEditingDate(true);
                     }}
-                    className="text-stone-600 hover:text-stone-500 text-xs"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-stone-300 hover:text-emerald-400 border border-stone-700 hover:border-emerald-700 rounded-md px-1.5 py-0.5 min-h-[26px] transition-colors"
                   >
-                    Edit
+                    ✎ Edit
                   </button>
                 )}
               </div>
@@ -554,25 +554,10 @@ export default function ExpensesOverview() {
       const weekRes = await api.get(`/receipts/daterange?start=${startStr}&end=${endStr}`);
       const data = weekRes.data;
 
-      let paid = 0;
-      try {
-        // Reimbursements are stored by ISO week; use start date's ISO week as proxy
-        const d = new Date(start);
-        d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-        const week1 = new Date(d.getFullYear(), 0, 4);
-        const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
-        const isoYear = d.getFullYear();
-        const reimbRes = await api.get(`/reimbursements/week/${isoYear}/${isoWeek}`);
-        paid = reimbRes.data?.total_paid ?? 0;
-      } catch {
-        // reimbursements fetch failed — show gross total, mark-as-paid still works
-      }
-
-      setTotalPaid(paid);
+      setTotalPaid(data.already_paid ?? 0);
       setWeek({
         ...data,
-        reimbursable_total: Math.max(0, Math.round((data.reimbursable_total - paid) * 100) / 100),
+        reimbursable_total: data.outstanding_reimbursable_total ?? data.reimbursable_total,
       });
     } catch {
       setWeek(null);
@@ -627,20 +612,13 @@ export default function ExpensesOverview() {
     if (!week || !weekStart) return;
     setPaying(true);
     try {
-      const d = new Date(weekStart);
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-      const week1 = new Date(d.getFullYear(), 0, 4);
-      const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
-      await api.post("/reimbursements", {
-        year: d.getFullYear(),
-        week_number: isoWeek,
-        amount: week.reimbursable_total,
-        note: `Week of ${toDateStr(weekStart)} reimbursement`,
-      });
+      const startStr = toDateStr(weekStart);
+      const endStr = toDateStr(getCustomWeekEnd(weekStart));
+      const res = await api.post("/receipts/daterange/mark-paid", { start: startStr, end: endStr });
+      const amountPaid = res.data?.amount_paid ?? 0;
       setPaid(true);
-      toast.success(`SGD ${week.reimbursable_total.toFixed(2)} marked as paid`);
-      setTotalPaid((prev) => prev + week.reimbursable_total);
+      toast.success(`SGD ${amountPaid.toFixed(2)} marked as paid`);
+      setTotalPaid((prev) => prev + amountPaid);
       setWeek((prev) => prev ? { ...prev, reimbursable_total: 0 } : prev);
       setTimeout(() => setPaid(false), 3000);
     } catch {

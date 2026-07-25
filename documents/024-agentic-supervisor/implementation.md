@@ -1,4 +1,4 @@
-# 023 — Agentic Query Supervisor (LangGraph + ReAct + Pluggable LLM)
+# 024 — Agentic Query Supervisor (LangGraph + ReAct + Pluggable LLM)
 
 ## Problem
 

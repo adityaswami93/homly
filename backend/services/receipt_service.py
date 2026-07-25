@@ -9,6 +9,7 @@ from datetime import date, datetime, timezone as tz
 from supabase import create_client
 
 from agents.receipt_agent import analyse_receipt
+from services.reimbursement import get_reimbursable
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,6 @@ def save_receipt(
     # Reimbursable flag
     reimbursable = True
     if settings:
-        from api.routers.expenses import get_reimbursable
         reimbursable = get_reimbursable(sender_name, sender_phone, settings)
 
     image_path = upload_receipt_image(image_bytes, mime_type, household_id)

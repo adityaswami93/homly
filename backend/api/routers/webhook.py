@@ -10,6 +10,7 @@ from supabase import create_client
 
 from agents.receipt_agent import analyse_receipt
 from services.whatsapp_client import send_text, download_file
+from services.reimbursement import get_reimbursable
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,24 +30,6 @@ def _db():
 def _week_for_date(d: date) -> tuple[int, int]:
     iso = d.isocalendar()
     return iso.week, iso.year
-
-
-def _get_reimbursable(sender_name: str | None, sender_phone: str | None, settings: dict) -> bool:
-    mode = settings.get("reimbursement_mode", "all")
-    if mode == "all":
-        return True
-    if mode == "none":
-        return False
-    if mode == "helpers_only":
-        identifiers = settings.get("helper_identifiers", "") or ""
-        if not identifiers:
-            return False
-        helper_list = [h.strip().lower() for h in identifiers.split(",") if h.strip()]
-        return bool(
-            (sender_name and sender_name.lower() in helper_list)
-            or (sender_phone and sender_phone in helper_list)
-        )
-    return True
 
 
 def _upload_image(image_bytes: bytes, mime_type: str, household_id: str) -> str | None:
@@ -198,7 +181,7 @@ async def _handle_image(
             pass
 
     week_num, year = _week_for_date(receipt_date)
-    reimbursable = _get_reimbursable(sender_name, sender_phone, settings)
+    reimbursable = get_reimbursable(sender_name, sender_phone, settings)
 
     receipt_row = {
         "household_id":        household_id,

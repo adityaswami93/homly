@@ -31,6 +31,7 @@ documents/005-messages/
 | 011 | mobile-responsive | Mobile bottom nav, bottom-sheet drawer, responsive grids and forms | ✅ Released |
 | 012 | edit-receipt-date | Admin/super-admin can edit receipt date from drawer; auto-recalculates week | ✅ Released |
 | 017 | insurance-document-analysis | Upload policy documents → AI extraction, auto-fill, coverage summary, Coverage Checker page | 🔄 In Review |
+| 023 | reimbursement-calc-fix | Fix "to reimburse" total (custom-week vs ISO-week mismatch), move calc to backend, dedupe get_reimbursable() | 🔄 In Review |
 
 ---
 

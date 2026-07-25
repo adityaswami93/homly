@@ -69,6 +69,26 @@ interface Receipt {
   reimbursable: boolean;
   image_path: string | null;
   items?: Item[];
+  week_number?: number;
+  year?: number;
+}
+
+/**
+ * Groups reimbursable receipts by their true ISO calendar week (as stored on the
+ * receipt itself), not the household's custom summary week. A custom week (based
+ * on settings.summary_day) rarely lines up with the Monday-Sunday ISO grid, so
+ * "amount already paid" must be tracked per real ISO week to avoid pulling in a
+ * payment recorded for a different week.
+ */
+function groupReimbursableByWeek(receipts: Receipt[]) {
+  const groups: Record<string, { year: number; week_number: number; amount: number }> = {};
+  for (const r of receipts) {
+    if (!r.reimbursable || r.year == null || r.week_number == null) continue;
+    const key = `${r.year}-${r.week_number}`;
+    if (!groups[key]) groups[key] = { year: r.year, week_number: r.week_number, amount: 0 };
+    groups[key].amount += r.total || 0;
+  }
+  return Object.values(groups);
 }
 
 interface WeekData {
@@ -556,15 +576,13 @@ export default function ExpensesOverview() {
 
       let paid = 0;
       try {
-        // Reimbursements are stored by ISO week; use start date's ISO week as proxy
-        const d = new Date(start);
-        d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-        const week1 = new Date(d.getFullYear(), 0, 4);
-        const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
-        const isoYear = d.getFullYear();
-        const reimbRes = await api.get(`/reimbursements/week/${isoYear}/${isoWeek}`);
-        paid = reimbRes.data?.total_paid ?? 0;
+        // Reimbursements are stored per true ISO week (the week_number/year each
+        // receipt actually carries), which can differ from this custom summary week.
+        const groups = groupReimbursableByWeek(data.receipts || []);
+        const paidByWeek = await Promise.all(
+          groups.map((g) => api.get(`/reimbursements/week/${g.year}/${g.week_number}`))
+        );
+        paid = paidByWeek.reduce((s, res) => s + (res.data?.total_paid ?? 0), 0);
       } catch {
         // reimbursements fetch failed — show gross total, mark-as-paid still works
       }
@@ -627,20 +645,27 @@ export default function ExpensesOverview() {
     if (!week || !weekStart) return;
     setPaying(true);
     try {
-      const d = new Date(weekStart);
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-      const week1 = new Date(d.getFullYear(), 0, 4);
-      const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
-      await api.post("/reimbursements", {
-        year: d.getFullYear(),
-        week_number: isoWeek,
-        amount: week.reimbursable_total,
-        note: `Week of ${toDateStr(weekStart)} reimbursement`,
-      });
+      // Settle each true ISO week represented in this custom view separately, so
+      // the payment is recorded against the same week_number/year the receipts
+      // themselves carry (not an approximation derived from the custom week start).
+      const groups = groupReimbursableByWeek(week.receipts);
+      let totalPosted = 0;
+      for (const g of groups) {
+        const weekPaidRes = await api.get(`/reimbursements/week/${g.year}/${g.week_number}`);
+        const outstanding = round(g.amount - (weekPaidRes.data?.total_paid ?? 0));
+        if (outstanding > 0) {
+          await api.post("/reimbursements", {
+            year: g.year,
+            week_number: g.week_number,
+            amount: outstanding,
+            note: `Week of ${toDateStr(weekStart)} reimbursement`,
+          });
+          totalPosted += outstanding;
+        }
+      }
       setPaid(true);
-      toast.success(`SGD ${week.reimbursable_total.toFixed(2)} marked as paid`);
-      setTotalPaid((prev) => prev + week.reimbursable_total);
+      toast.success(`SGD ${totalPosted.toFixed(2)} marked as paid`);
+      setTotalPaid((prev) => prev + totalPosted);
       setWeek((prev) => prev ? { ...prev, reimbursable_total: 0 } : prev);
       setTimeout(() => setPaid(false), 3000);
     } catch {

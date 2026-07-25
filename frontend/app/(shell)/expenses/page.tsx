@@ -554,25 +554,10 @@ export default function ExpensesOverview() {
       const weekRes = await api.get(`/receipts/daterange?start=${startStr}&end=${endStr}`);
       const data = weekRes.data;
 
-      let paid = 0;
-      try {
-        // Reimbursements are stored by ISO week; use start date's ISO week as proxy
-        const d = new Date(start);
-        d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-        const week1 = new Date(d.getFullYear(), 0, 4);
-        const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
-        const isoYear = d.getFullYear();
-        const reimbRes = await api.get(`/reimbursements/week/${isoYear}/${isoWeek}`);
-        paid = reimbRes.data?.total_paid ?? 0;
-      } catch {
-        // reimbursements fetch failed — show gross total, mark-as-paid still works
-      }
-
-      setTotalPaid(paid);
+      setTotalPaid(data.already_paid ?? 0);
       setWeek({
         ...data,
-        reimbursable_total: Math.max(0, Math.round((data.reimbursable_total - paid) * 100) / 100),
+        reimbursable_total: data.outstanding_reimbursable_total ?? data.reimbursable_total,
       });
     } catch {
       setWeek(null);
@@ -627,20 +612,13 @@ export default function ExpensesOverview() {
     if (!week || !weekStart) return;
     setPaying(true);
     try {
-      const d = new Date(weekStart);
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-      const week1 = new Date(d.getFullYear(), 0, 4);
-      const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
-      await api.post("/reimbursements", {
-        year: d.getFullYear(),
-        week_number: isoWeek,
-        amount: week.reimbursable_total,
-        note: `Week of ${toDateStr(weekStart)} reimbursement`,
-      });
+      const startStr = toDateStr(weekStart);
+      const endStr = toDateStr(getCustomWeekEnd(weekStart));
+      const res = await api.post("/receipts/daterange/mark-paid", { start: startStr, end: endStr });
+      const amountPaid = res.data?.amount_paid ?? 0;
       setPaid(true);
-      toast.success(`SGD ${week.reimbursable_total.toFixed(2)} marked as paid`);
-      setTotalPaid((prev) => prev + week.reimbursable_total);
+      toast.success(`SGD ${amountPaid.toFixed(2)} marked as paid`);
+      setTotalPaid((prev) => prev + amountPaid);
       setWeek((prev) => prev ? { ...prev, reimbursable_total: 0 } : prev);
       setTimeout(() => setPaid(false), 3000);
     } catch {

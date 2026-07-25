@@ -8,6 +8,14 @@ The platform is **multi-tenant**: one backend and one WhatsApp bot instance serv
 
 ---
 
+## Keep This File in Sync
+
+This file is the primary map new coding agents use to orient in the repo — an out-of-date entry is worse than no entry, because it's trusted by default. **When your change adds a new backend router, a new migration, or a new frontend app/page, update the matching section of this file (Project Structure, API Endpoints, Database Schema, Migrations, Apps Config) in the same change**, not as a follow-up.
+
+This has already drifted once: at time of writing, `backend/api/routers/` has 21 router files but only 8 are mentioned in Project Structure/API Endpoints, and `backend/migrations/` has 28 files but only 15 are listed under Migrations. Don't treat updating this file as optional polish — a missing endpoint or table here means the next agent (or human) makes decisions on incomplete information.
+
+---
+
 ## Task ID & Branch Naming Convention
 
 All work is tracked by task IDs (e.g. `010`, `011`). Use the format:
@@ -479,6 +487,18 @@ The frontend's job is to call an endpoint and render what it returns. If you're 
 
 This codebase currently has known offenders worth cleaning up opportunistically (custom-week math and receipt re-aggregation in `expenses/page.tsx`, the multi-endpoint join in `expenses/reimburse/page.tsx`, duplicated `getWeekRange`/`daysUntil` helpers across pages, client-side premium normalization in `insurance/page.tsx`, and the parallel net-worth calc in `savings/page.tsx`) — prefer moving one of these to the backend over adding a new client-side computation next to it.
 
+### Backend stays DRY — no copy-pasted business-logic helpers across routers
+
+The same rule applies within the backend: if a helper needs to be called from more than one router, it belongs in `backend/services/` (or another shared module), imported by both — not reimplemented in each file. Copy-pasted logic drifts the same way duplicated frontend math does, except here it can mean the WhatsApp bot path and the web upload path silently disagree on a business rule.
+
+Known offender: `_get_reimbursable()` is duplicated verbatim in `api/routers/expenses.py` and `api/routers/webhook.py`. A future change to reimbursement rules (e.g. a new `reimbursement_mode`) is one edit away from applying to receipts uploaded via the dashboard but not ones submitted via WhatsApp, or vice versa. Extract it to a shared module next time either copy needs to change.
+
+### Multi-tenancy: every query on a shared table must filter by `household_id`
+
+Most tables (`receipts`, `items`, `households`, `reimbursements`, `pantry_items`, `price_history`, etc.) have `ROW LEVEL SECURITY` explicitly **disabled** (see the migration files) — household isolation is enforced entirely by application code remembering to scope every query. There is no database-level backstop.
+
+Treat a Supabase call against a shared table that's missing `.eq("household_id", household_id)` (or the equivalent `Query`/`Form` param for service-key endpoints — see the pattern below) as a cross-household data leak, not a minor bug. When adding a new endpoint or table, check whether RLS is enabled for it; if it's disabled, the household filter in the query itself is the *only* thing preventing one household from reading or writing another's data.
+
 ### Auth middleware pattern — `is_service_key`
 
 When the service key is used, `household_id` is not resolved in middleware. Endpoints that need it must:
@@ -541,3 +561,7 @@ Run migrations manually in Supabase SQL editor in order:
 ```
 
 > There is no migration runner — apply each file manually. Files are idempotent (`IF NOT EXISTS`, `IF NOT NULL`).
+
+> The list above is illustrative, not exhaustive — run `ls backend/migrations` to see the current full set before assuming this is everything.
+
+**Before adding a new migration file, run `ls backend/migrations` and pick the next unused number.** Nothing enforces numbering, and the repo already has collisions from skipping this check — four different files are prefixed `016_`, two are prefixed `017_`. A reused prefix makes it unclear which migration actually ran first or is safe to re-apply.

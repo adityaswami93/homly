@@ -47,6 +47,33 @@ def _week_for_date(d: date) -> tuple[int, int]:
     return iso.week, iso.year
 
 
+def _reimbursement_groups(receipts: list[dict]) -> list[dict]:
+    """Group reimbursable receipts by the true ISO week/year each one is stored
+    under. A caller-supplied date range (e.g. a household's custom summary week)
+    rarely lines up with the Monday-Sunday ISO grid, so "amount already paid"
+    must be settled per real ISO week rather than per arbitrary date range."""
+    groups: dict[tuple[int, int], float] = {}
+    for r in receipts:
+        if not r.get("reimbursable"):
+            continue
+        year, week_number = r.get("year"), r.get("week_number")
+        if year is None or week_number is None:
+            continue
+        key = (year, week_number)
+        groups[key] = groups.get(key, 0) + (r["total"] or 0)
+    return [{"year": y, "week_number": w, "amount": round(amt, 2)} for (y, w), amt in groups.items()]
+
+
+def _paid_for_week(household_id: str, year: int, week_number: int) -> float:
+    res = _db().table("reimbursements")\
+        .select("amount")\
+        .eq("household_id", household_id)\
+        .eq("year",         year)\
+        .eq("week_number",  week_number)\
+        .execute()
+    return sum(float(r["amount"] or 0) for r in res.data)
+
+
 ACCEPTED_MIME_TYPES = {
     "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic",
     "application/pdf",
@@ -234,18 +261,64 @@ def get_receipts_by_daterange(start: str, end: str, request: Request):
 
     total = sum(r["total"] or 0 for r in receipts_res.data)
     flagged_count = sum(1 for r in receipts_res.data if r.get("flagged"))
+    reimbursable_total = round(sum(r["total"] or 0 for r in receipts_res.data if r.get("reimbursable")), 2)
+
+    groups = _reimbursement_groups(receipts_res.data)
+    already_paid = round(sum(_paid_for_week(household_id, g["year"], g["week_number"]) for g in groups), 2)
+    outstanding_reimbursable_total = round(max(0, reimbursable_total - already_paid), 2)
 
     return {
-        "start_date":         start,
-        "end_date":           end,
-        "total":              round(total, 2),
-        "reimbursable_total": round(sum(r["total"] or 0 for r in receipts_res.data if r.get("reimbursable")), 2),
-        "own_total":          round(sum(r["total"] or 0 for r in receipts_res.data if not r.get("reimbursable")), 2),
-        "receipt_count":      len(receipts_res.data),
-        "flagged_count":      flagged_count,
-        "receipts":           receipts_res.data,
-        "category_totals":    category_totals,
+        "start_date":                     start,
+        "end_date":                       end,
+        "total":                          round(total, 2),
+        "reimbursable_total":             reimbursable_total,
+        "already_paid":                   already_paid,
+        "outstanding_reimbursable_total": outstanding_reimbursable_total,
+        "own_total":                      round(sum(r["total"] or 0 for r in receipts_res.data if not r.get("reimbursable")), 2),
+        "receipt_count":                  len(receipts_res.data),
+        "flagged_count":                  flagged_count,
+        "receipts":                       receipts_res.data,
+        "category_totals":                category_totals,
     }
+
+
+@router.post("/receipts/daterange/mark-paid")
+def mark_daterange_paid(request: Request, body: dict):
+    """Settle every outstanding reimbursement for receipts in [start, end] by
+    paying off each true ISO week the receipts actually belong to."""
+    household_id = request.state.user.get("household_id")
+    user_id      = request.state.user.get("sub")
+    if not household_id:
+        raise HTTPException(status_code=403, detail="No household found")
+
+    start = body.get("start")
+    end   = body.get("end")
+    if not start or not end:
+        raise HTTPException(status_code=400, detail="start and end required")
+
+    receipts_res = _db().table("receipts")\
+        .select("total, reimbursable, year, week_number")\
+        .eq("household_id", household_id)\
+        .eq("deleted", False)\
+        .gte("date", start)\
+        .lte("date", end)\
+        .execute()
+
+    total_posted = 0.0
+    for g in _reimbursement_groups(receipts_res.data):
+        outstanding = round(g["amount"] - _paid_for_week(household_id, g["year"], g["week_number"]), 2)
+        if outstanding > 0:
+            _db().table("reimbursements").insert({
+                "household_id": household_id,
+                "year":         g["year"],
+                "week_number":  g["week_number"],
+                "amount":       outstanding,
+                "note":         f"Reimbursement for {start} to {end}",
+                "created_by":   user_id,
+            }).execute()
+            total_posted += outstanding
+
+    return {"amount_paid": round(total_posted, 2)}
 
 
 @router.get("/receipts/{receipt_id}")

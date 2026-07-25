@@ -12,7 +12,7 @@ The platform is **multi-tenant**: one backend and one WhatsApp bot instance serv
 
 This file is the primary map new coding agents use to orient in the repo — an out-of-date entry is worse than no entry, because it's trusted by default. **When your change adds a new backend router, a new migration, or a new frontend app/page, update the matching section of this file (Project Structure, API Endpoints, Database Schema, Migrations, Apps Config) in the same change**, not as a follow-up.
 
-This has already drifted once: at time of writing, `backend/api/routers/` has 21 router files but only 8 are mentioned in Project Structure/API Endpoints, and `backend/migrations/` has 28 files but only 15 are listed under Migrations. Don't treat updating this file as optional polish — a missing endpoint or table here means the next agent (or human) makes decisions on incomplete information.
+This has already drifted once: `backend/api/routers/` has noticeably more router files than are mentioned in Project Structure/API Endpoints, and `backend/migrations/` has noticeably more files than are listed under Migrations. Don't treat updating this file as optional polish — a missing endpoint or table here means the next agent (or human) makes decisions on incomplete information. Run `ls backend/api/routers` / `ls backend/migrations` if you need the current exact counts; don't hard-code them here, since they'll just drift again.
 
 ---
 

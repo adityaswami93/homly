@@ -15,23 +15,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_reimbursable(sender_name: str | None, sender_phone: str | None, settings: dict) -> bool:
-    mode = settings.get("reimbursement_mode", "all")
-    if mode == "all":
-        return True
-    if mode == "none":
-        return False
-    if mode == "helpers_only":
-        identifiers = settings.get("helper_identifiers", "") or ""
-        if not identifiers:
-            return False
-        helper_list = [h.strip().lower() for h in identifiers.split(",") if h.strip()]
-        name_match  = sender_name  and sender_name.lower()  in helper_list
-        phone_match = sender_phone and sender_phone         in helper_list
-        return bool(name_match or phone_match)
-    return True
-
-
 _supabase = None
 
 

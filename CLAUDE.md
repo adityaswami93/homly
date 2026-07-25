@@ -462,6 +462,23 @@ npm run dev
 
 ## Key Patterns & Conventions
 
+### Frontend stays thin — business logic lives in the backend
+
+The frontend's job is to call an endpoint and render what it returns. If you're writing frontend code that computes a domain-meaningful number or rule rather than just formatting/displaying one the backend already gave you, stop and move it to the backend instead.
+
+**Signals that logic has leaked into the frontend and needs to move:**
+- Date/period math beyond formatting — ISO week calculations, custom week boundaries (`summary_day`/`cutoff_mode`), "days until X", month-end/date-range derivation.
+- Aggregation — summing, grouping, averaging, or computing totals/percentages/breakdowns over records fetched from the API, especially by combining data from **multiple** endpoints or requests client-side.
+- A loop that fires multiple sequential/parallel API calls to compute one derived value. This is close to always a sign that a single backend endpoint or field should do that work and return the finished number instead.
+- Business rules or thresholds — eligibility, "is this reimbursable/expiring/overdue", unit conversions (e.g. quarterly → monthly premium) — encoded in TS rather than read from the API response.
+- The same calculation implemented more than once (two frontend files, or frontend duplicating backend) — a strong sign it should be centralized in one backend endpoint instead of kept in sync by hand across copies.
+
+**Why it matters:** duplicated math drifts (a formula tweaked on one side but not the other silently shows a different number on refresh vs. after an optimistic UI update), and calendar/financial math is easy to get subtly wrong once (custom week boundaries not aligning with ISO weeks caused a real reimbursement-total bug — see git history on `frontend/app/(shell)/expenses/page.tsx` / `backend/api/routers/expenses.py`).
+
+**What to do instead:** add a field to an existing response, or add a new endpoint, that returns the already-computed value; have the frontend just read and display it. When fixing a bug in a computed value shown in the UI, check whether the computation is happening client-side before patching it there — if it is, move it server-side as part of the fix rather than patching the frontend copy.
+
+This codebase currently has known offenders worth cleaning up opportunistically (custom-week math and receipt re-aggregation in `expenses/page.tsx`, the multi-endpoint join in `expenses/reimburse/page.tsx`, duplicated `getWeekRange`/`daysUntil` helpers across pages, client-side premium normalization in `insurance/page.tsx`, and the parallel net-worth calc in `savings/page.tsx`) — prefer moving one of these to the backend over adding a new client-side computation next to it.
+
 ### Auth middleware pattern — `is_service_key`
 
 When the service key is used, `household_id` is not resolved in middleware. Endpoints that need it must:

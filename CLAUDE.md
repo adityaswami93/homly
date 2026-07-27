@@ -403,7 +403,7 @@ Frontend polling picks up new QR within 3s
 | GET | `/internal/mcp/receipts/{receipt_id}` | MCP server | Single receipt + items |
 | GET | `/internal/mcp/vendors` | MCP server | Top vendors by spend over a date range |
 | GET | `/internal/mcp/budgets` | MCP server | Budgets for a household, optionally by month |
-| GET | `/internal/mcp/price-history/{canonical_name}` | MCP server | Price history + trend insights for an item |
+| GET | `/internal/mcp/price-history` | MCP server | Price history + trend insights for an item (`canonical_name` query param) |
 
 > `/internal/mcp/*` also accepts `household_id` as a query param the same way the other service-key
 > endpoints do; it's checked via `X-Internal-Key`, not a JWT — see `backend/api/routers/mcp_data.py`.

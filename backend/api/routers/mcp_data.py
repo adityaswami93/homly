@@ -30,12 +30,33 @@ def _db():
     return _supabase
 
 
-INTERNAL_KEY = os.getenv("INTERNAL_KEY", "homly-internal")
+# Unlike the other /internal/* routes (api/routers/internal.py), these expose
+# rich cross-table household data — including, via /internal/mcp/households,
+# every tenant's household_id. There's no safe fallback value: if INTERNAL_KEY
+# isn't configured, every request is rejected rather than trusting a
+# well-known checked-in default.
+INTERNAL_KEY = os.getenv("INTERNAL_KEY")
+
+PAGE_SIZE = 1000
 
 
 def _check(request: Request):
-    if request.headers.get("X-Internal-Key") != INTERNAL_KEY:
+    if not INTERNAL_KEY or request.headers.get("X-Internal-Key") != INTERNAL_KEY:
         raise HTTPException(status_code=403, detail="Forbidden")
+
+
+def _fetch_all(build_query) -> list[dict]:
+    """Page through a Supabase/PostgREST query in PAGE_SIZE chunks so results
+    aren't silently truncated at PostgREST's default response row cap.
+    `build_query` is called fresh each page with (offset) -> query builder."""
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        page = build_query(offset).range(offset, offset + PAGE_SIZE - 1).execute().data
+        rows.extend(page)
+        if len(page) < PAGE_SIZE:
+            return rows
+        offset += PAGE_SIZE
 
 
 @router.get("/internal/mcp/households")
@@ -48,16 +69,15 @@ def mcp_list_households(request: Request):
 @router.get("/internal/mcp/weeks")
 def mcp_list_weeks(request: Request, household_id: str = Query(...)):
     _check(request)
-    res = _db().table("receipts")\
-        .select("year, week_number, total, reimbursable, flagged")\
-        .eq("household_id", household_id)\
-        .eq("deleted", False)\
-        .order("year", desc=True)\
-        .order("week_number", desc=True)\
-        .execute()
+    rows = _fetch_all(lambda offset: _db().table("receipts")
+        .select("year, week_number, total, reimbursable, flagged")
+        .eq("household_id", household_id)
+        .eq("deleted", False)
+        .order("year", desc=True)
+        .order("week_number", desc=True))
 
     weeks: dict[str, dict] = {}
-    for r in res.data:
+    for r in rows:
         key = f"{r['year']}-{r['week_number']}"
         if key not in weeks:
             weeks[key] = {
@@ -180,18 +200,20 @@ def mcp_top_vendors(
     limit: int = Query(default=10, le=100),
 ):
     _check(request)
-    q = _db().table("receipts")\
-        .select("vendor, total")\
-        .eq("household_id", household_id)\
-        .eq("deleted", False)
-    if start_date:
-        q = q.gte("date", start_date)
-    if end_date:
-        q = q.lte("date", end_date)
-    res = q.execute()
+
+    def build(offset):
+        q = _db().table("receipts")\
+            .select("vendor, total")\
+            .eq("household_id", household_id)\
+            .eq("deleted", False)
+        if start_date:
+            q = q.gte("date", start_date)
+        if end_date:
+            q = q.lte("date", end_date)
+        return q.order("date")
 
     vendors: dict[str, dict] = {}
-    for r in res.data:
+    for r in _fetch_all(build):
         name = r.get("vendor") or "Unknown"
         v = vendors.setdefault(name, {"vendor": name, "total": 0, "receipt_count": 0})
         v["total"] += r["total"] or 0
@@ -211,8 +233,8 @@ def mcp_list_budgets(request: Request, household_id: str = Query(...), month: Op
     return res.data
 
 
-@router.get("/internal/mcp/price-history/{canonical_name}")
-def mcp_price_history(canonical_name: str, request: Request, household_id: str = Query(...)):
+@router.get("/internal/mcp/price-history")
+def mcp_price_history(request: Request, household_id: str = Query(...), canonical_name: str = Query(...)):
     _check(request)
     res = _db().table("price_history")\
         .select("*")\

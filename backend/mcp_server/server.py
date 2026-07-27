@@ -131,7 +131,7 @@ def get_budgets(household_id: str, month: Optional[str] = None) -> list:
 def get_price_history(household_id: str, canonical_name: str) -> dict:
     """Get price history and trend insights (avg/min/max price, best vendor,
     trending up/down/stable) for one grocery item across all receipts."""
-    return _get(f"/internal/mcp/price-history/{canonical_name}", {"household_id": household_id})
+    return _get("/internal/mcp/price-history", {"household_id": household_id, "canonical_name": canonical_name})
 
 
 if __name__ == "__main__":

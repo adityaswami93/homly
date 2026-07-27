@@ -10,6 +10,7 @@ from isoweek import Week
 import logging
 
 from api.dependencies.limiter import limiter
+from services.receipts import compute_category_totals
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -187,12 +188,7 @@ def get_week(year: int, week_number: int, request: Request):
     else:
         items_data = []
 
-    category_totals: dict[str, float] = {}
-    for item in items_data:
-        cat = item["category"] or "other"
-        category_totals[cat] = round(
-            category_totals.get(cat, 0) + (item["line_total"] or 0), 2
-        )
+    category_totals = compute_category_totals(items_data)
 
     total = sum(r["total"] or 0 for r in receipts_res.data)
     flagged_count = sum(1 for r in receipts_res.data if r.get("flagged"))
@@ -235,12 +231,7 @@ def get_receipts_by_daterange(start: str, end: str, request: Request):
     else:
         items_data = []
 
-    category_totals: dict[str, float] = {}
-    for item in items_data:
-        cat = item["category"] or "other"
-        category_totals[cat] = round(
-            category_totals.get(cat, 0) + (item["line_total"] or 0), 2
-        )
+    category_totals = compute_category_totals(items_data)
 
     total = sum(r["total"] or 0 for r in receipts_res.data)
     flagged_count = sum(1 for r in receipts_res.data if r.get("flagged"))
@@ -470,11 +461,7 @@ def last_7_days(request: Request, household_id: Optional[str] = Query(default=No
             .select("category, line_total")\
             .in_("receipt_id", receipt_ids)\
             .execute()
-        for item in items_res.data:
-            cat = item["category"] or "other"
-            category_totals[cat] = round(
-                category_totals.get(cat, 0) + (item["line_total"] or 0), 2
-            )
+        category_totals = compute_category_totals(items_res.data)
 
     total = sum(r["total"] or 0 for r in receipts_res.data)
     flagged_count = sum(1 for r in receipts_res.data if r.get("flagged"))

@@ -21,7 +21,7 @@ from api.dependencies.limiter import limiter
 from api.routers import (
     expenses, setup, internal, settings, messages, households,
     reimbursements, analytics, insights, insurance, webhook, budgets, query, recipe, pantry, waitlist,
-    reminders, commands, savings,
+    reminders, commands, savings, mcp_data,
 )
 from api.routers import admin as admin_router
 
@@ -81,6 +81,7 @@ app.include_router(waitlist.router)
 app.include_router(reminders.router)
 app.include_router(commands.router)
 app.include_router(savings.router)
+app.include_router(mcp_data.router)
 
 
 @app.get("/")

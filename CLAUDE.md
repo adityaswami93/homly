@@ -58,11 +58,20 @@ homly/
 │   │       ├── messages.py          # POST /messages/send, GET /internal/messages (bot polling)
 │   │       ├── internal.py          # POST /internal/qr, /internal/connected, GET /internal/qr-status
 │   │       ├── setup.py             # GET /setup/state, POST /setup/group, /setup/reset-qr, SSE /setup/qr-stream
-│   │       └── insurance.py         # GET/POST/PUT/DELETE /insurance, GET /internal/insurance/renewals
+│   │       ├── insurance.py         # GET/POST/PUT/DELETE /insurance, GET /internal/insurance/renewals
+│   │       └── mcp_data.py          # GET /internal/mcp/* — read-only data-query endpoints for the MCP server
+│   │       # NOTE: analytics.py, admin.py, budgets.py, insights.py, recipe.py, pantry.py, waitlist.py,
+│   │       # reminders.py, commands.py, savings.py, reimbursements.py also exist — see `ls backend/api/routers`
+│   ├── mcp_server/                 # Standalone MCP server (backend/mcp_server/README.md) — lets AI tools
+│   │   │                           # (Claude Code, Claude Desktop) query Homly data via /internal/mcp/*
+│   │   └── server.py
 │   ├── agents/
 │   │   └── receipt_agent.py        # Vision LLM call → structured JSON receipt data
 │   ├── services/
-│   │   └── llm_client.py           # Facade: get_vision_completion()
+│   │   ├── llm_client.py           # Facade: get_vision_completion()
+│   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook
+│   │   ├── receipts.py             # compute_category_totals() — shared item-category aggregation
+│   │   └── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
 │   ├── migrations/
 │   │   ├── 001_homly.sql           # Base schema: receipts, items, weekly views
 │   │   ├── 002_soft_delete.sql     # deleted flag on receipts
@@ -194,6 +203,22 @@ Insert into receipts + items tables (scoped to household_id)
     ↓
 Bot reacts ✅ to message; flags receipt in chat if confidence = low
 ```
+
+### MCP Data-Query Flow
+
+```
+Claude Code / Claude Desktop (MCP client)
+    ↓ stdio
+backend/mcp_server/server.py (FastMCP tools: list_weeks, search_receipts, etc.)
+    ↓ HTTP, Authorization: Bearer <service key> + X-Internal-Key
+GET /internal/mcp/* (api/routers/mcp_data.py)          — new read-only endpoints
+GET /this-week, /summary/last7days, /insurance          — existing service-key endpoints
+    ↓
+Supabase (scoped by household_id query param, same as the WhatsApp bot's calls)
+```
+
+Lets an AI tool query and analyse a household's expenses/budgets/insurance/price
+history directly. See `backend/mcp_server/README.md` for setup.
 
 ### Weekly Summary Flow
 
@@ -371,6 +396,19 @@ Frontend polling picks up new QR within 3s
 | GET | `/internal/qr-status` | Bot | Check/clear QR regeneration flag |
 | GET | `/internal/messages` | Bot | Pop queued messages (clears queue) |
 | GET | `/internal/insurance/renewals` | Bot | Policies renewing in 7 or 30 days |
+| GET | `/internal/mcp/households` | MCP server | List all households (id, name, plan, active) |
+| GET | `/internal/mcp/weeks` | MCP server | List weeks with totals for a household |
+| GET | `/internal/mcp/weeks/{year}/{week_number}` | MCP server | Week detail: receipts + category totals |
+| GET | `/internal/mcp/receipts` | MCP server | Search receipts (date range, vendor, flagged) |
+| GET | `/internal/mcp/receipts/{receipt_id}` | MCP server | Single receipt + items |
+| GET | `/internal/mcp/vendors` | MCP server | Top vendors by spend over a date range |
+| GET | `/internal/mcp/budgets` | MCP server | Budgets for a household, optionally by month |
+| GET | `/internal/mcp/price-history/{canonical_name}` | MCP server | Price history + trend insights for an item |
+
+> `/internal/mcp/*` also accepts `household_id` as a query param the same way the other service-key
+> endpoints do; it's checked via `X-Internal-Key`, not a JWT — see `backend/api/routers/mcp_data.py`.
+> The MCP server itself (`backend/mcp_server/`) also calls the existing `/this-week`, `/summary/last7days`,
+> and `/insurance` endpoints directly, since those already support service-key + `household_id` auth.
 
 ### Setup (no auth)
 
@@ -465,6 +503,17 @@ cd backend/whatsapp
 # Create backend/whatsapp/.env with FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
 npm run dev
 ```
+
+### MCP server (query data from Claude Code / Claude Desktop)
+
+```bash
+cd backend/mcp_server
+pip install -r requirements.txt
+# Create backend/mcp_server/.env with FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
+python server.py
+```
+
+See `backend/mcp_server/README.md` for registering it with Claude Code (`claude mcp add`) or Claude Desktop.
 
 ---
 

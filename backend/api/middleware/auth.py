@@ -41,7 +41,11 @@ SKIP_AUTH_PATHS = [
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in SKIP_AUTH_PATHS:
+        # /internal/mcp/* covers dynamic path segments (e.g. receipt/week ids),
+        # so it's matched by prefix rather than added one-by-one to SKIP_AUTH_PATHS.
+        # These endpoints authenticate themselves via X-Internal-Key (see
+        # api/routers/mcp_data.py's `_check`), same as the rest of /internal/*.
+        if request.url.path in SKIP_AUTH_PATHS or request.url.path.startswith("/internal/mcp/"):
             return await call_next(request)
 
         if request.method == "OPTIONS":

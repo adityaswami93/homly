@@ -1,0 +1,373 @@
+<title>Homly — Agent Architecture</title>
+<style>
+  :root {
+    --paper: #F0F1EC;
+    --paper-2: #E7E9E1;
+    --ink: #1B211F;
+    --ink-soft: #4B544E;
+    --current: #25423E;
+    --future: #B5622E;
+    --line: #C9CCC2;
+    --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --font-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14181C;
+      --paper-2: #1B2126;
+      --ink: #E7E9E4;
+      --ink-soft: #9BA39C;
+      --current: #5FA79C;
+      --future: #E08A52;
+      --line: #2E3630;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14181C;
+    --paper-2: #1B2126;
+    --ink: #E7E9E4;
+    --ink-soft: #9BA39C;
+    --current: #5FA79C;
+    --future: #E08A52;
+    --line: #2E3630;
+  }
+  :root[data-theme="light"] {
+    --paper: #F0F1EC;
+    --paper-2: #E7E9E1;
+    --ink: #1B211F;
+    --ink-soft: #4B544E;
+    --current: #25423E;
+    --future: #B5622E;
+    --line: #C9CCC2;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 56px 28px 80px;
+  }
+
+  a { color: inherit; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--future); outline-offset: 2px; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin: 0 0 14px;
+  }
+
+  h1 {
+    font-family: var(--font-mono);
+    font-size: clamp(26px, 4vw, 36px);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    margin: 0 0 16px;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+
+  .dek {
+    font-size: 17px;
+    line-height: 1.6;
+    max-width: 62ch;
+    color: var(--ink-soft);
+    margin: 0 0 30px;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+    padding: 14px 18px;
+    border: 1px solid var(--line);
+    background: var(--paper-2);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    margin-bottom: 48px;
+  }
+
+  .legend-item { display: flex; align-items: center; gap: 9px; }
+
+  .swatch { width: 14px; height: 14px; flex: none; border-radius: 2px; }
+  .swatch.current { background: color-mix(in srgb, var(--current) 22%, var(--paper)); border: 1.5px solid var(--current); }
+  .swatch.future  { background: color-mix(in srgb, var(--future) 18%, var(--paper)); border: 1.5px dashed var(--future); }
+
+  section.plate-section { margin-bottom: 54px; }
+
+  .plate-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    font-family: var(--font-mono);
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+
+  .plate-title {
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .plate-subtitle {
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .plate {
+    border: 1px solid var(--line);
+    background-color: var(--paper-2);
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px);
+    background-size: 26px 26px;
+    padding: 22px 18px;
+    overflow-x: auto;
+  }
+
+  .plate pre.mermaid { margin: 0; min-width: 560px; }
+
+  ul.caption {
+    list-style: none;
+    margin: 16px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+
+  ul.caption li {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    padding-left: 18px;
+    position: relative;
+  }
+
+  ul.caption li::before {
+    content: "—";
+    position: absolute;
+    left: 0;
+    color: var(--line);
+  }
+
+  ul.caption li code {
+    font-family: var(--font-mono);
+    color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  hr.divider {
+    border: none;
+    border-top: 1px dashed var(--line);
+    margin: 0 0 54px;
+  }
+
+  .delta h2 {
+    font-family: var(--font-mono);
+    font-size: 19px;
+    margin: 0 0 12px;
+    color: var(--ink);
+  }
+
+  .delta p {
+    max-width: 68ch;
+    font-size: 15.5px;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    margin: 0 0 14px;
+  }
+
+  .delta code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  @media (max-width: 560px) {
+    body { padding: 40px 18px 60px; }
+    .legend { gap: 14px 22px; }
+  }
+</style>
+
+<header>
+  <p class="eyebrow">Homly — internal systems reference</p>
+  <h1>Agent architecture: current → future</h1>
+  <p class="dek">
+    How a household query is routed today through a ReAct loop — reason, call a
+    tool, observe what it returns, repeat until there's enough to answer — and
+    how that same loop nests one level deeper once Homly has more domains than
+    one tool list should hold.
+  </p>
+  <div class="legend">
+    <div class="legend-item"><span class="swatch current"></span> built — in <code style="font-family:inherit">main</code> as of PR #49</div>
+    <div class="legend-item"><span class="swatch future"></span> proposed — not yet written</div>
+  </div>
+</header>
+
+<section class="plate-section">
+  <div class="plate-head">
+    <span class="plate-title">Fig. 1 — Current</span>
+    <span class="plate-subtitle">agents/orchestrator/supervisor.py — ReAct loop</span>
+  </div>
+  <div class="plate">
+<pre class="mermaid">
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#EDEFE7", "primaryTextColor": "#1B211F", "primaryBorderColor": "#25423E", "lineColor": "#5B6B63", "tertiaryColor": "#EDEFE7", "fontFamily": "ui-monospace, Menlo, monospace", "fontSize": "13px"}}}%%
+flowchart TD
+    ENTRY["WhatsApp bot / web frontend"] --> API["FastAPI — /query, /internal/graph-invoke"]
+    API --> CLASSIFY["homly_graph.py — classify_node"]
+    CLASSIFY -->|query or pantry command| ROUTER["router_agent.py — compat shim"]
+    CLASSIFY -->|receipt, recipe, fridge scan| OTHER["other pipeline nodes"]
+    ROUTER --> AGENT["agent_node — binds tools, calls Claude"]
+    AGENT -->|tool_calls| TOOLS["tools_node — parallel ThreadPoolExecutor"]
+    TOOLS -->|ToolMessage observations| AGENT
+    AGENT -->|no tool_calls| RESP["final answer to household"]
+    AGENT -.->|6th round, still not done| FORCE["force_finalize_node — no tools, must answer"]
+    FORCE --> RESP
+    TOOLS --> EXP["GroceryQueryAgent — expenses"]
+    TOOLS --> INS["InsuranceQueryAgent"]
+    TOOLS --> PAN["PantryQueryAgent"]
+    TOOLS --> SAV["SavingsQueryAgent"]
+    EXP --> DB[("Supabase")]
+    INS --> DB
+    PAN --> DB
+    SAV --> DB
+    AGENT -.-> LLM["services/llm/factory.py → ChatOpenAI via OpenRouter — Sonnet"]
+
+    classDef store fill:#DCE3DD,stroke:#25423E,stroke-width:1px,color:#1B211F;
+    classDef loop fill:#EDEFE7,stroke:#25423E,stroke-width:2.5px,color:#1B211F;
+    class DB store
+    class AGENT,TOOLS loop
+</pre>
+  </div>
+  <ul class="caption">
+    <li>Both entry points — <code>/query</code> and <code>/internal/graph-invoke</code> — resolve to the same loop through one compat shim.</li>
+    <li>One flat registry, <code>agents/orchestrator/registry.py</code> — four domain agents (expenses, insurance, pantry, savings), one tool list the LLM sees every round.</li>
+    <li><code>agent_node</code> and <code>tools_node</code> cycle — Claude can chain a lookup in one domain off what it learned in another, not just pick tools once and stop.</li>
+    <li>The final answer is Claude's own text once it stops calling tools — no separate synthesis call, no canned fallback for off-topic messages.</li>
+    <li><code>household_id</code> is threaded through <code>SupervisorState</code>, never re-derived inside an agent.</li>
+    <li>The LLM call goes through OpenRouter, not Anthropic directly — one API key for every model in the app, Claude included.</li>
+  </ul>
+</section>
+
+<hr class="divider">
+
+<section class="plate-section">
+  <div class="plate-head">
+    <span class="plate-title">Fig. 2 — Proposed</span>
+    <span class="plate-subtitle">one supervisor per domain, registered at the top</span>
+  </div>
+  <div class="plate">
+<pre class="mermaid">
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#EDEFE7", "primaryTextColor": "#1B211F", "primaryBorderColor": "#25423E", "lineColor": "#5B6B63", "tertiaryColor": "#EDEFE7", "fontFamily": "ui-monospace, Menlo, monospace", "fontSize": "13px"}}}%%
+flowchart TD
+    ENTRY["WhatsApp bot / web frontend"] --> API["FastAPI"]
+    API --> TOP["Homly supervisor — top level"]
+
+    TOP --> EXPTEAM["Expenses team supervisor"]
+    TOP --> INSTEAM["Insurance team supervisor"]
+    TOP --> PANTEAM["Pantry / recipe team supervisor"]
+    TOP -.-> NEWTEAM["next app's team supervisor"]
+
+    EXPTEAM --> SPEND["spend agent"]
+    EXPTEAM --> TREND["price trend agent"]
+    EXPTEAM --> RECEIPT["receipt agent"]
+
+    INSTEAM --> RENEW["renewal agent"]
+    INSTEAM --> COVER["coverage agent"]
+    INSTEAM --> GAP["gap analysis agent"]
+
+    PANTEAM --> STOCK["stock agent"]
+    PANTEAM --> RECIPE["recipe agent"]
+
+    SPEND --> DB[("Supabase, household-scoped")]
+    TREND --> DB
+    RECEIPT --> DB
+    RENEW --> DB
+    COVER --> DB
+    GAP --> DB
+    STOCK --> DB
+    RECIPE --> DB
+
+    TOP -.-> LLM["services/llm/factory.py — unchanged interface"]
+    EXPTEAM -.-> LLM
+    INSTEAM -.-> LLM
+    PANTEAM -.-> LLM
+
+    classDef store fill:#DCE3DD,stroke:#25423E,stroke-width:1px,color:#1B211F;
+    classDef future fill:#F3E1CF,stroke:#B5622E,stroke-width:1.5px,stroke-dasharray: 4 3,color:#7A3B18;
+    class DB store
+    class NEWTEAM future
+</pre>
+  </div>
+  <ul class="caption">
+    <li>Same entry point, same LLM adapter — only the middle of the stack grows.</li>
+    <li><code>registry.py</code> becomes a registry of <em>team supervisors</em>, not agents directly. Each team keeps today's flat registry underneath it.</li>
+    <li>Adding a new app means writing one team supervisor plus its agents and registering it once at the top — the top-level tool list stays small no matter how many teams exist.</li>
+    <li>A compound question ("spending and insurance renewals") is answered the same way Fig. 1 already answers one — the top supervisor's loop calls both teams (in parallel within a round, since neither depends on the other) and keeps going until it has both pieces.</li>
+  </ul>
+</section>
+
+<section class="delta">
+  <h2>What actually changes</h2>
+  <p>
+    Fig. 2 is not a rewrite of Fig. 1 — it's the same loop nested one level deeper.
+    <code>agent_node</code> and <code>tools_node</code> already reason across
+    domains in a single pass today; a team supervisor is the identical cycle, just
+    bound to a narrower registry. From the top level's perspective, an entire team
+    is indistinguishable from any other tool — it takes a query, reasons and calls
+    its own agents internally, and hands back an answer.
+  </p>
+  <p>
+    The only genuinely new code per domain is one more team-supervisor module
+    reusing that same loop — <code>agent_node</code> bound to a team's own tools,
+    cycling through <code>tools_node</code> until it has enough to answer — not a
+    new pattern to design, the one <code>agents/orchestrator/supervisor.py</code>
+    already runs today.
+  </p>
+</section>
+
+<footer>
+  agents/orchestrator/ · services/llm/ · adityaswami93/homly#49
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  if (typeof mermaid !== "undefined") {
+    mermaid.initialize({ startOnLoad: true });
+  }
+</script>

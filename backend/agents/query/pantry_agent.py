@@ -1,9 +1,12 @@
+import logging
 import os
 from datetime import datetime, timezone
 
 from supabase import create_client
 
 from agents.base_agent import AgentManifest, AgentResult, BaseQueryAgent
+
+logger = logging.getLogger(__name__)
 
 MANIFEST = AgentManifest(
     name="pantry",
@@ -75,6 +78,7 @@ class PantryQueryAgent(BaseQueryAgent):
             if intent == "check_item":
                 return self._check_item(params, household_id)
         except Exception as e:
+            logger.exception("Pantry agent failed to handle intent=%s household_id=%s", intent, household_id)
             return AgentResult(
                 agent="pantry",
                 handled=False,

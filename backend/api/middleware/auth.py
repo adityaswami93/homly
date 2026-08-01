@@ -51,10 +51,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Claude's remote-connector UI, which has no field for custom headers.
         # /mcp/keys (api/routers/mcp_keys.py) is NOT exempted — it's a normal
         # JWT-authenticated endpoint for managing those bearer keys.
+        # MCP clients probe /.well-known/oauth-authorization-server and
+        # /.well-known/oauth-protected-resource (optionally with a
+        # resource-specific suffix, per RFC 9728) to decide whether a remote
+        # MCP server needs OAuth before ever calling it. This backend defines
+        # no routes there, so without this bypass they'd fall through to the
+        # blanket 401 below instead of a clean 404 — which a client reads as
+        # "this server requires sign-in" and attempts (and fails) OAuth
+        # client registration against, instead of "no OAuth here, proceed
+        # without auth."
         if (
             request.url.path in SKIP_AUTH_PATHS
             or request.url.path.startswith("/mcp/data/")
             or request.url.path.startswith("/mcp/server/")
+            or request.url.path.startswith("/.well-known/oauth-")
         ):
             return await call_next(request)
 

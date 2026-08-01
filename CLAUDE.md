@@ -233,7 +233,8 @@ Supabase
 
 Remote (Streamable HTTP) — "Add custom connector" on claude.ai, no local process:
 Claude (MCP client)
-    ↓ HTTPS to https://<backend>/mcp/server/<HOMLY_MCP_KEY>
+    ↓ HTTPS to https://<backend>/mcp/server/<HOMLY_MCP_KEY>/ (trailing slash —
+    ↓  without it every request 307-redirects to add one)
     ↓ (the key is a URL path segment, not a header — that connector dialog
     ↓  has no field for custom headers/bearer tokens)
 mcp_server/remote.py, mounted into api/main.py at /mcp/server/{key}

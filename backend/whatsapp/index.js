@@ -467,11 +467,26 @@ async function startSock() {
         setTimeout(startSockWithRetry, 1000);
       } else {
         connectionFailures++;
-        if (connectionFailures >= 10) {
-          console.log("[bot] 10 failures — exiting for clean restart");
-          process.exit(1);
+        if (reason === 405) {
+          console.log(
+            "[bot] 405 Method Not Allowed — WA protocol version mismatch " +
+            "(Baileys' pinned version is likely stale). Will keep retrying " +
+            "with backoff; this self-heals once the version catches up and " +
+            "does NOT require a redeploy."
+          );
         }
-        setTimeout(startSockWithRetry, 3000);
+        // Never process.exit() here: on Railway a crash-loop burns the
+        // platform's automatic-restart budget, and once that's exhausted
+        // the service is left permanently "crashed" until someone manually
+        // redeploys — which is exactly how a transient WA version mismatch
+        // (405) turned into a multi-day outage. Retry forever in-process
+        // instead, with capped exponential backoff, so a self-resolving
+        // upstream issue self-heals without any human intervention.
+        const backoffMs = Math.min(3000 * 2 ** Math.min(connectionFailures, 6), 60000);
+        if (connectionFailures % 10 === 0) {
+          console.log(`[bot] ${connectionFailures} consecutive failures — still retrying (backoff ${backoffMs}ms)`);
+        }
+        setTimeout(startSockWithRetry, backoffMs);
       }
     }
   });

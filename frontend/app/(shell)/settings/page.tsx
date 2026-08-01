@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import Link from "next/link";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
+import CopyButton from "@/app/components/CopyButton";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const HOURS = Array.from({ length: 24 }, (_, i) => {
@@ -36,6 +37,20 @@ interface McpKey {
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
+}
+
+function CredentialBlock({ label, code }: { label: ReactNode; code: string }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs text-stone-400">{label}</p>
+        <CopyButton text={code} />
+      </div>
+      <pre className="bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-stone-300 overflow-x-auto whitespace-pre-wrap break-all">
+        {code}
+      </pre>
+    </div>
+  );
 }
 
 export default function SettingsPage() {
@@ -339,35 +354,50 @@ export default function SettingsPage() {
                 )}
 
                 {revealedKey && (
-                  <div className="mb-4 border border-emerald-700 bg-emerald-900/20 rounded-xl p-4 space-y-3">
+                  <div className="mb-4 border border-emerald-700 bg-emerald-900/20 rounded-xl p-4 space-y-4">
                     <p className="text-xs text-emerald-300 font-medium">
-                      Copy this key now — it won&apos;t be shown again.
+                      Copy what you need now — the raw key won&apos;t be shown again.
                     </p>
-                    <code className="block bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-emerald-300 break-all select-all">
-                      {revealedKey}
-                    </code>
 
-                    <div>
-                      <p className="text-xs text-stone-400 mb-1">
-                        Over the internet — paste this URL into Claude&apos;s <strong>Add custom connector</strong> dialog (no local setup needed):
-                      </p>
-                      <code className="block bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-emerald-300 break-all select-all">
-                        {`${apiUrl}/mcp/server/${revealedKey}`}
-                      </code>
-                    </div>
+                    <CredentialBlock label="Raw key" code={revealedKey} />
 
-                    <div>
-                      <p className="text-xs text-stone-400 mb-1">Or run locally — add to <code>backend/mcp_server/.env</code>:</p>
-                      <pre className="bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-stone-300 overflow-x-auto whitespace-pre-wrap break-all">
-{`FASTAPI_URL=${apiUrl}\nHOMLY_MCP_KEY=${revealedKey}`}
-                      </pre>
-                    </div>
-                    <div>
-                      <p className="text-xs text-stone-400 mb-1">Or register the local version directly with Claude Code:</p>
-                      <pre className="bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-stone-300 overflow-x-auto whitespace-pre-wrap break-all">
-{`claude mcp add homly -e FASTAPI_URL=${apiUrl} -e HOMLY_MCP_KEY=${revealedKey} -- python /path/to/backend/mcp_server/server.py`}
-                      </pre>
-                    </div>
+                    <CredentialBlock
+                      label={
+                        <>
+                          claude.ai, Claude Desktop, or any remote-connector client — paste this URL into{" "}
+                          <strong>Add custom connector</strong> (no local install needed)
+                        </>
+                      }
+                      code={`${apiUrl}/mcp/server/${revealedKey}`}
+                    />
+
+                    <CredentialBlock
+                      label="Claude Code — run in a terminal"
+                      code={`claude mcp add homly -e FASTAPI_URL=${apiUrl} -e HOMLY_MCP_KEY=${revealedKey} -- python /path/to/backend/mcp_server/server.py`}
+                    />
+
+                    <CredentialBlock
+                      label="Local .env — add to backend/mcp_server/.env"
+                      code={`FASTAPI_URL=${apiUrl}\nHOMLY_MCP_KEY=${revealedKey}`}
+                    />
+
+                    <CredentialBlock
+                      label="Other local MCP clients (Cursor, Windsurf, VS Code, Cline, Continue, etc.) — most accept this same mcpServers JSON shape; check your client's MCP settings for where it goes"
+                      code={JSON.stringify(
+                        {
+                          mcpServers: {
+                            homly: {
+                              command: "python",
+                              args: ["/path/to/backend/mcp_server/server.py"],
+                              env: { FASTAPI_URL: apiUrl, HOMLY_MCP_KEY: revealedKey },
+                            },
+                          },
+                        },
+                        null,
+                        2
+                      )}
+                    />
+
                     <button
                       onClick={() => setRevealedKey(null)}
                       className="text-xs text-stone-500 hover:text-stone-300"

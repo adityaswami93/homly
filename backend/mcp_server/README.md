@@ -67,6 +67,20 @@ Or add to `claude_desktop_config.json`:
 }
 ```
 
+## 2c. Other harnesses (Cursor, Windsurf, VS Code, Cline, Continue, etc.)
+
+Most MCP-capable editors/agents accept the same `mcpServers` JSON block shown
+above for Claude Desktop — check your tool's MCP/connector settings for where
+it goes (Cursor: Settings → MCP; Windsurf: Settings → Cascade → MCP Servers;
+VS Code: `.vscode/mcp.json` or the Copilot Chat MCP settings; Cline/Continue:
+their own `mcp_settings.json`). If the harness instead supports remote
+Streamable HTTP/SSE connectors (like claude.ai's), use the same URL from
+step 2a — the transport is server-standard, not Claude-specific.
+
+The portal's Settings → MCP page generates all of these (remote URL, `claude
+mcp add` command, `.env` block, and the generic `mcpServers` JSON) pre-filled
+with your key, each with a copy button.
+
 ## Available tools
 
 `get_this_week`, `get_last_7_days`, `list_weeks`, `get_week`, `search_receipts`,

@@ -24,18 +24,28 @@ from api.routers import (
     reminders, commands, savings, mcp_data, mcp_keys,
 )
 from api.routers import admin as admin_router
+from mcp_server.remote import remote_mcp
+
+# Built once at import time so remote_mcp.session_manager exists by the time
+# lifespan() below references it (it's only created lazily on this call).
+mcp_streamable_app = remote_mcp.streamable_http_app()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from services.whatsapp_scheduler import create_scheduler, refresh_summaries
-    scheduler = create_scheduler()
-    scheduler.start()
-    refresh_summaries(scheduler)
-    logger.info("[startup] WhatsApp scheduler started")
-    yield
-    scheduler.shutdown()
-    logger.info("[shutdown] WhatsApp scheduler stopped")
+    # The remote MCP server (mcp_server/remote.py) needs its session manager's
+    # task group running before it can handle any request, even in stateless
+    # mode — mounting its ASGI app alone doesn't start that; see api/main.py's
+    # mount call below for why it can't just run its own lifespan instead.
+    async with remote_mcp.session_manager.run():
+        scheduler = create_scheduler()
+        scheduler.start()
+        refresh_summaries(scheduler)
+        logger.info("[startup] WhatsApp scheduler + MCP session manager started")
+        yield
+        scheduler.shutdown()
+        logger.info("[shutdown] WhatsApp scheduler stopped")
 
 
 app = FastAPI(title="Homly API", lifespan=lifespan)
@@ -83,6 +93,11 @@ app.include_router(commands.router)
 app.include_router(savings.router)
 app.include_router(mcp_data.router)
 app.include_router(mcp_keys.router)
+
+# Remote MCP server (Streamable HTTP) — the connector URL a household enters
+# in Claude is https://<this backend>/mcp/server/<their key>; see
+# mcp_server/remote.py for why the key lives in the path instead of a header.
+app.mount("/mcp/server/{key}", mcp_streamable_app)
 
 
 @app.get("/")

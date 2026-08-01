@@ -346,14 +346,24 @@ export default function SettingsPage() {
                     <code className="block bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-emerald-300 break-all select-all">
                       {revealedKey}
                     </code>
+
                     <div>
-                      <p className="text-xs text-stone-400 mb-1">Add to <code>backend/mcp_server/.env</code>:</p>
+                      <p className="text-xs text-stone-400 mb-1">
+                        Over the internet — paste this URL into Claude&apos;s <strong>Add custom connector</strong> dialog (no local setup needed):
+                      </p>
+                      <code className="block bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-emerald-300 break-all select-all">
+                        {`${apiUrl}/mcp/server/${revealedKey}`}
+                      </code>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-stone-400 mb-1">Or run locally — add to <code>backend/mcp_server/.env</code>:</p>
                       <pre className="bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-stone-300 overflow-x-auto whitespace-pre-wrap break-all">
 {`FASTAPI_URL=${apiUrl}\nHOMLY_MCP_KEY=${revealedKey}`}
                       </pre>
                     </div>
                     <div>
-                      <p className="text-xs text-stone-400 mb-1">Or register directly with Claude Code:</p>
+                      <p className="text-xs text-stone-400 mb-1">Or register the local version directly with Claude Code:</p>
                       <pre className="bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-stone-300 overflow-x-auto whitespace-pre-wrap break-all">
 {`claude mcp add homly -e FASTAPI_URL=${apiUrl} -e HOMLY_MCP_KEY=${revealedKey} -- python /path/to/backend/mcp_server/server.py`}
                       </pre>

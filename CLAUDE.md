@@ -59,11 +59,12 @@ homly/
 │   │       ├── internal.py          # POST /internal/qr, /internal/connected, GET /internal/qr-status
 │   │       ├── setup.py             # GET /setup/state, POST /setup/group, /setup/reset-qr, SSE /setup/qr-stream
 │   │       ├── insurance.py         # GET/POST/PUT/DELETE /insurance, GET /internal/insurance/renewals
-│   │       └── mcp_data.py          # GET /internal/mcp/* — read-only data-query endpoints for the MCP server
+│   │       ├── mcp_data.py          # GET /mcp/data/* — per-household-key-authenticated data-query endpoints
+│   │       └── mcp_keys.py          # GET/POST/DELETE /mcp/keys — JWT-authenticated, generate/revoke MCP keys
 │   │       # NOTE: analytics.py, admin.py, budgets.py, insights.py, recipe.py, pantry.py, waitlist.py,
 │   │       # reminders.py, commands.py, savings.py, reimbursements.py also exist — see `ls backend/api/routers`
 │   ├── mcp_server/                 # Standalone MCP server (backend/mcp_server/README.md) — lets AI tools
-│   │   │                           # (Claude Code, Claude Desktop) query Homly data via /internal/mcp/*
+│   │   │                           # (Claude Code, Claude Desktop) query one household's data via /mcp/data/*
 │   │   └── server.py
 │   ├── agents/
 │   │   └── receipt_agent.py        # Vision LLM call → structured JSON receipt data
@@ -71,7 +72,8 @@ homly/
 │   │   ├── llm_client.py           # Facade: get_vision_completion()
 │   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook
 │   │   ├── receipts.py             # compute_category_totals() — shared item-category aggregation
-│   │   └── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
+│   │   ├── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
+│   │   └── mcp_auth.py             # generate_key()/hash_key() — shared by mcp_keys.py and mcp_data.py
 │   ├── migrations/
 │   │   ├── 001_homly.sql           # Base schema: receipts, items, weekly views
 │   │   ├── 002_soft_delete.sql     # deleted flag on receipts
@@ -207,18 +209,29 @@ Bot reacts ✅ to message; flags receipt in chat if confidence = low
 ### MCP Data-Query Flow
 
 ```
+User: Settings → MCP → Generate key (JWT auth)
+    ↓
+POST /mcp/keys (api/routers/mcp_keys.py) → plaintext key shown once, only its
+    SHA-256 hash is stored in mcp_api_keys, scoped to household_id
+    ↓
+User pastes key into backend/mcp_server/.env (HOMLY_MCP_KEY)
+
 Claude Code / Claude Desktop (MCP client)
     ↓ stdio
 backend/mcp_server/server.py (FastMCP tools: list_weeks, search_receipts, etc.)
-    ↓ HTTP, Authorization: Bearer <service key> + X-Internal-Key
-GET /internal/mcp/* (api/routers/mcp_data.py)          — new read-only endpoints
-GET /this-week, /summary/last7days, /insurance          — existing service-key endpoints
-    ↓
-Supabase (scoped by household_id query param, same as the WhatsApp bot's calls)
+    ↓ HTTP, Authorization: Bearer <HOMLY_MCP_KEY>
+GET /mcp/data/* (api/routers/mcp_data.py)
+    ↓ hash the bearer token, look up mcp_api_keys → resolves household_id
+    ↓ (no household_id request param exists on these endpoints — it can only
+    ↓  ever be the one the key was issued for)
+Supabase
 ```
 
-Lets an AI tool query and analyse a household's expenses/budgets/insurance/price
-history directly. See `backend/mcp_server/README.md` for setup.
+Lets an AI tool query and analyse one household's expenses/budgets/insurance/price
+history directly. Each key is single-household-scoped and independently revocable
+(unlike the WhatsApp bot's shared `INTERNAL_KEY`, which is a first-party
+server-to-server secret with access to every household). See
+`backend/mcp_server/README.md` for setup.
 
 ### Weekly Summary Flow
 
@@ -346,6 +359,19 @@ Frontend polling picks up new QR within 3s
 | created_by | UUID (FK → auth.users) | |
 | created_at / updated_at | TIMESTAMPTZ | |
 
+### `mcp_api_keys`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| key_hash | TEXT (UNIQUE) | SHA-256 of the plaintext key — plaintext is never stored |
+| key_prefix | TEXT | First few chars, shown in the UI to tell keys apart |
+| label | TEXT | Optional, set by the user at creation |
+| created_by | UUID (FK → auth.users) | |
+| created_at | TIMESTAMPTZ | |
+| last_used_at | TIMESTAMPTZ | Updated on every successful `/mcp/data/*` call |
+| revoked_at | TIMESTAMPTZ | NULL = active |
+
 ---
 
 ## API Endpoints
@@ -386,6 +412,14 @@ Frontend polling picks up new QR within 3s
 | DELETE | `/admin/invites/{id}` | Revoke invite |
 | GET | `/admin/price-intelligence` | Cross-household price comparison + trends |
 
+### MCP key management (JWT required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/mcp/keys` | List this household's MCP keys (id, label, prefix, timestamps — never the plaintext) |
+| POST | `/mcp/keys` | Generate a new key (admin only). Response includes the plaintext once. |
+| DELETE | `/mcp/keys/{key_id}` | Revoke a key (admin only) |
+
 ### Internal (service key or `X-Internal-Key` header — not JWT)
 
 | Method | Path | Caller | Description |
@@ -396,19 +430,26 @@ Frontend polling picks up new QR within 3s
 | GET | `/internal/qr-status` | Bot | Check/clear QR regeneration flag |
 | GET | `/internal/messages` | Bot | Pop queued messages (clears queue) |
 | GET | `/internal/insurance/renewals` | Bot | Policies renewing in 7 or 30 days |
-| GET | `/internal/mcp/households` | MCP server | List all households (id, name, plan, active) |
-| GET | `/internal/mcp/weeks` | MCP server | List weeks with totals for a household |
-| GET | `/internal/mcp/weeks/{year}/{week_number}` | MCP server | Week detail: receipts + category totals |
-| GET | `/internal/mcp/receipts` | MCP server | Search receipts (date range, vendor, flagged) |
-| GET | `/internal/mcp/receipts/{receipt_id}` | MCP server | Single receipt + items |
-| GET | `/internal/mcp/vendors` | MCP server | Top vendors by spend over a date range |
-| GET | `/internal/mcp/budgets` | MCP server | Budgets for a household, optionally by month |
-| GET | `/internal/mcp/price-history` | MCP server | Price history + trend insights for an item (`canonical_name` query param) |
 
-> `/internal/mcp/*` also accepts `household_id` as a query param the same way the other service-key
-> endpoints do; it's checked via `X-Internal-Key`, not a JWT — see `backend/api/routers/mcp_data.py`.
-> The MCP server itself (`backend/mcp_server/`) also calls the existing `/this-week`, `/summary/last7days`,
-> and `/insurance` endpoints directly, since those already support service-key + `household_id` auth.
+### MCP data query (per-household API key, not JWT or `X-Internal-Key`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/mcp/data/this-week` | Current ISO week's receipts + category totals |
+| GET | `/mcp/data/last7days` | Trailing 7 days' receipts + category totals |
+| GET | `/mcp/data/weeks` | List weeks with totals |
+| GET | `/mcp/data/weeks/{year}/{week_number}` | Week detail: receipts + category totals |
+| GET | `/mcp/data/receipts` | Search receipts (date range, vendor, flagged) |
+| GET | `/mcp/data/receipts/{receipt_id}` | Single receipt + items |
+| GET | `/mcp/data/vendors` | Top vendors by spend over a date range |
+| GET | `/mcp/data/insurance` | Active insurance policies |
+| GET | `/mcp/data/budgets` | Budgets, optionally by month |
+| GET | `/mcp/data/price-history` | Price history + trend insights for an item (`canonical_name` query param) |
+
+> `/mcp/data/*` takes `Authorization: Bearer <key>` where `<key>` is a value generated via
+> `POST /mcp/keys`. There's no `household_id` request param anywhere on these routes —
+> `api/routers/mcp_data.py`'s `_authenticate()` hashes the bearer token, looks it up in
+> `mcp_api_keys`, and resolves `household_id` from that row. A revoked or unknown key gets 403.
 
 ### Setup (no auth)
 
@@ -509,7 +550,8 @@ npm run dev
 ```bash
 cd backend/mcp_server
 pip install -r requirements.txt
-# Create backend/mcp_server/.env with FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
+# Generate a key from the portal: Settings → MCP → Generate key
+# Create backend/mcp_server/.env with FASTAPI_URL, HOMLY_MCP_KEY
 python server.py
 ```
 

@@ -1,20 +1,22 @@
 """
 Read-only data-query endpoints for the Homly MCP server (backend/mcp_server/).
 
-These sit alongside the other /internal/* endpoints: no JWT, gated by the
-X-Internal-Key header instead (see api/routers/internal.py's `_check`
-pattern). Every endpoint (other than /internal/mcp/households, which lists
-all households) requires an explicit household_id query param, the same
-"service key reads household_id from the request" rule the rest of the
-service-key-authenticated endpoints follow — see CLAUDE.md's Auth middleware
-pattern section.
+Unlike the other /internal/* endpoints (bot-only, gated by the shared
+INTERNAL_KEY), these are gated by a per-household API key generated from the
+portal (Settings > MCP, see api/routers/mcp_keys.py) and passed as a bearer
+token: `Authorization: Bearer homly_mcp_...`. The key itself determines
+household_id — there's no household_id request param to trust or mistrust,
+which is what makes these safe to expose without INTERNAL_KEY or the
+Supabase service-role key ever leaving the backend.
 """
 import os
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException, Query
 from supabase import create_client
 
+from services.mcp_auth import hash_key
 from services.receipts import compute_category_totals
 from services.price_history import compute_price_insights
 
@@ -30,19 +32,26 @@ def _db():
     return _supabase
 
 
-# Unlike the other /internal/* routes (api/routers/internal.py), these expose
-# rich cross-table household data — including, via /internal/mcp/households,
-# every tenant's household_id. There's no safe fallback value: if INTERNAL_KEY
-# isn't configured, every request is rejected rather than trusting a
-# well-known checked-in default.
-INTERNAL_KEY = os.getenv("INTERNAL_KEY")
-
 PAGE_SIZE = 1000
 
 
-def _check(request: Request):
-    if not INTERNAL_KEY or request.headers.get("X-Internal-Key") != INTERNAL_KEY:
-        raise HTTPException(status_code=403, detail="Forbidden")
+def _authenticate(request: Request) -> str:
+    """Verify the bearer MCP key and return the household_id it's scoped to."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing MCP API key")
+    token = auth.split(" ", 1)[1]
+
+    res = _db().table("mcp_api_keys")\
+        .select("id, household_id, revoked_at")\
+        .eq("key_hash", hash_key(token))\
+        .execute()
+    if not res.data or res.data[0]["revoked_at"]:
+        raise HTTPException(status_code=403, detail="Invalid or revoked MCP API key")
+
+    key_row = res.data[0]
+    _db().table("mcp_api_keys").update({"last_used_at": "now()"}).eq("id", key_row["id"]).execute()
+    return key_row["household_id"]
 
 
 def _fetch_all(build_query) -> list[dict]:
@@ -59,16 +68,50 @@ def _fetch_all(build_query) -> list[dict]:
         offset += PAGE_SIZE
 
 
-@router.get("/internal/mcp/households")
-def mcp_list_households(request: Request):
-    _check(request)
-    res = _db().table("households").select("id, name, plan, active").order("name").execute()
-    return res.data
+@router.get("/mcp/data/this-week")
+def mcp_this_week(request: Request):
+    household_id = _authenticate(request)
+    year, week_number = date.today().isocalendar()[:2]
+    return _week_detail(household_id, year, week_number)
 
 
-@router.get("/internal/mcp/weeks")
-def mcp_list_weeks(request: Request, household_id: str = Query(...)):
-    _check(request)
+@router.get("/mcp/data/last7days")
+def mcp_last_7_days(request: Request):
+    household_id = _authenticate(request)
+    today = date.today()
+    date_from = today - timedelta(days=6)
+
+    receipts_res = _db().table("receipts")\
+        .select("*")\
+        .eq("household_id", household_id)\
+        .eq("deleted", False)\
+        .gte("date", date_from.isoformat())\
+        .lte("date", today.isoformat())\
+        .order("date", desc=False)\
+        .execute()
+
+    receipt_ids = [r["id"] for r in receipts_res.data]
+    items_data = []
+    if receipt_ids:
+        items_data = _db().table("items")\
+            .select("category, line_total")\
+            .in_("receipt_id", receipt_ids)\
+            .execute().data
+
+    return {
+        "date_from":         date_from.isoformat(),
+        "date_to":           today.isoformat(),
+        "total":             round(sum(r["total"] or 0 for r in receipts_res.data), 2),
+        "receipt_count":     len(receipts_res.data),
+        "flagged_count":     sum(1 for r in receipts_res.data if r.get("flagged")),
+        "receipts":          receipts_res.data,
+        "category_totals":   compute_category_totals(items_data),
+    }
+
+
+@router.get("/mcp/data/weeks")
+def mcp_list_weeks(request: Request):
+    household_id = _authenticate(request)
     rows = _fetch_all(lambda offset: _db().table("receipts")
         .select("year, week_number, total, reimbursable, flagged")
         .eq("household_id", household_id)
@@ -100,9 +143,7 @@ def mcp_list_weeks(request: Request, household_id: str = Query(...)):
     ]
 
 
-@router.get("/internal/mcp/weeks/{year}/{week_number}")
-def mcp_get_week(year: int, week_number: int, request: Request, household_id: str = Query(...)):
-    _check(request)
+def _week_detail(household_id: str, year: int, week_number: int) -> dict:
     receipts_res = _db().table("receipts")\
         .select("*")\
         .eq("household_id", household_id)\
@@ -134,17 +175,22 @@ def mcp_get_week(year: int, week_number: int, request: Request, household_id: st
     }
 
 
-@router.get("/internal/mcp/receipts")
+@router.get("/mcp/data/weeks/{year}/{week_number}")
+def mcp_get_week(year: int, week_number: int, request: Request):
+    household_id = _authenticate(request)
+    return _week_detail(household_id, year, week_number)
+
+
+@router.get("/mcp/data/receipts")
 def mcp_search_receipts(
     request: Request,
-    household_id: str = Query(...),
     start_date: Optional[str] = Query(default=None),
     end_date: Optional[str] = Query(default=None),
     vendor: Optional[str] = Query(default=None),
     flagged: Optional[bool] = Query(default=None),
     limit: int = Query(default=100, le=500),
 ):
-    _check(request)
+    household_id = _authenticate(request)
     q = _db().table("receipts")\
         .select("*")\
         .eq("household_id", household_id)\
@@ -176,9 +222,9 @@ def mcp_search_receipts(
     }
 
 
-@router.get("/internal/mcp/receipts/{receipt_id}")
-def mcp_get_receipt(receipt_id: str, request: Request, household_id: str = Query(...)):
-    _check(request)
+@router.get("/mcp/data/receipts/{receipt_id}")
+def mcp_get_receipt(receipt_id: str, request: Request):
+    household_id = _authenticate(request)
     receipt_res = _db().table("receipts")\
         .select("*")\
         .eq("id", receipt_id)\
@@ -191,15 +237,14 @@ def mcp_get_receipt(receipt_id: str, request: Request, household_id: str = Query
     return {**receipt_res.data[0], "items": items_res.data}
 
 
-@router.get("/internal/mcp/vendors")
+@router.get("/mcp/data/vendors")
 def mcp_top_vendors(
     request: Request,
-    household_id: str = Query(...),
     start_date: Optional[str] = Query(default=None),
     end_date: Optional[str] = Query(default=None),
     limit: int = Query(default=10, le=100),
 ):
-    _check(request)
+    household_id = _authenticate(request)
 
     def build(offset):
         q = _db().table("receipts")\
@@ -223,19 +268,31 @@ def mcp_top_vendors(
     return [{**v, "total": round(v["total"], 2)} for v in ranked]
 
 
-@router.get("/internal/mcp/budgets")
-def mcp_list_budgets(request: Request, household_id: str = Query(...), month: Optional[str] = Query(default=None)):
-    _check(request)
-    q = _db().table("budgets").select("*").eq("household_id", household_id)
-    if month:
-        q = q.eq("month", month)
-    res = q.execute()
+@router.get("/mcp/data/insurance")
+def mcp_list_insurance(request: Request):
+    household_id = _authenticate(request)
+    res = _db().table("insurance_policies")\
+        .select("*")\
+        .eq("household_id", household_id)\
+        .eq("is_active", True)\
+        .order("coverage_type")\
+        .order("renewal_date", nullsfirst=False)\
+        .execute()
     return res.data
 
 
-@router.get("/internal/mcp/price-history")
-def mcp_price_history(request: Request, household_id: str = Query(...), canonical_name: str = Query(...)):
-    _check(request)
+@router.get("/mcp/data/budgets")
+def mcp_list_budgets(request: Request, month: Optional[str] = Query(default=None)):
+    household_id = _authenticate(request)
+    q = _db().table("budgets").select("*").eq("household_id", household_id)
+    if month:
+        q = q.eq("month", month)
+    return q.execute().data
+
+
+@router.get("/mcp/data/price-history")
+def mcp_price_history(request: Request, canonical_name: str = Query(...)):
+    household_id = _authenticate(request)
     res = _db().table("price_history")\
         .select("*")\
         .eq("household_id", household_id)\

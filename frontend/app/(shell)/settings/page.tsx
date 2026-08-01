@@ -64,6 +64,7 @@ export default function SettingsPage() {
   const [newKeyLabel, setNewKeyLabel] = useState("");
   const [generatingKey, setGeneratingKey] = useState(false);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [showAdvancedMcp, setShowAdvancedMcp] = useState(false);
   const router = useRouter();
   const { toasts, dismissToast, toast } = useToast();
 
@@ -359,47 +360,64 @@ export default function SettingsPage() {
                       Copy what you need now — the raw key won&apos;t be shown again.
                     </p>
 
-                    <CredentialBlock label="Raw key" code={revealedKey} />
-
-                    <CredentialBlock
-                      label={
-                        <>
-                          claude.ai, Claude Desktop, or any remote-connector client — paste this URL into{" "}
-                          <strong>Add custom connector</strong> (no local install needed)
-                        </>
-                      }
-                      code={`${apiUrl}/mcp/server/${revealedKey}`}
-                    />
-
-                    <CredentialBlock
-                      label="Claude Code — run in a terminal"
-                      code={`claude mcp add homly -e FASTAPI_URL=${apiUrl} -e HOMLY_MCP_KEY=${revealedKey} -- python /path/to/backend/mcp_server/server.py`}
-                    />
-
-                    <CredentialBlock
-                      label="Local .env — add to backend/mcp_server/.env"
-                      code={`FASTAPI_URL=${apiUrl}\nHOMLY_MCP_KEY=${revealedKey}`}
-                    />
-
-                    <CredentialBlock
-                      label="Other local MCP clients (Cursor, Windsurf, VS Code, Cline, Continue, etc.) — most accept this same mcpServers JSON shape; check your client's MCP settings for where it goes"
-                      code={JSON.stringify(
-                        {
-                          mcpServers: {
-                            homly: {
-                              command: "python",
-                              args: ["/path/to/backend/mcp_server/server.py"],
-                              env: { FASTAPI_URL: apiUrl, HOMLY_MCP_KEY: revealedKey },
-                            },
-                          },
-                        },
-                        null,
-                        2
-                      )}
-                    />
+                    <div>
+                      <p className="text-sm text-stone-200 font-medium mb-1">Connect (recommended)</p>
+                      <p className="text-xs text-stone-500 mb-2">
+                        In Claude, choose <strong>Add custom connector</strong> and paste this URL. Nothing to
+                        install — works from any device.
+                      </p>
+                      <CredentialBlock label="Connector URL" code={`${apiUrl}/mcp/server/${revealedKey}`} />
+                    </div>
 
                     <button
-                      onClick={() => setRevealedKey(null)}
+                      onClick={() => setShowAdvancedMcp((v) => !v)}
+                      className="text-xs text-stone-500 hover:text-stone-300 flex items-center gap-1"
+                    >
+                      <span className={`transition-transform ${showAdvancedMcp ? "rotate-90" : ""}`}>›</span>
+                      Advanced: run it locally instead
+                    </button>
+
+                    {showAdvancedMcp && (
+                      <div className="space-y-4 pl-3 border-l border-stone-800">
+                        <p className="text-xs text-stone-500">
+                          Only needed if you&apos;d rather run the MCP server as a local process. Requires a
+                          Homly checkout on your machine and Python — the file path below has to point at
+                          wherever you cloned it, so edit it before using.
+                        </p>
+
+                        <CredentialBlock label="Raw key" code={revealedKey} />
+
+                        <CredentialBlock
+                          label="Claude Code — run in a terminal"
+                          code={`claude mcp add homly -e FASTAPI_URL=${apiUrl} -e HOMLY_MCP_KEY=${revealedKey} -- python /path/to/backend/mcp_server/server.py`}
+                        />
+
+                        <CredentialBlock
+                          label="Local .env — add to backend/mcp_server/.env"
+                          code={`FASTAPI_URL=${apiUrl}\nHOMLY_MCP_KEY=${revealedKey}`}
+                        />
+
+                        <CredentialBlock
+                          label="Other local MCP clients (Cursor, Windsurf, VS Code, Cline, Continue, etc.) — most accept this same mcpServers JSON shape; check your client's MCP settings for where it goes"
+                          code={JSON.stringify(
+                            {
+                              mcpServers: {
+                                homly: {
+                                  command: "python",
+                                  args: ["/path/to/backend/mcp_server/server.py"],
+                                  env: { FASTAPI_URL: apiUrl, HOMLY_MCP_KEY: revealedKey },
+                                },
+                              },
+                            },
+                            null,
+                            2
+                          )}
+                        />
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => { setRevealedKey(null); setShowAdvancedMcp(false); }}
                       className="text-xs text-stone-500 hover:text-stone-300"
                     >
                       Dismiss

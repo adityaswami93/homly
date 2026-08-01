@@ -13,7 +13,7 @@ from supabase import create_client
 from dotenv import load_dotenv
 
 from api.routers.households import require_admin
-from services.mcp_auth import generate_key
+from services.mcp_auth import generate_key, SCOPE
 
 load_dotenv()
 
@@ -35,9 +35,10 @@ def _get_household_id(request: Request) -> str:
 @router.get("/mcp/keys")
 def list_keys(request: Request):
     household_id = _get_household_id(request)
-    res = supabase.table("mcp_api_keys")\
+    res = supabase.table("api_keys")\
         .select("id, label, key_prefix, created_at, last_used_at, revoked_at")\
         .eq("household_id", household_id)\
+        .eq("scope", SCOPE)\
         .order("created_at", desc=True)\
         .execute()
     return res.data
@@ -51,12 +52,13 @@ def create_key(request: Request, body: KeyIn):
     plaintext, key_hash, key_prefix = generate_key()
     row = {
         "household_id": household_id,
+        "scope":        SCOPE,
         "key_hash":     key_hash,
         "key_prefix":   key_prefix,
         "label":        body.label,
         "created_by":   request.state.user.get("sub"),
     }
-    inserted = supabase.table("mcp_api_keys").insert(row).execute().data[0]
+    inserted = supabase.table("api_keys").insert(row).execute().data[0]
     # Plaintext is returned exactly once — it isn't stored anywhere.
     return {**inserted, "key": plaintext}
 
@@ -66,12 +68,13 @@ def revoke_key(key_id: str, request: Request):
     household_id = _get_household_id(request)
     require_admin(request)
 
-    existing = supabase.table("mcp_api_keys")\
+    existing = supabase.table("api_keys")\
         .select("household_id")\
         .eq("id", key_id)\
+        .eq("scope", SCOPE)\
         .execute()
     if not existing.data or existing.data[0]["household_id"] != household_id:
         raise HTTPException(status_code=404, detail="Key not found")
 
-    supabase.table("mcp_api_keys").update({"revoked_at": "now()"}).eq("id", key_id).execute()
+    supabase.table("api_keys").update({"revoked_at": "now()"}).eq("id", key_id).execute()
     return {"status": "ok"}

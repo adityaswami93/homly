@@ -212,7 +212,7 @@ Bot reacts ✅ to message; flags receipt in chat if confidence = low
 User: Settings → MCP → Generate key (JWT auth)
     ↓
 POST /mcp/keys (api/routers/mcp_keys.py) → plaintext key shown once, only its
-    SHA-256 hash is stored in mcp_api_keys, scoped to household_id
+    SHA-256 hash is stored in api_keys (scope='mcp'), scoped to household_id
     ↓
 User pastes key into backend/mcp_server/.env (HOMLY_MCP_KEY)
 
@@ -221,7 +221,7 @@ Claude Code / Claude Desktop (MCP client)
 backend/mcp_server/server.py (FastMCP tools: list_weeks, search_receipts, etc.)
     ↓ HTTP, Authorization: Bearer <HOMLY_MCP_KEY>
 GET /mcp/data/* (api/routers/mcp_data.py)
-    ↓ hash the bearer token, look up mcp_api_keys → resolves household_id
+    ↓ hash the bearer token, look up api_keys where scope='mcp' → resolves household_id
     ↓ (no household_id request param exists on these endpoints — it can only
     ↓  ever be the one the key was issued for)
 Supabase
@@ -359,11 +359,17 @@ Frontend polling picks up new QR within 3s
 | created_by | UUID (FK → auth.users) | |
 | created_at / updated_at | TIMESTAMPTZ | |
 
-### `mcp_api_keys`
+### `api_keys`
+Generic per-household bearer-key table, not MCP-specific — `scope` distinguishes
+which integration a key is for, so a future integration (a public API, Zapier,
+etc.) can reuse this table instead of growing its own. Currently the only
+`scope` in use is `'mcp'` (see `services/mcp_auth.py`).
+
 | Column | Type | Notes |
 |--------|------|-------|
 | id | UUID (PK) | |
 | household_id | UUID (FK → households) | |
+| scope | TEXT | Which integration issued this key, e.g. `'mcp'`. DEFAULT `'mcp'` |
 | key_hash | TEXT (UNIQUE) | SHA-256 of the plaintext key — plaintext is never stored |
 | key_prefix | TEXT | First few chars, shown in the UI to tell keys apart |
 | label | TEXT | Optional, set by the user at creation |
@@ -449,7 +455,7 @@ Frontend polling picks up new QR within 3s
 > `/mcp/data/*` takes `Authorization: Bearer <key>` where `<key>` is a value generated via
 > `POST /mcp/keys`. There's no `household_id` request param anywhere on these routes —
 > `api/routers/mcp_data.py`'s `_authenticate()` hashes the bearer token, looks it up in
-> `mcp_api_keys`, and resolves `household_id` from that row. A revoked or unknown key gets 403.
+> `api_keys` (scope `'mcp'`), and resolves `household_id` from that row. A revoked or unknown key gets 403.
 
 ### Setup (no auth)
 

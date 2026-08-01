@@ -8,6 +8,10 @@ token: `Authorization: Bearer homly_mcp_...`. The key itself determines
 household_id — there's no household_id request param to trust or mistrust,
 which is what makes these safe to expose without INTERNAL_KEY or the
 Supabase service-role key ever leaving the backend.
+
+Keys live in the generic `api_keys` table (migrations/029_api_keys.sql) and
+are looked up with `scope="mcp"` (services.mcp_auth.SCOPE) so a future
+integration reusing that table can't be mistaken for an MCP key here.
 """
 import os
 from datetime import date, timedelta
@@ -16,7 +20,7 @@ from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, Query
 from supabase import create_client
 
-from services.mcp_auth import hash_key
+from services.mcp_auth import hash_key, SCOPE
 from services.receipts import compute_category_totals
 from services.price_history import compute_price_insights
 
@@ -42,15 +46,16 @@ def _authenticate(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Missing MCP API key")
     token = auth.split(" ", 1)[1]
 
-    res = _db().table("mcp_api_keys")\
+    res = _db().table("api_keys")\
         .select("id, household_id, revoked_at")\
         .eq("key_hash", hash_key(token))\
+        .eq("scope", SCOPE)\
         .execute()
     if not res.data or res.data[0]["revoked_at"]:
         raise HTTPException(status_code=403, detail="Invalid or revoked MCP API key")
 
     key_row = res.data[0]
-    _db().table("mcp_api_keys").update({"last_used_at": "now()"}).eq("id", key_row["id"]).execute()
+    _db().table("api_keys").update({"last_used_at": "now()"}).eq("id", key_row["id"]).execute()
     return key_row["household_id"]
 
 

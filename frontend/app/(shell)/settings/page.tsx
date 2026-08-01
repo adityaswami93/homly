@@ -140,7 +140,11 @@ export default function SettingsPage() {
     { key: "mcp", label: "MCP" },
   ];
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://your-backend-url";
+  // Strip any trailing slash(es) — NEXT_PUBLIC_API_URL is sometimes configured
+  // with one, and every MCP setup snippet below concatenates a leading "/"
+  // onto this, so an un-stripped trailing slash produces a "//" that breaks
+  // the connector URL's routing.
+  const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "https://your-backend-url").replace(/\/+$/, "");
 
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">

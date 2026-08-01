@@ -41,7 +41,21 @@ SKIP_AUTH_PATHS = [
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in SKIP_AUTH_PATHS:
+        # /mcp/data/* and /mcp/server/* cover dynamic path segments (receipt
+        # ids, weeks, the MCP key itself), so they're matched by prefix rather
+        # than added one-by-one to SKIP_AUTH_PATHS. Both authenticate
+        # themselves with their own per-household bearer-key scheme, not a
+        # Supabase JWT — /mcp/data/* via an Authorization header (see
+        # api/routers/mcp_data.py's `_authenticate`), /mcp/server/{key} via
+        # the key embedded in its own URL path (see mcp_server/remote.py) for
+        # Claude's remote-connector UI, which has no field for custom headers.
+        # /mcp/keys (api/routers/mcp_keys.py) is NOT exempted — it's a normal
+        # JWT-authenticated endpoint for managing those bearer keys.
+        if (
+            request.url.path in SKIP_AUTH_PATHS
+            or request.url.path.startswith("/mcp/data/")
+            or request.url.path.startswith("/mcp/server/")
+        ):
             return await call_next(request)
 
         if request.method == "OPTIONS":

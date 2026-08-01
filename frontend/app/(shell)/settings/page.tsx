@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import Link from "next/link";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
+import CopyButton from "@/app/components/CopyButton";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const HOURS = Array.from({ length: 24 }, (_, i) => {
@@ -29,6 +30,29 @@ interface Settings {
   helper_identifiers: string;
 }
 
+interface McpKey {
+  id: string;
+  label: string | null;
+  key_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+function CredentialBlock({ label, code }: { label: ReactNode; code: string }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs text-stone-400">{label}</p>
+        <CopyButton text={code} />
+      </div>
+      <pre className="bg-stone-950 border border-stone-800 rounded-lg px-3 py-2 text-xs text-stone-300 overflow-x-auto whitespace-pre-wrap break-all">
+        {code}
+      </pre>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -36,6 +60,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
+  const [mcpKeys, setMcpKeys] = useState<McpKey[]>([]);
+  const [newKeyLabel, setNewKeyLabel] = useState("");
+  const [generatingKey, setGeneratingKey] = useState(false);
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [showAdvancedMcp, setShowAdvancedMcp] = useState(false);
   const router = useRouter();
   const { toasts, dismissToast, toast } = useToast();
 
@@ -58,7 +87,32 @@ export default function SettingsPage() {
       setForm(res.data);
       setLoading(false);
     });
+    api.get("/mcp/keys").then((res) => setMcpKeys(res.data)).catch(() => {});
   }, [user]);
+
+  const handleGenerateKey = async () => {
+    setGeneratingKey(true);
+    try {
+      const res = await api.post("/mcp/keys", { label: newKeyLabel || null });
+      setRevealedKey(res.data.key);
+      setMcpKeys((prev) => [{ ...res.data, key: undefined }, ...prev]);
+      setNewKeyLabel("");
+    } catch {
+      toast.error("Failed to generate key");
+    } finally {
+      setGeneratingKey(false);
+    }
+  };
+
+  const handleRevokeKey = async (id: string) => {
+    try {
+      await api.delete(`/mcp/keys/${id}`);
+      setMcpKeys((prev) => prev.map((k) => (k.id === id ? { ...k, revoked_at: new Date().toISOString() } : k)));
+      toast.success("Key revoked");
+    } catch {
+      toast.error("Failed to revoke key");
+    }
+  };
 
   const handleSave = async () => {
     if (!form) return;
@@ -83,7 +137,10 @@ export default function SettingsPage() {
     { key: "general", label: "General" },
     { key: "reimbursement", label: "Reimbursement" },
     { key: "whatsapp", label: "WhatsApp" },
+    { key: "mcp", label: "MCP" },
   ];
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://your-backend-url";
 
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">
@@ -264,6 +321,144 @@ export default function SettingsPage() {
                 >
                   {form.group_name ? "Change WhatsApp group →" : "Connect WhatsApp →"}
                 </Link>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "mcp" && (
+            <div className="space-y-4">
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5">
+                <h2 className="text-sm font-semibold text-stone-300 mb-1">MCP Server</h2>
+                <p className="text-xs text-stone-500 mb-4">
+                  Generate a key to let AI tools like Claude Code or Claude Desktop query and
+                  analyse this household&apos;s expenses, budgets, insurance, and price history
+                  directly. Each key is scoped to this household only.
+                </p>
+
+                {isAdmin && (
+                  <div className="flex gap-2 mb-4">
+                    <input
+                      type="text"
+                      value={newKeyLabel}
+                      onChange={(e) => setNewKeyLabel(e.target.value)}
+                      placeholder="Label (optional, e.g. &quot;My laptop&quot;)"
+                      className="flex-1 border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-600 min-h-[44px] text-base"
+                    />
+                    <button
+                      onClick={handleGenerateKey}
+                      disabled={generatingKey}
+                      className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold px-4 rounded-xl transition text-sm min-h-[44px] whitespace-nowrap"
+                    >
+                      {generatingKey ? "Generating…" : "Generate key"}
+                    </button>
+                  </div>
+                )}
+
+                {revealedKey && (
+                  <div className="mb-4 border border-emerald-700 bg-emerald-900/20 rounded-xl p-4 space-y-4">
+                    <p className="text-xs text-emerald-300 font-medium">
+                      Copy what you need now — the raw key won&apos;t be shown again.
+                    </p>
+
+                    <div>
+                      <p className="text-sm text-stone-200 font-medium mb-1">Connect (recommended)</p>
+                      <p className="text-xs text-stone-500 mb-2">
+                        In Claude, choose <strong>Add custom connector</strong> and paste this URL. Nothing to
+                        install — works from any device.
+                      </p>
+                      <CredentialBlock label="Connector URL" code={`${apiUrl}/mcp/server/${revealedKey}`} />
+                    </div>
+
+                    <button
+                      onClick={() => setShowAdvancedMcp((v) => !v)}
+                      className="text-xs text-stone-500 hover:text-stone-300 flex items-center gap-1"
+                    >
+                      <span className={`transition-transform ${showAdvancedMcp ? "rotate-90" : ""}`}>›</span>
+                      Advanced: run it locally instead
+                    </button>
+
+                    {showAdvancedMcp && (
+                      <div className="space-y-4 pl-3 border-l border-stone-800">
+                        <p className="text-xs text-stone-500">
+                          Only needed if you&apos;d rather run the MCP server as a local process. Requires a
+                          Homly checkout on your machine and Python — the file path below has to point at
+                          wherever you cloned it, so edit it before using.
+                        </p>
+
+                        <CredentialBlock label="Raw key" code={revealedKey} />
+
+                        <CredentialBlock
+                          label="Claude Code — run in a terminal"
+                          code={`claude mcp add homly -e FASTAPI_URL=${apiUrl} -e HOMLY_MCP_KEY=${revealedKey} -- python /path/to/backend/mcp_server/server.py`}
+                        />
+
+                        <CredentialBlock
+                          label="Local .env — add to backend/mcp_server/.env"
+                          code={`FASTAPI_URL=${apiUrl}\nHOMLY_MCP_KEY=${revealedKey}`}
+                        />
+
+                        <CredentialBlock
+                          label="Other local MCP clients (Cursor, Windsurf, VS Code, Cline, Continue, etc.) — most accept this same mcpServers JSON shape; check your client's MCP settings for where it goes"
+                          code={JSON.stringify(
+                            {
+                              mcpServers: {
+                                homly: {
+                                  command: "python",
+                                  args: ["/path/to/backend/mcp_server/server.py"],
+                                  env: { FASTAPI_URL: apiUrl, HOMLY_MCP_KEY: revealedKey },
+                                },
+                              },
+                            },
+                            null,
+                            2
+                          )}
+                        />
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => { setRevealedKey(null); setShowAdvancedMcp(false); }}
+                      className="text-xs text-stone-500 hover:text-stone-300"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+
+                {mcpKeys.length === 0 ? (
+                  <p className="text-xs text-stone-600">No keys generated yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {mcpKeys.map((k) => (
+                      <div
+                        key={k.id}
+                        className="flex items-center justify-between px-4 py-3 rounded-xl border border-stone-800 text-sm"
+                      >
+                        <div>
+                          <p className="text-stone-300 font-medium">
+                            {k.label || "Unnamed key"}{" "}
+                            <span className="text-stone-600 font-normal">{k.key_prefix}…</span>
+                          </p>
+                          <p className="text-xs text-stone-600 mt-0.5">
+                            {k.revoked_at
+                              ? "Revoked"
+                              : k.last_used_at
+                              ? `Last used ${new Date(k.last_used_at).toLocaleDateString()}`
+                              : "Never used"}
+                          </p>
+                        </div>
+                        {isAdmin && !k.revoked_at && (
+                          <button
+                            onClick={() => handleRevokeKey(k.id)}
+                            className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 min-h-[32px]"
+                          >
+                            Revoke
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

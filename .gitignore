@@ -4,6 +4,10 @@ backend/venv
 **/__pycache__/
 package-lock.json
 .claude
+backend/api/dependencies/__pycache__
+backend/api/routers/__pycache__
+backend/evals/__pycache__
+backend/mcp_server/__pycache__
 backend/receipts
 backend/whatsapp/auth_state
 backend/whatsapp/node_modules

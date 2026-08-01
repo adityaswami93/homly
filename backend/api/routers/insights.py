@@ -5,6 +5,8 @@ from datetime import date, timedelta
 from collections import defaultdict
 from dotenv import load_dotenv
 
+from services.price_history import compute_price_insights
+
 load_dotenv()
 
 router    = APIRouter()
@@ -179,51 +181,10 @@ def get_price_history(canonical_name: str, request: Request):
     if not data:
         return {"canonical_name": canonical_name, "history": [], "insights": None}
 
-    prices      = [r["unit_price"] for r in data if r["unit_price"]]
-    avg_price   = round(sum(prices) / len(prices), 2) if prices else None
-    min_price   = min(prices) if prices else None
-    max_price   = max(prices) if prices else None
-    last_price  = data[-1]["unit_price"] if data else None
-    last_vendor = data[-1]["vendor"]     if data else None
-
-    # Best vendor (lowest avg price)
-    vendor_prices: dict[str, list] = defaultdict(list)
-    for r in data:
-        if r["vendor"] and r["unit_price"]:
-            vendor_prices[r["vendor"]].append(r["unit_price"])
-    best_vendor = None
-    best_avg    = None
-    for vendor, vprices in vendor_prices.items():
-        avg = sum(vprices) / len(vprices)
-        if best_avg is None or avg < best_avg:
-            best_avg    = round(avg, 2)
-            best_vendor = vendor
-
-    # Price trend (last 4 purchases)
-    recent    = [r["unit_price"] for r in data[-4:] if r["unit_price"]]
-    trending  = None
-    if len(recent) >= 2:
-        if recent[-1] > recent[0]:
-            trending = "up"
-        elif recent[-1] < recent[0]:
-            trending = "down"
-        else:
-            trending = "stable"
-
     return {
         "canonical_name": canonical_name,
         "history":        data,
-        "insights": {
-            "avg_price":   avg_price,
-            "min_price":   min_price,
-            "max_price":   max_price,
-            "last_price":  last_price,
-            "last_vendor": last_vendor,
-            "best_vendor": best_vendor,
-            "best_price":  best_avg,
-            "trending":    trending,
-            "buy_count":   len(data),
-        },
+        "insights":       compute_price_insights(data),
     }
 
 

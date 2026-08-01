@@ -58,11 +58,25 @@ homly/
 │   │       ├── messages.py          # POST /messages/send, GET /internal/messages (bot polling)
 │   │       ├── internal.py          # POST /internal/qr, /internal/connected, GET /internal/qr-status
 │   │       ├── setup.py             # GET /setup/state, POST /setup/group, /setup/reset-qr, SSE /setup/qr-stream
-│   │       └── insurance.py         # GET/POST/PUT/DELETE /insurance, GET /internal/insurance/renewals
+│   │       ├── insurance.py         # GET/POST/PUT/DELETE /insurance, GET /internal/insurance/renewals
+│   │       ├── mcp_data.py          # GET /mcp/data/* — per-household-key-authenticated data-query endpoints
+│   │       └── mcp_keys.py          # GET/POST/DELETE /mcp/keys — JWT-authenticated, generate/revoke MCP keys
+│   │       # NOTE: analytics.py, admin.py, budgets.py, insights.py, recipe.py, pantry.py, waitlist.py,
+│   │       # reminders.py, commands.py, savings.py, reimbursements.py also exist — see `ls backend/api/routers`
+│   ├── mcp_server/                 # MCP server, two transports over the same tools/data:
+│   │   ├── server.py               #   local stdio (backend/mcp_server/README.md) — calls /mcp/data/* over HTTP
+│   │   └── remote.py               #   remote Streamable HTTP, mounted into api/main.py at /mcp/server/{key} —
+│   │                               #   runs in-process against services/mcp_queries.py, no HTTP round-trip
 │   ├── agents/
 │   │   └── receipt_agent.py        # Vision LLM call → structured JSON receipt data
 │   ├── services/
-│   │   └── llm_client.py           # Facade: get_vision_completion()
+│   │   ├── llm_client.py           # Facade: get_vision_completion()
+│   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook
+│   │   ├── receipts.py             # compute_category_totals() — shared item-category aggregation
+│   │   ├── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
+│   │   ├── mcp_auth.py             # generate_key()/hash_key()/SCOPE — shared by mcp_keys.py and mcp_data.py
+│   │   └── mcp_queries.py          # the actual data fetching behind every MCP tool — shared by mcp_data.py
+│   │                               # (HTTP, for the local stdio server) and mcp_server/remote.py (in-process)
 │   ├── migrations/
 │   │   ├── 001_homly.sql           # Base schema: receipts, items, weekly views
 │   │   ├── 002_soft_delete.sql     # deleted flag on receipts
@@ -195,6 +209,48 @@ Insert into receipts + items tables (scoped to household_id)
 Bot reacts ✅ to message; flags receipt in chat if confidence = low
 ```
 
+### MCP Data-Query Flow
+
+```
+User: Settings → MCP → Generate key (JWT auth)
+    ↓
+POST /mcp/keys (api/routers/mcp_keys.py) → plaintext key shown once, only its
+    SHA-256 hash is stored in api_keys (scope='mcp'), scoped to household_id
+```
+
+Two transports share that same key and the same tool set/data (`services/mcp_queries.py`):
+
+```
+Local (stdio) — Claude Code / Claude Desktop launch a Python subprocess:
+Claude (MCP client)
+    ↓ stdio
+backend/mcp_server/server.py (FastMCP tools: list_weeks, search_receipts, etc.)
+    ↓ HTTP, Authorization: Bearer <HOMLY_MCP_KEY>
+GET /mcp/data/* (api/routers/mcp_data.py)
+    ↓ resolve_household_id(key): hash it, look up api_keys where scope='mcp'
+    ↓ then call services/mcp_queries.py
+Supabase
+
+Remote (Streamable HTTP) — "Add custom connector" on claude.ai, no local process:
+Claude (MCP client)
+    ↓ HTTPS to https://<backend>/mcp/server/<HOMLY_MCP_KEY>
+    ↓ (the key is a URL path segment, not a header — that connector dialog
+    ↓  has no field for custom headers/bearer tokens)
+mcp_server/remote.py, mounted into api/main.py at /mcp/server/{key}
+    ↓ per tool call: read the key from the request's path params
+    ↓ (Context.request_context.request.path_params), resolve_household_id(key)
+    ↓ then call services/mcp_queries.py directly — same functions as above,
+    ↓  but in-process (no HTTP round-trip to itself)
+Supabase
+```
+
+Lets an AI tool query and analyse one household's expenses/budgets/insurance/price
+history directly. Each key is single-household-scoped and independently revocable
+(unlike the WhatsApp bot's shared `INTERNAL_KEY`, which is a first-party
+server-to-server secret with access to every household) — revoking one takes
+effect on the very next request on either transport. See
+`backend/mcp_server/README.md` for setup.
+
 ### Weekly Summary Flow
 
 ```
@@ -321,6 +377,25 @@ Frontend polling picks up new QR within 3s
 | created_by | UUID (FK → auth.users) | |
 | created_at / updated_at | TIMESTAMPTZ | |
 
+### `api_keys`
+Generic per-household bearer-key table, not MCP-specific — `scope` distinguishes
+which integration a key is for, so a future integration (a public API, Zapier,
+etc.) can reuse this table instead of growing its own. Currently the only
+`scope` in use is `'mcp'` (see `services/mcp_auth.py`).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| scope | TEXT | Which integration issued this key, e.g. `'mcp'`. DEFAULT `'mcp'` |
+| key_hash | TEXT (UNIQUE) | SHA-256 of the plaintext key — plaintext is never stored |
+| key_prefix | TEXT | First few chars, shown in the UI to tell keys apart |
+| label | TEXT | Optional, set by the user at creation |
+| created_by | UUID (FK → auth.users) | |
+| created_at | TIMESTAMPTZ | |
+| last_used_at | TIMESTAMPTZ | Updated on every successful `/mcp/data/*` call |
+| revoked_at | TIMESTAMPTZ | NULL = active |
+
 ---
 
 ## API Endpoints
@@ -361,6 +436,14 @@ Frontend polling picks up new QR within 3s
 | DELETE | `/admin/invites/{id}` | Revoke invite |
 | GET | `/admin/price-intelligence` | Cross-household price comparison + trends |
 
+### MCP key management (JWT required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/mcp/keys` | List this household's MCP keys (id, label, prefix, timestamps — never the plaintext) |
+| POST | `/mcp/keys` | Generate a new key (admin only). Response includes the plaintext once. |
+| DELETE | `/mcp/keys/{key_id}` | Revoke a key (admin only) |
+
 ### Internal (service key or `X-Internal-Key` header — not JWT)
 
 | Method | Path | Caller | Description |
@@ -371,6 +454,38 @@ Frontend polling picks up new QR within 3s
 | GET | `/internal/qr-status` | Bot | Check/clear QR regeneration flag |
 | GET | `/internal/messages` | Bot | Pop queued messages (clears queue) |
 | GET | `/internal/insurance/renewals` | Bot | Policies renewing in 7 or 30 days |
+
+### MCP data query (per-household API key, not JWT or `X-Internal-Key`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/mcp/data/this-week` | Current ISO week's receipts + category totals |
+| GET | `/mcp/data/last7days` | Trailing 7 days' receipts + category totals |
+| GET | `/mcp/data/weeks` | List weeks with totals |
+| GET | `/mcp/data/weeks/{year}/{week_number}` | Week detail: receipts + category totals |
+| GET | `/mcp/data/receipts` | Search receipts (date range, vendor, flagged) |
+| GET | `/mcp/data/receipts/{receipt_id}` | Single receipt + items |
+| GET | `/mcp/data/vendors` | Top vendors by spend over a date range |
+| GET | `/mcp/data/insurance` | Active insurance policies |
+| GET | `/mcp/data/budgets` | Budgets, optionally by month |
+| GET | `/mcp/data/price-history` | Price history + trend insights for an item (`canonical_name` query param) |
+
+> `/mcp/data/*` takes `Authorization: Bearer <key>` where `<key>` is a value generated via
+> `POST /mcp/keys`. There's no `household_id` request param anywhere on these routes —
+> `api/routers/mcp_data.py`'s `_authenticate()` hashes the bearer token, looks it up in
+> `api_keys` (scope `'mcp'`), and resolves `household_id` from that row. A revoked or unknown key gets 403.
+
+### MCP remote server (Streamable HTTP, key in the URL path)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| ALL | `/mcp/server/{key}` | Streamable HTTP MCP endpoint — `{key}` is the same value `POST /mcp/keys` returns |
+
+> Mounted via `mcp_server.remote.remote_mcp.streamable_http_app()` in `api/main.py`, exempted from
+> `AuthMiddleware` by path prefix like `/mcp/data/*` is. Meant for pasting straight into Claude's
+> "Add custom connector" dialog, which only accepts a URL — no header/bearer-token field — so the key
+> has nowhere else to go. Same tools, same underlying data (`services/mcp_queries.py`) as the local
+> stdio server; see the MCP Data-Query Flow diagram above.
 
 ### Setup (no auth)
 
@@ -465,6 +580,18 @@ cd backend/whatsapp
 # Create backend/whatsapp/.env with FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
 npm run dev
 ```
+
+### MCP server (query data from Claude Code / Claude Desktop)
+
+```bash
+cd backend/mcp_server
+pip install -r requirements.txt
+# Generate a key from the portal: Settings → MCP → Generate key
+# Create backend/mcp_server/.env with FASTAPI_URL, HOMLY_MCP_KEY
+python server.py
+```
+
+See `backend/mcp_server/README.md` for registering it with Claude Code (`claude mcp add`) or Claude Desktop.
 
 ---
 

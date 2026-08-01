@@ -366,7 +366,7 @@ export default function SettingsPage() {
                         In Claude, choose <strong>Add custom connector</strong> and paste this URL. Nothing to
                         install — works from any device.
                       </p>
-                      <CredentialBlock label="Connector URL" code={`${apiUrl}/mcp/server/${revealedKey}`} />
+                      <CredentialBlock label="Connector URL" code={`${apiUrl}/mcp/server/${revealedKey}/`} />
                     </div>
 
                     <button

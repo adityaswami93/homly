@@ -27,12 +27,14 @@ No install needed. In Claude's connector settings, choose **Add custom
 connector** and paste:
 
 ```
-https://your-backend.up.railway.app/mcp/server/homly_mcp_...
+https://your-backend.up.railway.app/mcp/server/homly_mcp_.../
 ```
 
 That's the whole URL — the key is part of it (Claude's remote-connector UI
 has no separate field for bearer tokens/headers, so the key travels in the
-path instead; see `backend/mcp_server/remote.py`). Revoking the key from
+path instead; see `backend/mcp_server/remote.py`). Keep the trailing slash —
+without it, every request 307-redirects to add one, which some clients
+mishandle on the very first connection attempt. Revoking the key from
 Settings → MCP breaks this URL immediately.
 
 ## 2b. Or connect locally (stdio)

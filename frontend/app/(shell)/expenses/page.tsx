@@ -589,16 +589,13 @@ export default function ExpensesOverview() {
     if (!week || !weekStart) return;
     setSending(true);
     try {
-      // Use ISO week of week start date for the message endpoint
-      const d = new Date(weekStart);
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-      const week1 = new Date(d.getFullYear(), 0, 4);
-      const isoWeek = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+      // Send the same custom-week date range the page is currently displaying,
+      // rather than re-deriving an ISO week number (which can land on a
+      // different set of receipts than what's on screen).
       await api.post("/messages/send", {
-        type: "week_total",
-        year: d.getFullYear(),
-        week_number: isoWeek,
+        type: "daterange_total",
+        start: toDateStr(weekStart),
+        end: toDateStr(getCustomWeekEnd(weekStart)),
       });
       toast.success("Summary sent to WhatsApp group");
     } catch {

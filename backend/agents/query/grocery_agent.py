@@ -112,7 +112,8 @@ class GroceryQueryAgent(BaseQueryAgent):
             )
         return self._supabase
 
-    def handle(self, intent: str, params: dict, household_id: str) -> AgentResult:
+    def handle(self, intent: str, params: dict, household_id: str,
+               sender_name: str | None = None, sender_phone: str | None = None) -> AgentResult:
         period = params.get("period", "last_30_days")
         date_from, date_to = _resolve_period(period)
         try:

@@ -26,7 +26,8 @@ class BaseQueryAgent(ABC):
     def manifest(self) -> AgentManifest: ...
 
     @abstractmethod
-    def handle(self, intent: str, params: dict, household_id: str) -> AgentResult: ...
+    def handle(self, intent: str, params: dict, household_id: str,
+               sender_name: str | None = None, sender_phone: str | None = None) -> AgentResult: ...
 
     def as_tool(self) -> dict:
         m = self.manifest

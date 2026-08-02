@@ -168,6 +168,7 @@ def receipt_node(state: HomlyState) -> dict:
 
 def recipe_node(state: HomlyState) -> dict:
     from agents.recipe_agent import analyse_dish_with_pantry
+    from services.shopping_list import add_auto_item
     from supabase import create_client
     db = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
     household_id = state["household_id"]
@@ -186,20 +187,8 @@ def recipe_node(state: HomlyState) -> dict:
         canonical = (ing.get("canonical_name") or ing.get("name") or "").strip().lower()
         if not canonical:
             continue
-        try:
-            db.table("shopping_list").upsert(
-                {
-                    "household_id":   household_id,
-                    "canonical_name": canonical,
-                    "category":       ing.get("category", "other"),
-                    "added_by":       "recipe",
-                    "checked":        False,
-                },
-                on_conflict="household_id,canonical_name",
-            ).execute()
+        if add_auto_item(db, household_id, canonical, category=ing.get("category", "other"), added_by="recipe"):
             added_count += 1
-        except Exception as e:
-            logger.error(f"[recipe_node] shopping list upsert failed for {canonical}: {e}")
 
     result["items_added_to_shopping_list"] = added_count
     return {"agent_results": [{"agent": "recipe", "data": result}]}
@@ -207,7 +196,8 @@ def recipe_node(state: HomlyState) -> dict:
 
 def query_node(state: HomlyState) -> dict:
     from agents.router_agent import run_query
-    qr = run_query(state.get("query", ""), state["household_id"], state.get("context"))
+    qr = run_query(state.get("query", ""), state["household_id"], state.get("context"),
+                   sender_name=state.get("sender_name"), sender_phone=state.get("sender_phone"))
     return {"agent_results": [{"agent": "query", "data": {
         "response": qr.response,
         "sources": qr.sources,
@@ -217,7 +207,8 @@ def query_node(state: HomlyState) -> dict:
 
 def pantry_node(state: HomlyState) -> dict:
     from agents.router_agent import run_query
-    qr = run_query(state.get("query", ""), state["household_id"], state.get("context"))
+    qr = run_query(state.get("query", ""), state["household_id"], state.get("context"),
+                   sender_name=state.get("sender_name"), sender_phone=state.get("sender_phone"))
     return {"agent_results": [{"agent": "pantry", "data": {
         "response": qr.response,
         "sources": qr.sources,

@@ -45,7 +45,8 @@ class SavingsQueryAgent(BaseQueryAgent):
             )
         return self._supabase
 
-    def handle(self, intent: str, params: dict, household_id: str) -> AgentResult:
+    def handle(self, intent: str, params: dict, household_id: str,
+               sender_name: str | None = None, sender_phone: str | None = None) -> AgentResult:
         try:
             if intent == "list_accounts":
                 return self._list_accounts(household_id)

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from supabase import create_client
 
 from agents.base_agent import AgentManifest, AgentResult, BaseQueryAgent
+from services.shopping_list import add_auto_item
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,8 @@ class PantryQueryAgent(BaseQueryAgent):
             )
         return self._supabase
 
-    def handle(self, intent: str, params: dict, household_id: str) -> AgentResult:
+    def handle(self, intent: str, params: dict, household_id: str,
+               sender_name: str | None = None, sender_phone: str | None = None) -> AgentResult:
         try:
             if intent == "add_item":
                 return self._add_item(params, household_id)
@@ -131,7 +133,8 @@ class PantryQueryAgent(BaseQueryAgent):
         }
         self._db().table("pantry_items").upsert(row, on_conflict="household_id,canonical_name").execute()
         if status == "out_of_stock":
-            nl = f"Marked *{name}* as used up. I'll add it to the shopping list next time you scan a recipe that needs it."
+            add_auto_item(self._db(), household_id, name)
+            nl = f"Marked *{name}* as used up and added it to the shopping list."
         else:
             nl = f"Marked *{name}* as running low. It will show up on the shopping list for your next recipe."
         return AgentResult(agent="pantry", handled=True, intent="mark_used" if status == "out_of_stock" else "mark_low",

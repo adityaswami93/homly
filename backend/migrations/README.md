@@ -63,10 +63,18 @@ cd backend
 alembic upgrade head
 ```
 
-Both commands need `SUPABASE_DB_URL` set — the **direct** connection string
-from Supabase dashboard → Settings → Database, not the pooled one (pooled
-connections can drop the session state Alembic's advisory locking relies
-on). This is the same variable the LangGraph checkpointer already uses; see
+Both commands need `SUPABASE_DB_URL` set. Use the **Session pooler**
+connection string from Supabase dashboard → Connect, not the raw "Direct
+connection" one — that hostname (`db.<ref>.supabase.co`) is IPv6-only, which
+most networks (including a typical home Mac) can't resolve, and fails with
+`nodename nor servname provided, or not known` rather than a connection
+error. Session pooler is IPv4-reachable and, unlike **Transaction pooler**
+(the other IPv4 option, port `6543`), gives you a dedicated connection for
+the life of the run — Transaction pooler multiplexes across transactions and
+drops the session-level state Alembic's advisory locking relies on, so it's
+not a substitute here even though it also "works" for simple queries.
+
+This is the same variable the LangGraph checkpointer already uses; see
 `backend/.env.example`.
 
 ## Writing a new migration

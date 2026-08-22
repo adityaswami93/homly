@@ -29,7 +29,8 @@ def _database_url() -> str:
     if not url:
         raise RuntimeError(
             "SUPABASE_DB_URL is not set. Get it from the Supabase dashboard: "
-            "Settings -> Database -> Connection string (direct, not pooled)."
+            "Connect -> Session pooler connection string (see backend/migrations/README.md "
+            "for why Session pooler, not Direct or Transaction pooler)."
         )
     # SQLAlchemy needs an explicit driver in the scheme to pick the psycopg3
     # dialect; Supabase's connection string is plain postgresql://.

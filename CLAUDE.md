@@ -753,8 +753,11 @@ a repeat of the `016`/`017`/`029` collisions is no longer possible.
 `030_pantry_pending_confirmations.sql` is the first migration applied
 through Alembic rather than pasted into the SQL editor by hand.
 
-Requires `SUPABASE_DB_URL` (the **direct**, not pooled, connection string —
-Supabase dashboard → Settings → Database). Migrations are **roll-forward
+Requires `SUPABASE_DB_URL` — use the **Session pooler** connection string
+from Supabase dashboard → Connect (the "Direct connection" hostname is
+IPv6-only and unreachable from most networks; Transaction pooler drops the
+session state Alembic's advisory locking needs — see
+`backend/migrations/README.md`). Migrations are **roll-forward
 only**: every revision's `downgrade()` raises `NotImplementedError` by
 default — write a new migration to fix a mistake rather than reverting one,
 since by the time a revert is needed, real data has usually moved underneath

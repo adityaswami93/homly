@@ -28,7 +28,16 @@ def _week_for_date(d: date) -> tuple[int, int]:
     return iso.week, iso.year
 
 
-def upload_receipt_image(file_bytes: bytes, mime_type: str, household_id: str) -> "str | None":
+def upload_receipt_image(
+    file_bytes: bytes, mime_type: str, household_id: str
+) -> "tuple[str | None, str | None]":
+    """Upload to the `receipts` bucket. Returns (path, error).
+
+    A failure here must not lose the receipt -- the OCR data is the valuable
+    part -- but it is not cosmetic either: the receipt then has no viewable
+    image in the dashboard. Returning the reason keeps that diagnosable
+    instead of vanishing into a log line.
+    """
     try:
         ext = mime_type.split("/")[-1].replace("jpeg", "jpg")
         today = date.today().isoformat()
@@ -39,10 +48,13 @@ def upload_receipt_image(file_bytes: bytes, mime_type: str, household_id: str) -
             file=file_bytes,
             file_options={"content-type": mime_type, "upsert": "false"},
         )
-        return path
+        return path, None
     except Exception as e:
-        logger.warning(f"[receipt_service] image upload failed: {e}")
-        return None
+        logger.error(
+            f"[receipt_service] image upload failed for household {household_id} "
+            f"({mime_type}, {len(file_bytes)} bytes): {e}"
+        )
+        return None, str(e)
 
 
 def save_receipt(
@@ -72,10 +84,14 @@ def save_receipt(
     if settings:
         reimbursable = get_reimbursable(sender_name, sender_phone, settings)
 
-    image_path = upload_receipt_image(image_bytes, mime_type, household_id)
+    image_path, image_error = upload_receipt_image(image_bytes, mime_type, household_id)
     analysis = analyse_receipt(image_bytes, mime_type=mime_type)
 
     if "error" in analysis and "vendor" not in analysis:
+        logger.error(
+            f"[receipt_service] OCR failed for household {household_id} "
+            f"({mime_type}, {len(image_bytes)} bytes): {analysis['error']}"
+        )
         return {"status": "error", "error": analysis["error"], "flagged": True}
 
     receipt_date = date.today()
@@ -168,4 +184,6 @@ def save_receipt(
         "week":       week_num,
         "year":       year,
         "items":      inserted_items,
+        "image_path": image_path,
+        "image_error": image_error,
     }

@@ -144,6 +144,33 @@ async function handleCustomCommand(text, household_id, remoteJid, sock) {
   return true;
 }
 
+// ── Help / capabilities ──────────────────────────────────────
+// Exact phrasings only (like the reminder/custom-command handlers below) —
+// deterministic and reliable, rather than leaving "what can you do" to the
+// LLM to notice and answer well on its own.
+const HELP_RE = /^\/?help$|^what (can|do) you (do|help with)\??$/i;
+
+async function handleHelpCommand(text, remoteJid, sock) {
+  if (!HELP_RE.test(text.trim())) return false;
+  try {
+    const res = await axios.get(`${FASTAPI_URL}/internal/help`, { headers: iHeaders });
+    await sock.sendMessage(remoteJid, { text: res.data?.text || "Sorry, I couldn't load that right now." });
+  } catch (e) {
+    console.error("[bot] handleHelpCommand failed:", e.message);
+    await sock.sendMessage(remoteJid, { text: "Sorry, I couldn't load that right now." });
+  }
+  return true;
+}
+
+// A household member @-mentioning the bot leaves a literal "@<phone> " (or
+// "@<name> ") prefix in the message text, which broke every prefix-based
+// match below (custom commands, /remind, and classify_node's text_query
+// detection in homly_graph.py all check how the string *starts*). Strip any
+// leading mention tokens before those checks run.
+function stripLeadingMentions(text) {
+  return text.replace(/^(@\S+\s*)+/, "").trim();
+}
+
 // ── Reminder helpers ─────────────────────────────────────────
 const REMIND_RE = /^\/remind\s+(.+)/i;
 
@@ -277,15 +304,18 @@ async function handleMessage(msg, sock) {
       return;
     }
   } else {
-    const text =
+    const rawText =
       msg.message?.conversation ||
       msg.message?.extendedTextMessage?.text ||
       msg.message?.ephemeralMessage?.message?.conversation ||
       msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
       "";
-    if (!text.trim()) return;
+    if (!rawText.trim()) return;
+    const text = stripLeadingMentions(rawText);
+    if (!text) return;
 
     // Handle bot commands before forwarding to LangGraph
+    if (await handleHelpCommand(text, remoteJid, sock)) return;
     if (await handleReminderCommand(text, remoteJid, senderJid, senderName, sock)) return;
     if (await handleCustomCommand(text, household_id, remoteJid, sock)) return;
 
@@ -312,7 +342,7 @@ async function handleMessage(msg, sock) {
       await sock.sendMessage(remoteJid, { text: result.data.response });
     } else if (!payload.image_b64 && result.data?.message_type === "unknown") {
       // Text message the graph couldn't classify — forward to webhook as before
-      await forwardText(msg);
+      await forwardText(msg, payload.query);
     }
   } catch (e) {
     await sock.sendPresenceUpdate("paused", remoteJid).catch(() => {});
@@ -350,17 +380,11 @@ async function handleMessage(msg, sock) {
 //   return /^(what|how|when|where|who|which|show|tell|list|find|give|total|summarize|summarise|compare|any|are|is|do|did|have|has)\b/i.test(t);
 // }
 
-async function forwardText(msg) {
+async function forwardText(msg, text) {
   const remoteJid = msg.key.remoteJid;
   const senderJid = msg.key.participant || remoteJid;
-  const text =
-    msg.message?.conversation ||
-    msg.message?.extendedTextMessage?.text ||
-    msg.message?.ephemeralMessage?.message?.conversation ||
-    msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
-    "";
 
-  if (!text.trim()) return;
+  if (!text || !text.trim()) return;
 
   try {
     await axios.post(

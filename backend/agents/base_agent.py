@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -9,6 +9,11 @@ class AgentManifest:
     description: str
     intents: list[dict]   # [{name, description}]
     params_schema: dict   # JSON Schema for the params object
+    # 1-2 example questions in plain WhatsApp-user language, e.g. "how much did
+    # we spend on groceries this month?" — shown to the household in /help
+    # output (see agents/orchestrator/registry.py's build_help_text()). Not
+    # used for routing, purely user-facing documentation.
+    examples: list[str] = field(default_factory=list)
 
 
 @dataclass

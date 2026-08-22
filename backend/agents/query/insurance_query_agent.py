@@ -46,6 +46,7 @@ MANIFEST = AgentManifest(
             },
         },
     },
+    examples=["when does our health insurance renew?", "how much are we paying in premiums this year?"],
 )
 
 

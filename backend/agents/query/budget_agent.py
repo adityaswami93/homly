@@ -47,6 +47,7 @@ MANIFEST = AgentManifest(
             },
         },
     },
+    examples=["how are we doing on our groceries budget this month?", "set our overall budget to 2000 for this month"],
 )
 
 

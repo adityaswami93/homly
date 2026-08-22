@@ -72,6 +72,7 @@ MANIFEST = AgentManifest(
             },
         },
     },
+    examples=["how much did we spend on groceries this month?", "what are our top vendors this week?"],
 )
 
 

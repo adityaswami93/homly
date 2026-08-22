@@ -24,7 +24,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 
 from agents.orchestrator.registry import AGENT_BY_TOOL_NAME
-from services import proactive_notifications
+from services import preferences, proactive_notifications
 from services.llm.factory import get_chat_model
 from services.whatsapp_client import send_text_sync
 
@@ -34,13 +34,14 @@ logger = logging.getLogger(__name__)
 # unattended run. None = every intent on that agent is read-only. An agent
 # not listed here at all is not reachable from the proactive loop.
 _READONLY_INTENTS: dict[str, set[str] | None] = {
-    "query_grocery":   None,
-    "query_insurance": None,
-    "query_savings":   None,
-    "query_reminders": None,
-    "query_pantry":    {"list_items", "check_item"},
-    "query_budgets":   {"budget_status"},
-    "query_tasks":     {"list_today_tasks"},
+    "query_grocery":     None,
+    "query_insurance":   None,
+    "query_savings":     None,
+    "query_reminders":   None,
+    "query_pantry":      {"list_items", "check_item"},
+    "query_budgets":     {"budget_status"},
+    "query_tasks":       {"list_today_tasks"},
+    "query_preferences": {"list"},
 }
 
 _NOTIFY_COOLDOWN_HOURS = 24
@@ -118,16 +119,20 @@ def _readonly_tools() -> list[dict]:
 
 _TOOLS = _readonly_tools() + [_NOTIFY_TOOL, _NO_ACTION_TOOL]
 
-_SYSTEM_PROMPT = (
-    "You are Homly's proactive household monitor, running unprompted on a schedule — nobody has "
-    "asked you anything this run. Check the household's budgets, pantry, insurance, savings, "
-    "reminders, and tasks using the read-only tools available, and decide if anything is worth "
-    "surfacing right now: a budget over or close to its limit, a frequently-used pantry item "
-    "critically low, an insurance policy renewing soon, an unusual price spike, an overdue "
-    "reminder or task. Call notify_household once per distinct finding, with a stable finding_key "
-    "so the same issue isn't repeated every run. Be conservative — most runs should end in "
-    "no_action; only notify for something a household member would actually want pinged about "
-    "right now, not routine state. Call no_action when you're done checking and found nothing."
+_BASE_PROMPT = (
+    "You are Homly, this household's personal assistant, checking in unprompted on a schedule — "
+    "nobody has asked you anything this run. Check the household's budgets, pantry, insurance, "
+    "savings, reminders, tasks, and remembered preferences (query_preferences) using the read-only "
+    "tools available, and decide if anything is worth surfacing right now: a budget over or close "
+    "to its limit, a frequently-used pantry item critically low, an insurance policy renewing soon, "
+    "an unusual price spike, an overdue reminder or task. Weigh what you find against any "
+    "preferences listed below.\n\n"
+    "Call notify_household once per distinct finding, with a stable finding_key so the same issue "
+    "isn't repeated every run. Write the message like you're a household member who happens to "
+    "keep track of this stuff for them, not a monitoring system — warm, brief, plain language, no "
+    "jargon or field labels. Be conservative — most runs should end in no_action; only notify for "
+    "something a household member would actually want pinged about right now, not routine state. "
+    "Call no_action when you're done checking and found nothing."
 )
 
 
@@ -137,6 +142,17 @@ class ProactiveState(TypedDict):
     messages: Annotated[list, add_messages]
     iterations: int
     notified: Annotated[list[str], add]
+
+
+def _build_system_prompt(household_id: str) -> str:
+    prompt = _BASE_PROMPT
+    # Only household-wide preferences apply here — this run isn't addressed to
+    # any one person, so a personal preference (sender_phone set) wouldn't mean
+    # anything in a message sent to the whole group.
+    prefs_text = preferences.format_for_prompt(preferences.get_preferences(household_id))
+    if prefs_text:
+        prompt += f"\n\nRemembered preferences:\n{prefs_text}"
+    return prompt
 
 
 def agent_node(state: ProactiveState) -> dict:
@@ -239,7 +255,7 @@ class ProactiveResult:
 
 def run_proactive_check(household_id: str, group_jid: str) -> ProactiveResult:
     messages = [
-        SystemMessage(content=_SYSTEM_PROMPT),
+        SystemMessage(content=_build_system_prompt(household_id)),
         HumanMessage(content="Run today's household check."),
     ]
     result = _graph.invoke(

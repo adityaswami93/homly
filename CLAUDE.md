@@ -75,8 +75,10 @@ homly/
 │   │   ├── orchestrator/           # Chat-query supervisor: registry.py's AGENTS list is the
 │   │   │                           #   extensibility point — add an agent there and it's routable
 │   │   └── query/                  # One BaseQueryAgent per domain (pantry, insurance, savings,
-│   │       └── tasks_agent.py      #   grocery, tasks) — tasks_agent.py handles chore assignment,
-│   │                               #   completion, shopping-list adds, and leave requests via chat
+│   │       └── tasks_agent.py      #   grocery, budgets, reminders, tasks) — tasks_agent.py handles
+│   │                               #   chore assignment, completion, shopping-list adds, and leave
+│   │                               #   requests via chat; budget_agent.py compares spend to monthly
+│   │                               #   budget targets; reminders_agent.py lists upcoming reminders
 │   ├── services/
 │   │   ├── llm_client.py           # Facade: get_completion(), get_vision_completion()
 │   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook

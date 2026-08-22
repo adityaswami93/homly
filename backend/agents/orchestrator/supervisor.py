@@ -15,8 +15,8 @@ from services.llm.factory import get_chat_model
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
-    "You are a household assistant with tools for expenses, insurance, pantry, and "
-    "savings. Call a tool, look at what it returns, and call another tool if you need "
+    "You are a household assistant with tools for expenses, insurance, pantry, "
+    "savings, budgets, reminders, and chores/tasks. Call a tool, look at what it returns, and call another tool if you need "
     "more information before answering — chain lookups when a question depends on more "
     "than one domain (e.g. checking savings against an upcoming insurance renewal). Call "
     "multiple tools in the same turn only when they don't depend on each other's results. "

@@ -8,8 +8,14 @@ calls op.execute() directly, reading its own backend/migrations/*.sql file.
 import os
 from logging.config import fileConfig
 
+from dotenv import load_dotenv
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+
+# Alembic runs as its own standalone process, not through api/main.py's
+# startup — nothing else loads backend/.env into this process, unlike every
+# other entrypoint in this repo (api/main.py, the agents, mcp_server/server.py).
+load_dotenv()
 
 config = context.config
 if config.config_file_name is not None:

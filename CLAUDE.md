@@ -78,16 +78,21 @@ homly/
 │   │   │                           #   schedule instead of in response to a message — see Proactive
 │   │   │                           #   Household Monitor flow below
 │   │   └── query/                  # One BaseQueryAgent per domain (pantry, insurance, savings,
-│   │       └── tasks_agent.py      #   grocery, budgets, reminders, tasks) — tasks_agent.py handles
-│   │                               #   chore assignment, completion, shopping-list adds, and leave
-│   │                               #   requests via chat; budget_agent.py compares spend to monthly
-│   │                               #   budget targets; reminders_agent.py lists upcoming reminders
+│   │       └── tasks_agent.py      #   grocery, budgets, reminders, tasks, preferences) — tasks_agent.py
+│   │                               #   handles chore assignment, completion, shopping-list adds, and leave
+│   │                               #   requests via chat; budget_agent.py compares spend to monthly budget
+│   │                               #   targets; reminders_agent.py lists upcoming reminders;
+│   │                               #   preferences_agent.py remembers/lists/forgets standing
+│   │                               #   household- or person-scoped preferences (services/preferences.py)
 │   ├── services/
 │   │   ├── llm_client.py           # Facade: get_completion(), get_vision_completion()
 │   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook
 │   │   ├── receipts.py             # compute_category_totals() — shared item-category aggregation
 │   │   ├── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
 │   │   ├── pantry_confirmations.py # pending "add these to your pantry?" prompts, keyed by group_jid
+│   │   ├── preferences.py          # get/upsert/delete_preference() + format_for_prompt() — folded into
+│   │   │                           #   both orchestrator/supervisor.py's and proactive_agent.py's system
+│   │   │                           #   prompts on every run; backs agents/query/preferences_agent.py
 │   │   ├── proactive_notifications.py  # dedup log for proactive_agent.py's notify_household tool —
 │   │   │                           #   was_recently_notified()/record_notified(), keyed by finding_key
 │   │   ├── mcp_auth.py             # generate_key()/hash_key()/SCOPE — shared by mcp_keys.py and mcp_data.py
@@ -116,7 +121,8 @@ homly/
 │   │   ├── 030_household_tasks.sql # chores, chore_logs, helper_leave_requests, helper_profile;
 │   │   │                           #   extends shopping_list.added_by to include 'helper'
 │   │   ├── 030_pantry_pending_confirmations.sql  # open "add to pantry?" prompts, keyed by group_jid
-│   │   └── 031_proactive_notifications.sql  # dedup log for the proactive monitor's notify_household tool
+│   │   ├── 031_proactive_notifications.sql  # dedup log for the proactive monitor's notify_household tool
+│   │   └── 032_household_preferences.sql    # standing household/personal preferences, see services/preferences.py
 │   ├── alembic.ini
 │   ├── requirements.txt
 │   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)
@@ -406,6 +412,14 @@ already registered in `agents/orchestrator/registry.py` becomes available here j
 adding its tool name (and, if the agent has writes too, the specific read intent names)
 to `_READONLY_INTENTS`.
 
+Both this loop's and the chat supervisor's system prompts are built per-run (not a
+static string) — `_build_system_prompt()` in each folds in the household's remembered
+preferences (`services/preferences.py`), and the chat supervisor's also folds in the
+sender's name, so responses read like a household assistant that knows who it's
+talking to rather than a stateless data lookup. `agents/query/preferences_agent.py`
+is how a household member adds to that memory ("remember I don't eat pork") — it's a
+normal registered agent, callable like any other from either loop.
+
 ### QR Code Regeneration Flow
 
 ```
@@ -550,6 +564,23 @@ single lookup rather than scanning history.
 | household_id | UUID (FK → households) | |
 | finding_key | TEXT | Stable identifier the agent chooses, e.g. `budget_over:groceries:2026-08` |
 | last_notified_at | TIMESTAMPTZ | Upserted on every send; checked against a 24h cooldown |
+
+### `household_preferences`
+Standing preferences the household or an individual member has told the bot to
+remember (`services/preferences.py`) — folded into `orchestrator/supervisor.py`'s
+and `proactive_agent.py`'s system prompts every run so the assistant doesn't start
+cold. No DB-level unique constraint — `sender_phone IS NULL` (household-wide) rows
+are deduped by an explicit check-then-write in `upsert_preference()` instead, since
+a plain `UNIQUE` treats every `NULL` as distinct.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| sender_phone | TEXT (nullable) | NULL = applies to the whole household; else scoped to that person |
+| key | TEXT | Short label, e.g. `diet`, `reminder_lead_time` |
+| value | TEXT | The preference itself |
+| created_at / updated_at | TIMESTAMPTZ | |
 
 ### `api_keys`
 Generic per-household bearer-key table, not MCP-specific — `scope` distinguishes

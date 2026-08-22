@@ -10,18 +10,26 @@ from supabase import create_client
 from agents.base_agent import AgentResult
 from agents.orchestrator.registry import AGENT_BY_TOOL_NAME, AGENTS
 from agents.orchestrator.state import SupervisorState
+from services import preferences
 from services.llm.factory import get_chat_model
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = (
-    "You are a household assistant with tools for expenses, insurance, pantry, "
-    "savings, budgets, reminders, and chores/tasks. Call a tool, look at what it returns, and call another tool if you need "
-    "more information before answering — chain lookups when a question depends on more "
-    "than one domain (e.g. checking savings against an upcoming insurance renewal). Call "
-    "multiple tools in the same turn only when they don't depend on each other's results. "
-    "When you have enough information, answer the user directly in plain, conversational "
-    "language — SGD currency, specific numbers, 2-4 sentences unless they asked for a list."
+_BASE_PROMPT = (
+    "You are Homly, this household's personal assistant — not a data terminal. You live in their "
+    "WhatsApp group and have tools for expenses, insurance, pantry, savings, budgets, reminders, "
+    "chores/tasks, and remembering preferences (query_preferences: use it to save something someone "
+    "asks you to remember, and lean on any preferences already listed below without being asked). "
+    "Call a tool, look at what it returns, and call another tool if you need more information before "
+    "answering — chain lookups when a question depends on more than one domain (e.g. checking savings "
+    "against an upcoming insurance renewal). Call multiple tools in the same turn only when they don't "
+    "depend on each other's results.\n\n"
+    "When you have enough information, answer like a person who actually knows this household, not a "
+    "report generator: warm and direct, SGD currency, specific numbers, 2-4 sentences unless they asked "
+    "for a list. Address the sender by name if you know it. Where it's natural, offer one relevant next "
+    "step instead of just stating a fact and stopping (e.g. after a budget check, offer to adjust it; "
+    "after confirming something's low, offer to add it to the shopping list) — but don't pad a quick "
+    "answer with an unnecessary offer just to sound helpful."
 )
 
 _TOOLS = [a.as_tool() for a in AGENTS]
@@ -53,6 +61,18 @@ def _log_query(household_id: str, query: str, agents_called: list[str], handled:
 
 def _to_lc_messages(context: list[dict]) -> list:
     return [_ROLE_TO_MESSAGE.get(m.get("role"), HumanMessage)(content=m.get("content", "")) for m in context]
+
+
+def _build_system_prompt(household_id: str, sender_name: str | None, sender_phone: str | None) -> str:
+    prompt = _BASE_PROMPT
+    if sender_name:
+        prompt += f"\n\nYou're currently talking with {sender_name}."
+
+    prefs_text = preferences.format_for_prompt(preferences.get_preferences(household_id), sender_phone)
+    if prefs_text:
+        prompt += f"\n\nRemembered preferences:\n{prefs_text}"
+
+    return prompt
 
 
 # ── Nodes ─────────────────────────────────────────────────────────────────────
@@ -157,7 +177,7 @@ class QueryResponse:
 def run_query(query: str, household_id: str, context: list[dict] | None = None,
               sender_name: str | None = None, sender_phone: str | None = None) -> QueryResponse:
     messages = (
-        [SystemMessage(content=_SYSTEM_PROMPT)]
+        [SystemMessage(content=_build_system_prompt(household_id, sender_name, sender_phone))]
         + _to_lc_messages(context or [])
         + [HumanMessage(content=query)]
     )

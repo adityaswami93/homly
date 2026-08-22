@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone as tz
 from operator import add
 from typing import Annotated, Optional, TypedDict
@@ -90,6 +91,16 @@ _PAYMENT_EXACT = frozenset({
     "paid up", "settled", "yes paid", "done paying", "payment settled",
 })
 
+# WhatsApp renders an @mention with the contact's display name, but the raw
+# message text carries it as "@<phone_number>" — strip any leading run of
+# these before classifying, or a message like "@6591234567 what's in pantry"
+# fails every prefix/suffix heuristic below and falls through to "unknown".
+_MENTION_PREFIX_RE = re.compile(r"^(?:@\S+\s*)+")
+
+
+def _strip_mention_prefix(text: str) -> str:
+    return _MENTION_PREFIX_RE.sub("", text or "").strip()
+
 
 def _classify_text(text: str) -> str:
     t = text.strip().lower().rstrip("!.✓ ")
@@ -175,12 +186,13 @@ def classify_node(state: HomlyState) -> dict:
             return {"message_type": mapping.get(img_type, "unknown")}
 
         if state.get("query"):
+            query = _strip_mention_prefix(state["query"])
             pending = _load_pending(state)
             if pending and _looks_like_confirmation(
-                state["query"], pending.get("candidates") or []
+                query, pending.get("candidates") or []
             ):
-                return {"message_type": "pantry_confirmation"}
-            return {"message_type": _classify_text(state["query"])}
+                return {"message_type": "pantry_confirmation", "query": query}
+            return {"message_type": _classify_text(query), "query": query}
 
         return {"message_type": "unknown"}
 

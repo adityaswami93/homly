@@ -6,7 +6,6 @@ from operator import add
 from typing import Annotated, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
-from langgraph.types import interrupt
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +104,44 @@ def _classify_text(text: str) -> str:
     return "unknown"
 
 
+_CONFIRM_YES = frozenset({"yes", "y", "ok", "okay", "yeah", "sure", "yep", "yup", "all"})
+_CONFIRM_NO  = frozenset({"no", "n", "nope", "skip", "nah", "none"})
+
+
+def _load_pending(state: "HomlyState") -> Optional[dict]:
+    """The live pantry prompt for this group, if any."""
+    group_jid = state.get("group_jid")
+    if not group_jid:
+        return None
+    try:
+        from services.pantry_confirmations import get_pending
+        return get_pending(state["household_id"], group_jid)
+    except Exception as e:
+        logger.error(f"[_load_pending] lookup failed: {e}")
+        return None
+
+
+def _looks_like_confirmation(reply: str, candidates: list) -> bool:
+    """True if `reply` reads as an answer to "add these items to your pantry?".
+
+    Deliberately narrow: a pending prompt must not swallow an unrelated
+    question someone happens to send while it is open.
+    """
+    r = (reply or "").strip().lower().rstrip("!.✓ ")
+    if not r:
+        return False
+    if r in _CONFIRM_YES or r in _CONFIRM_NO:
+        return True
+    parts = [p.strip() for p in r.split(",") if p.strip()]
+    if parts and all(p.isdigit() for p in parts):
+        return True
+    # Naming the items back is an answer ("paneer" / "paneer, tomato"), but
+    # match whole comma-separated parts only. A loose substring test lets a
+    # candidate like "tea" fire on "what's the weather" and hijack the message.
+    names = {(c.get("canonical_name") or "").lower() for c in candidates if c.get("canonical_name")}
+    return any(p in names for p in parts)
+
+
 def classify_node(state: HomlyState) -> dict:
     try:
         if state.get("image_bytes"):
@@ -138,6 +175,11 @@ def classify_node(state: HomlyState) -> dict:
             return {"message_type": mapping.get(img_type, "unknown")}
 
         if state.get("query"):
+            pending = _load_pending(state)
+            if pending and _looks_like_confirmation(
+                state["query"], pending.get("candidates") or []
+            ):
+                return {"message_type": "pantry_confirmation"}
             return {"message_type": _classify_text(state["query"])}
 
         return {"message_type": "unknown"}
@@ -280,6 +322,7 @@ def extract_pantry_candidates_node(state: HomlyState) -> dict:
 
 def send_pantry_confirmation_node(state: HomlyState) -> dict:
     from services.whatsapp_client import send_text_sync
+    from services.pantry_confirmations import save_pending
 
     candidates = state.get("pantry_candidates") or []
     receipt_category = state.get("receipt_category")
@@ -314,29 +357,58 @@ def send_pantry_confirmation_node(state: HomlyState) -> dict:
         message = f"{header}\n\nAdd these items to your pantry?\n\n{lines}{footer}"
 
     group_jid = state.get("group_jid")
+
+    # Record the prompt before sending it, so a reply that arrives while this
+    # request is still in flight still finds it.
+    saved = save_pending(
+        household_id=state["household_id"],
+        group_jid=group_jid,
+        candidates=candidates,
+        source="fridge_scan" if receipt_category == "fridge_scan" else "receipt",
+        receipt_id=state.get("receipt_id"),
+    )
+
     if group_jid:
         send_text_sync(group_jid, message)
 
-    interrupt({"waiting_for": "pantry_confirmation", "group_jid": group_jid})
+    if group_jid and not saved:
+        # We asked the group a question we have nowhere to record, so their
+        # reply will not be actionable. Loud, because it is silent in the chat.
+        logger.error(
+            f"[send_pantry_confirmation_node] could not persist pending prompt "
+            f"for {group_jid} — the group's pantry reply will be ignored"
+        )
 
-    return {"pantry_confirmation_pending": False}
+    # The run ends here. The reply arrives as its own WhatsApp message and is
+    # routed back in through classify_node -> resume_from_confirmation.
+    return {"pantry_confirmation_pending": saved}
 
 
 def resume_from_confirmation_node(state: HomlyState) -> dict:
     candidates = state.get("pantry_candidates") or []
+    pending = _load_pending(state)
+    if not candidates and pending:
+        candidates = pending.get("candidates") or []
+
+    # Answered (either way) — retire the prompt so a later "yes" cannot
+    # re-add the same items.
+    if pending:
+        from services.pantry_confirmations import clear_pending
+        clear_pending(state["household_id"], state.get("group_jid"))
+
     reply = (state.get("query") or "").strip().lower()
 
-    if not reply or reply in ("yes", "y", "ok", "yeah", "sure", "yep", "yup"):
-        return {"confirmed_items": list(candidates)}
+    if not reply or reply in _CONFIRM_YES:
+        return {"pantry_candidates": candidates, "confirmed_items": list(candidates)}
 
-    if reply in ("no", "n", "nope", "skip", "nah"):
-        return {"confirmed_items": []}
+    if reply in _CONFIRM_NO:
+        return {"pantry_candidates": candidates, "confirmed_items": []}
 
     # Comma-separated numbers
     if all(part.strip().isdigit() for part in reply.split(",") if part.strip()):
         indices = [int(p.strip()) - 1 for p in reply.split(",") if p.strip().isdigit()]
         selected = [candidates[i] for i in indices if 0 <= i < len(candidates)]
-        return {"confirmed_items": selected}
+        return {"pantry_candidates": candidates, "confirmed_items": selected}
 
     # Fuzzy name match
     tokens = [t.strip() for t in reply.split(",")]
@@ -345,10 +417,10 @@ def resume_from_confirmation_node(state: HomlyState) -> dict:
         if any(t in c["canonical_name"] or c["canonical_name"] in t for t in tokens)
     ]
     if selected:
-        return {"confirmed_items": selected}
+        return {"pantry_candidates": candidates, "confirmed_items": selected}
 
     # Unrecognised — bias toward adding all
-    return {"confirmed_items": list(candidates)}
+    return {"pantry_candidates": candidates, "confirmed_items": list(candidates)}
 
 
 def update_pantry_node(state: HomlyState) -> dict:
@@ -678,6 +750,7 @@ _builder.add_conditional_edges("classify", route_by_type, {
     "pantry_command": "pantry",
     "fridge_scan": "fridge_scan",
     "payment_confirmation": "payment_confirm",
+    "pantry_confirmation": "resume_from_confirmation",
     "unknown": END,
 })
 
@@ -693,8 +766,9 @@ _builder.add_conditional_edges(
     },
 )
 
-# Pantry confirmation path (resumes after interrupt)
-_builder.add_edge("send_pantry_confirmation", "resume_from_confirmation")
+# Asking ends this run — the group's reply arrives as its own WhatsApp message
+# and re-enters at classify -> resume_from_confirmation.
+_builder.add_edge("send_pantry_confirmation", END)
 _builder.add_edge("resume_from_confirmation", "update_pantry")
 _builder.add_edge("update_pantry", "confirm_to_user")
 _builder.add_edge("confirm_to_user", "synthesise")

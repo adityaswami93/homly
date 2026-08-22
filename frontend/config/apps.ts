@@ -6,7 +6,7 @@ export interface NavItem {
 export interface App {
   id: string;
   label: string;
-  icon: "home" | "credit-card" | "shield" | "settings" | "admin" | "piggy-bank";
+  icon: "home" | "credit-card" | "shield" | "settings" | "admin" | "piggy-bank" | "tasks";
   color: string;
   accent: string;
   href: string;
@@ -74,6 +74,20 @@ export const apps: App[] = [
     actionLabel: "Add Account",
   },
   {
+    id: "chores",
+    label: "Chores",
+    icon: "tasks",
+    color: "#10B981",
+    accent: "#064E3B",
+    href: "/chores",
+    nav: [
+      { label: "Today", href: "/chores" },
+      { label: "History", href: "/chores/history" },
+      { label: "Leave", href: "/chores/leave" },
+    ],
+    actionLabel: "Add Task",
+  },
+  {
     id: "admin",
     label: "Admin",
     icon: "admin",
@@ -89,6 +103,7 @@ export const apps: App[] = [
 
 export function getActiveApp(pathname: string): App | null {
   if (pathname.startsWith("/admin")) return apps.find((a) => a.id === "admin") ?? null;
+  if (pathname.startsWith("/chores")) return apps.find((a) => a.id === "chores") ?? null;
   if (pathname.startsWith("/insurance")) return apps.find((a) => a.id === "insurance") ?? null;
   if (pathname.startsWith("/savings")) return apps.find((a) => a.id === "savings") ?? null;
   if (pathname.startsWith("/expenses")) return apps.find((a) => a.id === "expenses") ?? null;

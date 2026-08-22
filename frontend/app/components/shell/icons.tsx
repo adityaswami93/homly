@@ -77,11 +77,23 @@ export function PiggyBankIcon({ className = "w-5 h-5" }: { className?: string })
   );
 }
 
+export function TasksIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path
+        fillRule="evenodd"
+        d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm3.707 5.293a1 1 0 00-1.414-1.414L7 7.172l-.293-.293a1 1 0 00-1.414 1.414l1 1a1 1 0 001.414 0l2-2zM6 12a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h4a1 1 0 100-2H7z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 export function AppIcon({
   icon,
   className,
 }: {
-  icon: "home" | "credit-card" | "shield" | "settings" | "admin" | "piggy-bank";
+  icon: "home" | "credit-card" | "shield" | "settings" | "admin" | "piggy-bank" | "tasks";
   className?: string;
 }) {
   switch (icon) {
@@ -91,5 +103,6 @@ export function AppIcon({
     case "settings":    return <SettingsIcon className={className} />;
     case "admin":       return <AdminIcon className={className} />;
     case "piggy-bank":  return <PiggyBankIcon className={className} />;
+    case "tasks":       return <TasksIcon className={className} />;
   }
 }

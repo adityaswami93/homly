@@ -9,6 +9,8 @@ from supabase import create_client
 from datetime import datetime, timezone
 import logging
 
+from services.shopping_list import add_auto_item
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -109,6 +111,8 @@ def update_pantry_item(canonical_name_encoded: str, request: Request, body: dict
         .eq("canonical_name", canonical_name)
         .execute()
     )
+    if updates.get("status") == "out_of_stock":
+        add_auto_item(_db(), household_id, canonical_name)
     return res.data[0]
 
 

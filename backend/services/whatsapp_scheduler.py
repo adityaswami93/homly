@@ -6,6 +6,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from supabase import create_client
 
+from services.chores import chore_due_today
+from services.llm_client import get_completion
 from services.whatsapp_client import send_text
 
 logger = logging.getLogger(__name__)
@@ -74,6 +76,75 @@ async def _check_insurance_renewals():
             logger.error(f"[scheduler] Renewal check failed for {target_date}: {e}")
 
 
+def _compose_daily_tasks_message(chores: list[dict]) -> str:
+    lines = [c["title"] + (f" — {c['notes']}" if c.get("notes") else "") for c in chores]
+    try:
+        prompt = "Today's pending chores:\n" + "\n".join(f"- {l}" for l in lines)
+        composed = get_completion(
+            prompt,
+            system=(
+                "You are Homly's household assistant messaging a family's WhatsApp group each "
+                "morning to brief the helper on today's tasks. Be warm, concise (under 80 words), "
+                "and list the tasks clearly with a short friendly opener and closer."
+            ),
+        )
+        return composed.strip()
+    except Exception as e:
+        logger.error(f"[scheduler] LLM compose failed, falling back to plain list: {e}")
+        return "🧹 *Today's Tasks*\n\n" + "\n".join(f"- {l}" for l in lines)
+
+
+async def _send_daily_tasks():
+    logger.info("[scheduler] Checking daily household tasks...")
+    today = date.today()
+    try:
+        chores = (_db().table("chores").select("*").eq("active", True).execute()).data or []
+    except Exception as e:
+        logger.error(f"[scheduler] Failed to load chores: {e}")
+        return
+
+    by_household: dict[str, list] = {}
+    for c in chores:
+        if chore_due_today(c, today):
+            by_household.setdefault(c["household_id"], []).append(c)
+
+    for household_id, due_chores in by_household.items():
+        try:
+            chore_ids = [c["id"] for c in due_chores]
+            logs = (
+                _db().table("chore_logs").select("chore_id")
+                .eq("household_id", household_id).eq("log_date", today.isoformat())
+                .in_("chore_id", chore_ids)
+                .execute()
+            ).data or []
+            logged_ids = {l["chore_id"] for l in logs}
+            pending = [c for c in due_chores if c["id"] not in logged_ids]
+            if not pending:
+                continue
+
+            settings_res = (
+                _db().table("settings").select("group_jid")
+                .eq("household_id", household_id).limit(1).execute()
+            )
+            group_jid = settings_res.data[0].get("group_jid") if settings_res.data else None
+            if not group_jid:
+                continue
+
+            profile_res = (
+                _db().table("helper_profile").select("off_days")
+                .eq("household_id", household_id).limit(1).execute()
+            )
+            off_days = (profile_res.data[0].get("off_days") or []) if profile_res.data else []
+            if today.weekday() in off_days:
+                continue
+
+            msg = _compose_daily_tasks_message(pending)
+            await send_text(group_jid, msg)
+            logger.info(f"[scheduler] Daily tasks sent to {group_jid}")
+        except Exception as e:
+            logger.error(f"[scheduler] Daily tasks failed for household {household_id}: {e}")
+
+
 def refresh_summaries(scheduler: AsyncIOScheduler):
     """Load all household settings and reschedule weekly summary jobs."""
     try:
@@ -120,6 +191,13 @@ def create_scheduler() -> AsyncIOScheduler:
         _check_insurance_renewals,
         CronTrigger(hour=9, minute=0, timezone="Asia/Singapore"),
         id="insurance_renewals",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        _send_daily_tasks,
+        CronTrigger(hour=7, minute=0, timezone="Asia/Singapore"),
+        id="daily_tasks",
         replace_existing=True,
     )
 

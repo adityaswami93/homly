@@ -95,9 +95,19 @@ def save_receipt(
         return {"status": "error", "error": analysis["error"], "flagged": True}
 
     receipt_date = date.today()
+    date_note = None
     if analysis.get("date"):
         try:
-            receipt_date = date.fromisoformat(analysis["date"])
+            parsed_date = date.fromisoformat(analysis["date"])
+            today = date.today()
+            if parsed_date > today or parsed_date < today.replace(year=today.year - 2):
+                date_note = (
+                    f"OCR date suspicious (read as {parsed_date.isoformat()}), "
+                    f"defaulted to upload date"
+                )
+                analysis["flagged"] = True
+            else:
+                receipt_date = parsed_date
         except ValueError:
             pass
 
@@ -113,7 +123,8 @@ def save_receipt(
         "total":               analysis.get("total"),
         "currency":            analysis.get("currency", "SGD"),
         "confidence":          analysis.get("confidence", "medium"),
-        "notes":               analysis.get("notes"),
+        "notes":               f"{analysis['notes']}; {date_note}" if analysis.get("notes") and date_note
+                               else date_note or analysis.get("notes"),
         "whatsapp_message_id": whatsapp_message_id,
         "week_number":         week_num,
         "year":                year,

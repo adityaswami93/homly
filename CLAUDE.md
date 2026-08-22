@@ -78,7 +78,12 @@ homly/
 │   │   ├── mcp_auth.py             # generate_key()/hash_key()/SCOPE — shared by mcp_keys.py and mcp_data.py
 │   │   └── mcp_queries.py          # the actual data fetching behind every MCP tool — shared by mcp_data.py
 │   │                               # (HTTP, for the local stdio server) and mcp_server/remote.py (in-process)
-│   ├── migrations/
+│   ├── alembic/                    # Migration runner — see backend/migrations/README.md
+│   │   ├── env.py                  # reads SUPABASE_DB_URL, no ORM target_metadata (pure-SQL migrations)
+│   │   ├── script.py.mako          # template for `alembic revision`; downgrade() raises by default
+│   │   └── versions/               # one revision per file below, chained by explicit parent pointer
+│   ├── migrations/                 # source-of-truth .sql, applied via `alembic upgrade head`, not by hand
+│   │   ├── README.md               # why Alembic, how to adopt it on an existing DB, how to add a migration
 │   │   ├── 001_homly.sql           # Base schema: receipts, items, weekly views
 │   │   ├── 002_soft_delete.sql     # deleted flag on receipts
 │   │   ├── 003_settings.sql        # settings table per household
@@ -88,6 +93,7 @@ homly/
 │   │   ├── 013_reimbursement.sql   # reimbursable flag on receipts, reimbursements table, settings columns
 │   │   ├── 014_image_storage.sql   # image_path on receipts, Supabase Storage
 │   │   └── 015_insurance_policies.sql  # insurance_policies table with RLS
+│   ├── alembic.ini
 │   └── requirements.txt
 ├── frontend/
 │   ├── config/
@@ -611,7 +617,9 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 ```bash
 cd backend
 pip install -r requirements.txt
-# Create backend/.env with SUPABASE_URL, SUPABASE_KEY, INTERNAL_KEY, OPENROUTER_API_KEY
+# Create backend/.env with SUPABASE_URL, SUPABASE_KEY, INTERNAL_KEY, OPENROUTER_API_KEY,
+# and SUPABASE_DB_URL (direct connection string — needed for `alembic upgrade head`)
+alembic upgrade head    # apply migrations — see backend/migrations/README.md
 uvicorn api.main:app --reload --port 8000
 ```
 
@@ -725,23 +733,43 @@ Receipts use `deleted: boolean`; insurance policies use `is_active: boolean`. Al
 
 ## Migrations
 
-Run migrations manually in Supabase SQL editor in order:
+Schema changes run through **Alembic** (`backend/alembic/`), not by hand —
+see `backend/migrations/README.md` for the full writeup, including why this
+changed (numbering collisions — four files were prefixed `016_`, two `017_`,
+two `029_` — and a real silent-failure bug that fell out of applying
+migrations with no ledger of what had actually run).
 
-```
-001_homly.sql          → base schema
-002_soft_delete.sql    → deleted flag
-003_settings.sql       → settings table
-004_sender.sql         → sender fields on receipts
-006_multi_tenant.sql   → households, members, invites + backfill
-007_group_jid.sql      → group_jid on settings, user_id nullable on receipts
-013_reimbursement.sql  → reimbursable flag on receipts, reimbursements table, settings columns
-014_image_storage.sql  → image_path on receipts, Supabase Storage
-015_insurance_policies.sql  → insurance_policies table + RLS + index
-030_pantry_pending_confirmations.sql → pantry_pending_confirmations table (one open prompt per group_jid)
+```bash
+cd backend
+alembic upgrade head                     # apply any unapplied migrations
+alembic revision -m "add foo to bar"     # start a new one
 ```
 
-> There is no migration runner — apply each file manually. Files are idempotent (`IF NOT EXISTS`, `IF NOT NULL`).
+The original `backend/migrations/*.sql` files (`001` through `029`) are kept
+unchanged as the source of truth; each has a thin Alembic revision under
+`backend/alembic/versions/` that does nothing but `op.execute()` that file's
+contents, chained by explicit parent pointer instead of filename number — so
+a repeat of the `016`/`017`/`029` collisions is no longer possible.
+`030_pantry_pending_confirmations.sql` is the first migration applied
+through Alembic rather than pasted into the SQL editor by hand.
 
-> The list above is illustrative, not exhaustive — run `ls backend/migrations` to see the current full set before assuming this is everything.
+Requires `SUPABASE_DB_URL` — use the **Session pooler** connection string
+from Supabase dashboard → Connect (the "Direct connection" hostname is
+IPv6-only and unreachable from most networks; Transaction pooler drops the
+session state Alembic's advisory locking needs — see
+`backend/migrations/README.md`). Migrations are **roll-forward
+only**: every revision's `downgrade()` raises `NotImplementedError` by
+default — write a new migration to fix a mistake rather than reverting one,
+since by the time a revert is needed, real data has usually moved underneath
+the schema it would be reverting.
 
-**Before adding a new migration file, run `ls backend/migrations` and pick the next unused number.** Nothing enforces numbering, and the repo already has collisions from skipping this check — four different files are prefixed `016_`, two are prefixed `017_`. A reused prefix makes it unclear which migration actually ran first or is safe to re-apply.
+**A migration that removes or narrows anything — drops a column, tightens a
+CHECK constraint, removes an enum value — must stay compatible with
+whatever the currently-running code still writes or reads.** Code and
+schema don't deploy atomically; during a rolling deploy, old and new code
+run against the same database at once. `026_pantry_fridge_source.sql`
+narrowed the `pantry_items.added_by` CHECK constraint and dropped `'bot'`
+while `pantry_agent.py` was still writing `added_by = 'bot'` on every
+WhatsApp pantry update — every one of those upserts then failed silently
+until `029_pantry_bot_source.sql` restored it. Grep for what still writes or
+reads a value before a migration stops allowing it.

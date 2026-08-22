@@ -74,6 +74,7 @@ homly/
 │   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook
 │   │   ├── receipts.py             # compute_category_totals() — shared item-category aggregation
 │   │   ├── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
+│   │   ├── pantry_confirmations.py # pending "add these to your pantry?" prompts, keyed by group_jid
 │   │   ├── mcp_auth.py             # generate_key()/hash_key()/SCOPE — shared by mcp_keys.py and mcp_data.py
 │   │   └── mcp_queries.py          # the actual data fetching behind every MCP tool — shared by mcp_data.py
 │   │                               # (HTTP, for the local stdio server) and mcp_server/remote.py (in-process)
@@ -252,6 +253,38 @@ server-to-server secret with access to every household) — revoking one takes
 effect on the very next request on either transport. See
 `backend/mcp_server/README.md` for setup.
 
+### Pantry Confirmation Flow (grocery receipts + fridge scans)
+
+Do **not** reintroduce LangGraph's `interrupt()` here. It was used originally on
+the assumption that the next `g.invoke(state, config)` on the same `thread_id`
+would resume the suspended run — it does not; invoking with a fresh input dict
+starts a new run from the entry point, so `resume_from_confirmation_node` was
+unreachable. `interrupt()` also requires a checkpointer, and `get_graph()`
+silently falls back to a stateless graph when `SUPABASE_DB_URL` is unset, where
+it raises *after* the prompt has already been queued — the group saw the item
+list and then nothing.
+
+The prompt and the reply are two independent graph runs, joined by a row in
+`pantry_pending_confirmations`:
+
+```
+Grocery receipt (or fridge scan) saved
+    ↓
+extract_pantry_candidates → send_pantry_confirmation
+    ↓  save_pending(group_jid, candidates)   ← persisted BEFORE the message goes out
+    ↓  send_text_sync("Add these items to your pantry?")
+    ↓  END — this run is finished
+
+...group replies "yes" / "no" / "1,3,5" / an item name...
+    ↓
+classify_node: a live pending row for this group_jid + the text reads like an
+    answer (_looks_like_confirmation) → message_type = "pantry_confirmation"
+    ↓  an unrelated question while a prompt is open falls through to normal
+    ↓  classification instead of being swallowed as an answer
+resume_from_confirmation (reads candidates from the row, clears it)
+    → update_pantry → confirm_to_user → synthesise
+```
+
 ### Weekly Summary Flow
 
 ```
@@ -377,6 +410,24 @@ Frontend polling picks up new QR within 3s
 | is_active | BOOLEAN | DEFAULT true, soft-delete |
 | created_by | UUID (FK → auth.users) | |
 | created_at / updated_at | TIMESTAMPTZ | |
+
+### `pantry_pending_confirmations`
+Holds the "add these items to your pantry?" prompt while the WhatsApp group is
+answering it. The bot makes one stateless HTTP request per message, so the
+question and its reply are two separate graph runs — this row is what connects
+them. `UNIQUE(group_jid)` means a newer receipt supersedes an unanswered older
+prompt, matching what the group sees in the chat.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| group_jid | TEXT (UNIQUE) | one open prompt per group |
+| receipt_id | UUID (FK → receipts) | NULL for fridge scans |
+| source | TEXT | 'receipt' or 'fridge_scan' |
+| candidates | JSONB | the items the group was asked about |
+| created_at | TIMESTAMPTZ | |
+| expires_at | TIMESTAMPTZ | DEFAULT NOW() + 24h — a stale "yes" is ignored |
 
 ### `api_keys`
 Generic per-household bearer-key table, not MCP-specific — `scope` distinguishes
@@ -686,6 +737,7 @@ Run migrations manually in Supabase SQL editor in order:
 013_reimbursement.sql  → reimbursable flag on receipts, reimbursements table, settings columns
 014_image_storage.sql  → image_path on receipts, Supabase Storage
 015_insurance_policies.sql  → insurance_policies table + RLS + index
+030_pantry_pending_confirmations.sql → pantry_pending_confirmations table (one open prompt per group_jid)
 ```
 
 > There is no migration runner — apply each file manually. Files are idempotent (`IF NOT EXISTS`, `IF NOT NULL`).

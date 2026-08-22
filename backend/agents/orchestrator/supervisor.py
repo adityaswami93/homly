@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
     "You are a household assistant with tools for expenses, insurance, pantry, "
-    "savings, budgets, and reminders. Call a tool, look at what it returns, and call another tool if you need "
+    "savings, budgets, reminders, and chores/tasks. Call a tool, look at what it returns, and call another tool if you need "
     "more information before answering — chain lookups when a question depends on more "
     "than one domain (e.g. checking savings against an upcoming insurance renewal). Call "
     "multiple tools in the same turn only when they don't depend on each other's results. "
@@ -69,6 +69,8 @@ def agent_node(state: SupervisorState) -> dict:
 
 def tools_node(state: SupervisorState) -> dict:
     household_id = state["household_id"]
+    sender_name = state.get("sender_name")
+    sender_phone = state.get("sender_phone")
     last_message = state["messages"][-1]
 
     calls = []
@@ -85,7 +87,7 @@ def tools_node(state: SupervisorState) -> dict:
     if calls:
         with ThreadPoolExecutor(max_workers=len(calls)) as pool:
             futures = {
-                pool.submit(agent.handle, intent, params, household_id): (call_id, name)
+                pool.submit(agent.handle, intent, params, household_id, sender_name, sender_phone): (call_id, name)
                 for call_id, name, agent, intent, params in calls
             }
             for future in as_completed(futures):
@@ -152,7 +154,8 @@ class QueryResponse:
     handled: bool
 
 
-def run_query(query: str, household_id: str, context: list[dict] | None = None) -> QueryResponse:
+def run_query(query: str, household_id: str, context: list[dict] | None = None,
+              sender_name: str | None = None, sender_phone: str | None = None) -> QueryResponse:
     messages = (
         [SystemMessage(content=_SYSTEM_PROMPT)]
         + _to_lc_messages(context or [])
@@ -162,6 +165,8 @@ def run_query(query: str, household_id: str, context: list[dict] | None = None) 
     result = _graph.invoke(
         {
             "household_id": household_id,
+            "sender_name": sender_name,
+            "sender_phone": sender_phone,
             "messages": messages,
             "agents_called": [],
             "agent_results": [],

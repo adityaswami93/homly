@@ -9,6 +9,8 @@ from agents.base_agent import AgentResult
 
 class SupervisorState(TypedDict):
     household_id: str
+    sender_name: str | None
+    sender_phone: str | None
     messages: Annotated[list[BaseMessage], add_messages]
     agents_called: Annotated[list[str], add]
     agent_results: Annotated[list[AgentResult], add]

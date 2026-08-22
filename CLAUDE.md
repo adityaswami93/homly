@@ -59,6 +59,8 @@ homly/
 │   │       ├── internal.py          # POST /internal/qr, /internal/connected, GET /internal/qr-status
 │   │       ├── setup.py             # GET /setup/state, POST /setup/group, /setup/reset-qr, SSE /setup/qr-stream
 │   │       ├── insurance.py         # GET/POST/PUT/DELETE /insurance, GET /internal/insurance/renewals
+│   │       ├── tasks.py             # GET/POST/PATCH/DELETE /tasks (chores), /tasks/leave-requests,
+│   │       │                        #   /tasks/helper-profile, /tasks/onboarding/suggest+confirm
 │   │       ├── mcp_data.py          # GET /mcp/data/* — per-household-key-authenticated data-query endpoints
 │   │       └── mcp_keys.py          # GET/POST/DELETE /mcp/keys — JWT-authenticated, generate/revoke MCP keys
 │   │       # NOTE: analytics.py, admin.py, budgets.py, insights.py, recipe.py, pantry.py, waitlist.py,
@@ -68,16 +70,33 @@ homly/
 │   │   └── remote.py               #   remote Streamable HTTP, mounted into api/main.py at /mcp/server/{key} —
 │   │                               #   runs in-process against services/mcp_queries.py, no HTTP round-trip
 │   ├── agents/
-│   │   └── receipt_agent.py        # Vision LLM call → structured JSON receipt data
+│   │   ├── receipt_agent.py        # Vision LLM call → structured JSON receipt data
+│   │   ├── homly_graph.py          # LangGraph state machine: classifies + routes every WhatsApp message
+│   │   ├── orchestrator/           # Chat-query supervisor: registry.py's AGENTS list is the
+│   │   │                           #   extensibility point — add an agent there and it's routable
+│   │   └── query/                  # One BaseQueryAgent per domain (pantry, insurance, savings,
+│   │       └── tasks_agent.py      #   grocery, budgets, reminders, tasks) — tasks_agent.py handles
+│   │                               #   chore assignment, completion, shopping-list adds, and leave
+│   │                               #   requests via chat; budget_agent.py compares spend to monthly
+│   │                               #   budget targets; reminders_agent.py lists upcoming reminders
 │   ├── services/
-│   │   ├── llm_client.py           # Facade: get_vision_completion()
+│   │   ├── llm_client.py           # Facade: get_completion(), get_vision_completion()
 │   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook
 │   │   ├── receipts.py             # compute_category_totals() — shared item-category aggregation
 │   │   ├── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
+│   │   ├── pantry_confirmations.py # pending "add these to your pantry?" prompts, keyed by group_jid
 │   │   ├── mcp_auth.py             # generate_key()/hash_key()/SCOPE — shared by mcp_keys.py and mcp_data.py
-│   │   └── mcp_queries.py          # the actual data fetching behind every MCP tool — shared by mcp_data.py
-│   │                               # (HTTP, for the local stdio server) and mcp_server/remote.py (in-process)
-│   ├── migrations/
+│   │   ├── mcp_queries.py          # the actual data fetching behind every MCP tool — shared by mcp_data.py
+│   │   │                           # (HTTP, for the local stdio server) and mcp_server/remote.py (in-process)
+│   │   ├── chores.py               # chore_due_today() — shared by tasks.py, tasks_agent.py, whatsapp_scheduler.py
+│   │   ├── shopping_list.py        # add_auto_item() — shared by recipe.py, homly_graph.py, pantry_agent.py, tasks_agent.py
+│   │   └── whatsapp_scheduler.py   # APScheduler cron jobs: weekly summaries, insurance renewals, daily tasks
+│   ├── alembic/                    # Migration runner — see backend/migrations/README.md
+│   │   ├── env.py                  # reads SUPABASE_DB_URL, no ORM target_metadata (pure-SQL migrations)
+│   │   ├── script.py.mako          # template for `alembic revision`; downgrade() raises by default
+│   │   └── versions/               # one revision per file below, chained by explicit parent pointer
+│   ├── migrations/                 # source-of-truth .sql, applied via `alembic upgrade head`, not by hand
+│   │   ├── README.md               # why Alembic, how to adopt it on an existing DB, how to add a migration
 │   │   ├── 001_homly.sql           # Base schema: receipts, items, weekly views
 │   │   ├── 002_soft_delete.sql     # deleted flag on receipts
 │   │   ├── 003_settings.sql        # settings table per household
@@ -86,7 +105,12 @@ homly/
 │   │   ├── 007_group_jid.sql       # group_jid on settings, user_id nullable on receipts
 │   │   ├── 013_reimbursement.sql   # reimbursable flag on receipts, reimbursements table, settings columns
 │   │   ├── 014_image_storage.sql   # image_path on receipts, Supabase Storage
-│   │   └── 015_insurance_policies.sql  # insurance_policies table with RLS
+│   │   ├── 015_insurance_policies.sql  # insurance_policies table with RLS
+│   │   ├── ...                     # 016-029 — see `ls backend/migrations`
+│   │   ├── 030_household_tasks.sql # chores, chore_logs, helper_leave_requests, helper_profile;
+│   │   │                           #   extends shopping_list.added_by to include 'helper'
+│   │   └── 030_pantry_pending_confirmations.sql  # open "add to pantry?" prompts, keyed by group_jid
+│   ├── alembic.ini
 │   └── requirements.txt
 ├── frontend/
 │   ├── config/
@@ -110,6 +134,11 @@ homly/
 │   │   │   ├── insurance/
 │   │   │   │   ├── page.tsx        # Policies list + add/edit modal
 │   │   │   │   └── renewals/page.tsx  # Renewal countdown sorted by date
+│   │   │   ├── chores/
+│   │   │   │   ├── page.tsx        # Today's chores + mark done/skipped, add-task modal
+│   │   │   │   ├── setup/page.tsx  # Agent-assisted onboarding wizard (chores + helper off-days)
+│   │   │   │   ├── history/page.tsx   # Completed/skipped chore log, date-range filter
+│   │   │   │   └── leave/page.tsx     # Helper leave requests + admin approve/deny
 │   │   │   ├── admin/page.tsx      # Super-admin: households, invites, price intelligence
 │   │   │   ├── settings/page.tsx   # Household settings (schedule, reimbursement, WhatsApp)
 │   │   │   └── setup/page.tsx      # WhatsApp QR scan + group selection
@@ -164,9 +193,12 @@ All shell pages use **dark stone theme**: `bg-[#0f0e0c]` body, `bg-stone-900` ca
 
 Single source of truth for shell navigation. Each `App` has: `id`, `label`, `icon`, `color`, `accent`, `href`, `nav[]`, `actionLabel?`, `superAdminOnly?`.
 
-Current apps:
-- `expenses` — color `#10B981`, nav: Overview, Transactions, Members, Summary, Insights
-- `insurance` — color `#3B82F6`, nav: Policies, Renewals
+Current apps (see `config/apps.ts` for the full, current nav list per app — the summary
+below is illustrative, not exhaustive):
+- `expenses` — color `#10B981`, nav includes Overview, Pantry, History, Members, Analytics, Insights, Budgets, Price Intelligence, Reimburse, Commands
+- `insurance` — color `#3B82F6`, nav: Policies, Renewals, Coverage, Gaps
+- `savings` — color `#10B981`, nav: Overview, History
+- `chores` — color `#10B981`, nav: Today, History, Leave; first visit with no `helper_profile.onboarded_at` redirects to `/chores/setup`
 - `admin` — color `#F59E0B`, nav: Overview, Price Intelligence; `superAdminOnly: true`
 
 ### Multi-Tenancy Model
@@ -191,6 +223,43 @@ Daily 09:00 SGT cron in WhatsApp bot:
     GET /internal/insurance/renewals (X-Internal-Key)
     → returns policies renewing in 7 or 30 days
     → sends reminder to household group JID
+```
+
+### Household Tasks & Helper Flow
+
+```
+Onboarding (dashboard, one-time per household):
+    Family describes helper's typical week in free text on /chores/setup
+        ↓
+    POST /tasks/onboarding/suggest → get_completion() (services/llm_client.py)
+        → LLM proposes starter chores + recurring off-days (not yet saved)
+        ↓
+    Family reviews/edits the suggestion in the wizard
+        ↓
+    POST /tasks/onboarding/confirm → bulk-inserts chores, upserts helper_profile
+        (onboarded_at set — /chores stops redirecting to /chores/setup)
+
+Ongoing (same shared WhatsApp group — no separate helper channel):
+    Family or helper types in the group (e.g. "mark laundry done", "helper needs
+    off next Tuesday", "assign mop the floor daily")
+        ↓
+    /internal/graph-invoke → homly_graph.py's query_node/pantry_node
+        → agents/orchestrator (LangGraph supervisor) → query_tasks tool
+        → agents/query/tasks_agent.py (chore_logs / chores / helper_leave_requests)
+        (sender_name/sender_phone threaded through from the WhatsApp message for
+        attribution — see agents/base_agent.py's handle() signature)
+
+Daily 07:00 SGT cron (services/whatsapp_scheduler.py, in-process, no HTTP hop):
+    _send_daily_tasks() finds each household's chores due today (services/chores.py's
+    chore_due_today()) minus anything already logged, skips households whose
+    helper_profile.off_days includes today, composes the message via get_completion()
+    (falls back to a plain list if the LLM call fails), send_text(group_jid, msg)
+
+Signal-driven auto-add (no human has to type it):
+    Pantry item marked out_of_stock (dashboard PATCH /pantry/{name} or the pantry
+    chat agent) → services/shopping_list.py's add_auto_item() immediately upserts
+    it onto the shopping_list table (same helper used by recipe.py's dish-scan flow
+    and the tasks chat agent's add_shopping_item intent)
 ```
 
 ### Receipt Flow
@@ -251,6 +320,38 @@ history directly. Each key is single-household-scoped and independently revocabl
 server-to-server secret with access to every household) — revoking one takes
 effect on the very next request on either transport. See
 `backend/mcp_server/README.md` for setup.
+
+### Pantry Confirmation Flow (grocery receipts + fridge scans)
+
+Do **not** reintroduce LangGraph's `interrupt()` here. It was used originally on
+the assumption that the next `g.invoke(state, config)` on the same `thread_id`
+would resume the suspended run — it does not; invoking with a fresh input dict
+starts a new run from the entry point, so `resume_from_confirmation_node` was
+unreachable. `interrupt()` also requires a checkpointer, and `get_graph()`
+silently falls back to a stateless graph when `SUPABASE_DB_URL` is unset, where
+it raises *after* the prompt has already been queued — the group saw the item
+list and then nothing.
+
+The prompt and the reply are two independent graph runs, joined by a row in
+`pantry_pending_confirmations`:
+
+```
+Grocery receipt (or fridge scan) saved
+    ↓
+extract_pantry_candidates → send_pantry_confirmation
+    ↓  save_pending(group_jid, candidates)   ← persisted BEFORE the message goes out
+    ↓  send_text_sync("Add these items to your pantry?")
+    ↓  END — this run is finished
+
+...group replies "yes" / "no" / "1,3,5" / an item name...
+    ↓
+classify_node: a live pending row for this group_jid + the text reads like an
+    answer (_looks_like_confirmation) → message_type = "pantry_confirmation"
+    ↓  an unrelated question while a prompt is open falls through to normal
+    ↓  classification instead of being swallowed as an answer
+resume_from_confirmation (reads candidates from the row, clears it)
+    → update_pantry → confirm_to_user → synthesise
+```
 
 ### Weekly Summary Flow
 
@@ -378,6 +479,24 @@ Frontend polling picks up new QR within 3s
 | created_by | UUID (FK → auth.users) | |
 | created_at / updated_at | TIMESTAMPTZ | |
 
+### `pantry_pending_confirmations`
+Holds the "add these items to your pantry?" prompt while the WhatsApp group is
+answering it. The bot makes one stateless HTTP request per message, so the
+question and its reply are two separate graph runs — this row is what connects
+them. `UNIQUE(group_jid)` means a newer receipt supersedes an unanswered older
+prompt, matching what the group sees in the chat.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| group_jid | TEXT (UNIQUE) | one open prompt per group |
+| receipt_id | UUID (FK → receipts) | NULL for fridge scans |
+| source | TEXT | 'receipt' or 'fridge_scan' |
+| candidates | JSONB | the items the group was asked about |
+| created_at | TIMESTAMPTZ | |
+| expires_at | TIMESTAMPTZ | DEFAULT NOW() + 24h — a stale "yes" is ignored |
+
 ### `api_keys`
 Generic per-household bearer-key table, not MCP-specific — `scope` distinguishes
 which integration a key is for, so a future integration (a public API, Zapier,
@@ -396,6 +515,59 @@ etc.) can reuse this table instead of growing its own. Currently the only
 | created_at | TIMESTAMPTZ | |
 | last_used_at | TIMESTAMPTZ | Updated on every successful `/mcp/data/*` call |
 | revoked_at | TIMESTAMPTZ | NULL = active |
+
+### `chores`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| title | TEXT | |
+| notes | TEXT | |
+| recurrence | TEXT | `once` / `daily` / `weekly` |
+| days_of_week | INT[] | For `weekly`; 0=Mon..6=Sun, matches `settings.summary_day` convention |
+| due_date | DATE | For `once` |
+| active | BOOLEAN | Soft-delete/pause |
+| source | TEXT | `dashboard` / `whatsapp` / `agent` |
+
+### `chore_logs`
+One row per completed/skipped occurrence — absence of a row for a given `(chore_id, log_date)` means still pending. See `services/chores.py`'s `chore_due_today()` for the recurrence-matching logic shared between the dashboard, the chat agent, and the daily cron.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| chore_id | UUID (FK → chores, CASCADE) | |
+| household_id | UUID (FK → households) | |
+| log_date | DATE | |
+| status | TEXT | `done` / `skipped` |
+| completed_by_name / completed_by_phone | TEXT | Attribution — from WhatsApp sender info or null for dashboard |
+| source | TEXT | `dashboard` / `whatsapp` |
+| | | UNIQUE(chore_id, log_date) |
+
+### `helper_leave_requests`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| start_date / end_date | DATE | |
+| reason | TEXT | |
+| status | TEXT | `pending` / `approved` / `denied` |
+| requested_by_name / requested_by_phone | TEXT | |
+| source | TEXT | `dashboard` / `whatsapp` |
+| decided_by | UUID (FK → auth.users) | Admin who approved/denied |
+| decided_at | TIMESTAMPTZ | |
+
+### `helper_profile`
+One row per household, captured at `/chores/setup` onboarding. Drives the daily-tasks cron's off-day skip and gives the onboarding-suggestion LLM call context.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (UNIQUE FK → households) | |
+| has_helper | BOOLEAN | |
+| helper_name | TEXT | |
+| duties_description | TEXT | Raw free text from onboarding |
+| off_days | INT[] | Recurring weekly off days, 0=Mon..6=Sun |
+| onboarded_at | TIMESTAMPTZ | NULL = onboarding not yet completed; `/chores` redirects to `/chores/setup` until set |
 
 ---
 
@@ -425,6 +597,18 @@ etc.) can reuse this table instead of growing its own. Currently the only
 | POST | `/insurance` | Create insurance policy |
 | PUT | `/insurance/{id}` | Update insurance policy |
 | DELETE | `/insurance/{id}` | Soft-delete (is_active = false) |
+| GET | `/tasks` | List active chores, with `status_today`/`due_today` computed |
+| POST | `/tasks` | Create a chore |
+| PATCH | `/tasks/{id}` | Edit a chore, or pause/resume via `active` |
+| DELETE | `/tasks/{id}` | Soft-delete (`active = false`) |
+| POST | `/tasks/{id}/complete` | Mark today's occurrence done/skipped |
+| GET | `/tasks/history` | `chore_logs` joined to `chores`, optional `from`/`to` date range |
+| GET | `/tasks/leave-requests` | List helper leave requests |
+| POST | `/tasks/leave-requests` | Log a leave request |
+| PATCH | `/tasks/leave-requests/{id}` | Approve/deny (admin only) |
+| GET | `/tasks/helper-profile` | Fetch the household's helper profile (used to gate the onboarding redirect) |
+| POST | `/tasks/onboarding/suggest` | LLM call: free-text helper description → suggested chores + off-days (unsaved) |
+| POST | `/tasks/onboarding/confirm` | Bulk-create the reviewed chores, upsert `helper_profile` with `onboarded_at` |
 
 ### Super-admin (JWT required, `is_super_admin = true`)
 
@@ -560,7 +744,9 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 ```bash
 cd backend
 pip install -r requirements.txt
-# Create backend/.env with SUPABASE_URL, SUPABASE_KEY, INTERNAL_KEY, OPENROUTER_API_KEY
+# Create backend/.env with SUPABASE_URL, SUPABASE_KEY, INTERNAL_KEY, OPENROUTER_API_KEY,
+# and SUPABASE_DB_URL (direct connection string — needed for `alembic upgrade head`)
+alembic upgrade head    # apply migrations — see backend/migrations/README.md
 uvicorn api.main:app --reload --port 8000
 ```
 
@@ -674,22 +860,43 @@ Receipts use `deleted: boolean`; insurance policies use `is_active: boolean`. Al
 
 ## Migrations
 
-Run migrations manually in Supabase SQL editor in order:
+Schema changes run through **Alembic** (`backend/alembic/`), not by hand —
+see `backend/migrations/README.md` for the full writeup, including why this
+changed (numbering collisions — four files were prefixed `016_`, two `017_`,
+two `029_` — and a real silent-failure bug that fell out of applying
+migrations with no ledger of what had actually run).
 
-```
-001_homly.sql          → base schema
-002_soft_delete.sql    → deleted flag
-003_settings.sql       → settings table
-004_sender.sql         → sender fields on receipts
-006_multi_tenant.sql   → households, members, invites + backfill
-007_group_jid.sql      → group_jid on settings, user_id nullable on receipts
-013_reimbursement.sql  → reimbursable flag on receipts, reimbursements table, settings columns
-014_image_storage.sql  → image_path on receipts, Supabase Storage
-015_insurance_policies.sql  → insurance_policies table + RLS + index
+```bash
+cd backend
+alembic upgrade head                     # apply any unapplied migrations
+alembic revision -m "add foo to bar"     # start a new one
 ```
 
-> There is no migration runner — apply each file manually. Files are idempotent (`IF NOT EXISTS`, `IF NOT NULL`).
+The original `backend/migrations/*.sql` files (`001` through `029`) are kept
+unchanged as the source of truth; each has a thin Alembic revision under
+`backend/alembic/versions/` that does nothing but `op.execute()` that file's
+contents, chained by explicit parent pointer instead of filename number — so
+a repeat of the `016`/`017`/`029` collisions is no longer possible.
+`030_pantry_pending_confirmations.sql` is the first migration applied
+through Alembic rather than pasted into the SQL editor by hand.
 
-> The list above is illustrative, not exhaustive — run `ls backend/migrations` to see the current full set before assuming this is everything.
+Requires `SUPABASE_DB_URL` — use the **Session pooler** connection string
+from Supabase dashboard → Connect (the "Direct connection" hostname is
+IPv6-only and unreachable from most networks; Transaction pooler drops the
+session state Alembic's advisory locking needs — see
+`backend/migrations/README.md`). Migrations are **roll-forward
+only**: every revision's `downgrade()` raises `NotImplementedError` by
+default — write a new migration to fix a mistake rather than reverting one,
+since by the time a revert is needed, real data has usually moved underneath
+the schema it would be reverting.
 
-**Before adding a new migration file, run `ls backend/migrations` and pick the next unused number.** Nothing enforces numbering, and the repo already has collisions from skipping this check — four different files are prefixed `016_`, two are prefixed `017_`. A reused prefix makes it unclear which migration actually ran first or is safe to re-apply.
+**A migration that removes or narrows anything — drops a column, tightens a
+CHECK constraint, removes an enum value — must stay compatible with
+whatever the currently-running code still writes or reads.** Code and
+schema don't deploy atomically; during a rolling deploy, old and new code
+run against the same database at once. `026_pantry_fridge_source.sql`
+narrowed the `pantry_items.added_by` CHECK constraint and dropped `'bot'`
+while `pantry_agent.py` was still writing `added_by = 'bot'` on every
+WhatsApp pantry update — every one of those upserts then failed silently
+until `029_pantry_bot_source.sql` restored it. Grep for what still writes or
+reads a value before a migration stops allowing it.

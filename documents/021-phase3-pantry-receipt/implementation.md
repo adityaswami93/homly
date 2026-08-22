@@ -36,6 +36,19 @@ Graph routing after `extract_pantry_candidates`:
 
 ## Interrupt / resume mechanics
 
+> **Superseded — this section describes a mechanism that never worked.** See
+> "Pantry Confirmation Flow" in `CLAUDE.md`. The claim below that
+> `g.invoke(state, config)` transparently resumes a suspended thread is wrong:
+> invoking with a fresh input dict starts a new run from the entry point, so
+> `resume_from_confirmation_node` was unreachable and "yes" replies went
+> nowhere. `interrupt()` additionally requires a checkpointer, which
+> `get_graph()` silently drops when `SUPABASE_DB_URL` is unset — there it
+> raised *after* the confirmation message had been queued, returning 500 from
+> `/internal/graph-invoke`. Pending prompts now live in the
+> `pantry_pending_confirmations` table and the reply is routed by
+> `classify_node`. Kept below for historical context only.
+
+
 LangGraph's `interrupt()` primitive serialises graph state to the PostgreSQL checkpointer and raises a special exception that causes the graph execution to stop. The graph returns to the caller in a "suspended" state.
 
 When the bot next invokes the graph on the same `thread_id` (group JID) — regardless of what the message contains — LangGraph detects the pending interrupt and resumes execution from the point after the `interrupt()` call inside `send_pantry_confirmation_node`, then flows to `resume_from_confirmation_node`. The resumed state includes the new invocation's `query` field, which `resume_from_confirmation_node` reads to determine which items to confirm.

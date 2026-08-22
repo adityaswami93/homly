@@ -8,6 +8,7 @@ from supabase import create_client
 import logging
 
 from agents.recipe_agent import analyse_dish_with_pantry
+from services.shopping_list import add_auto_item
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,20 +75,8 @@ async def scan_recipe(
         canonical = (ing.get("canonical_name") or ing.get("name") or "").strip().lower()
         if not canonical:
             continue
-        try:
-            _db().table("shopping_list").upsert(
-                {
-                    "household_id":   household_id,
-                    "canonical_name": canonical,
-                    "category":       ing.get("category", "other"),
-                    "added_by":       "recipe",
-                    "checked":        False,
-                },
-                on_conflict="household_id,canonical_name",
-            ).execute()
+        if add_auto_item(_db(), household_id, canonical, category=ing.get("category", "other"), added_by="recipe"):
             added_count += 1
-        except Exception as e:
-            logger.error(f"[recipe/scan] upsert failed for {canonical}: {e}")
 
     return {
         **analysis,

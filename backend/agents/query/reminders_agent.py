@@ -32,7 +32,8 @@ class RemindersQueryAgent(BaseQueryAgent):
             )
         return self._supabase
 
-    def handle(self, intent: str, params: dict, household_id: str) -> AgentResult:
+    def handle(self, intent: str, params: dict, household_id: str,
+               sender_name: str | None = None, sender_phone: str | None = None) -> AgentResult:
         try:
             if intent == "list_reminders":
                 return self._list(household_id)

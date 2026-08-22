@@ -74,6 +74,9 @@ homly/
 │   │   ├── homly_graph.py          # LangGraph state machine: classifies + routes every WhatsApp message
 │   │   ├── orchestrator/           # Chat-query supervisor: registry.py's AGENTS list is the
 │   │   │                           #   extensibility point — add an agent there and it's routable
+│   │   ├── proactive_agent.py      # Same Reason/Act/Observe loop as orchestrator/, run unprompted on a
+│   │   │                           #   schedule instead of in response to a message — see Proactive
+│   │   │                           #   Household Monitor flow below
 │   │   └── query/                  # One BaseQueryAgent per domain (pantry, insurance, savings,
 │   │       └── tasks_agent.py      #   grocery, budgets, reminders, tasks) — tasks_agent.py handles
 │   │                               #   chore assignment, completion, shopping-list adds, and leave
@@ -85,12 +88,15 @@ homly/
 │   │   ├── receipts.py             # compute_category_totals() — shared item-category aggregation
 │   │   ├── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
 │   │   ├── pantry_confirmations.py # pending "add these to your pantry?" prompts, keyed by group_jid
+│   │   ├── proactive_notifications.py  # dedup log for proactive_agent.py's notify_household tool —
+│   │   │                           #   was_recently_notified()/record_notified(), keyed by finding_key
 │   │   ├── mcp_auth.py             # generate_key()/hash_key()/SCOPE — shared by mcp_keys.py and mcp_data.py
 │   │   ├── mcp_queries.py          # the actual data fetching behind every MCP tool — shared by mcp_data.py
 │   │   │                           # (HTTP, for the local stdio server) and mcp_server/remote.py (in-process)
 │   │   ├── chores.py               # chore_due_today() — shared by tasks.py, tasks_agent.py, whatsapp_scheduler.py
 │   │   ├── shopping_list.py        # add_auto_item() — shared by recipe.py, homly_graph.py, pantry_agent.py, tasks_agent.py
-│   │   └── whatsapp_scheduler.py   # APScheduler cron jobs: weekly summaries, insurance renewals, daily tasks
+│   │   └── whatsapp_scheduler.py   # APScheduler cron jobs: weekly summaries, insurance renewals,
+│   │                               #   daily tasks, proactive household checks (08:00 SGT)
 │   ├── alembic/                    # Migration runner — see backend/migrations/README.md
 │   │   ├── env.py                  # reads SUPABASE_DB_URL, no ORM target_metadata (pure-SQL migrations)
 │   │   ├── script.py.mako          # template for `alembic revision`; downgrade() raises by default
@@ -109,10 +115,15 @@ homly/
 │   │   ├── ...                     # 016-029 — see `ls backend/migrations`
 │   │   ├── 030_household_tasks.sql # chores, chore_logs, helper_leave_requests, helper_profile;
 │   │   │                           #   extends shopping_list.added_by to include 'helper'
-│   │   └── 030_pantry_pending_confirmations.sql  # open "add to pantry?" prompts, keyed by group_jid
+│   │   ├── 030_pantry_pending_confirmations.sql  # open "add to pantry?" prompts, keyed by group_jid
+│   │   └── 031_proactive_notifications.sql  # dedup log for the proactive monitor's notify_household tool
 │   ├── alembic.ini
-│   └── requirements.txt
-├── frontend/
+│   ├── requirements.txt
+│   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)
+│       ├── index.js                # Connects, forwards every message to /internal/graph-invoke
+│       ├── package.json
+│       └── .env                    # FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
+└── frontend/
 │   ├── config/
 │   │   └── apps.ts                 # Central app/nav config (single source of truth for shell nav)
 │   ├── app/
@@ -155,10 +166,6 @@ homly/
 │       ├── supabase.ts             # Supabase browser client
 │       ├── axios.ts                # Shared axios instance with auth interceptor
 │       └── toast.ts                # useToast hook
-└── whatsapp/                       # Standalone Node.js WhatsApp bot
-    ├── index.js                    # Main bot: QR connect, receipt processing, weekly summaries, insurance queries
-    ├── package.json
-    └── .env                        # FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
 ```
 
 ---
@@ -365,6 +372,40 @@ Format message with receipts, category totals, flagged count
 sock.sendMessage(groupJid, { text: ... })
 ```
 
+### Proactive Household Monitor Flow
+
+Every other agent in this codebase is reactive — it only runs because a household member
+sent a WhatsApp message. `agents/proactive_agent.py` is the one exception: the same
+Reason/Act/Observe (ReAct) loop shape as `agents/orchestrator/supervisor.py`, run
+unprompted on a schedule instead of triggered by a message.
+
+```
+Daily 08:00 SGT cron (services/whatsapp_scheduler.py, in-process, no HTTP hop):
+    _run_proactive_checks() loads every household with a connected group_jid
+    ↓ per household, on a thread (LLM + Supabase calls are blocking):
+    agents/proactive_agent.run_proactive_check(household_id, group_jid)
+        ↓
+      LangGraph loop: agent_node (LLM + tool-bound) ⇄ tools_node, up to 8 iterations
+        ↓ agent_node reasons about what to check; tools_node executes the call and
+        ↓ feeds the result back as the next observation
+      Tools available are a READ-ONLY SUBSET of agents/orchestrator/registry.py's
+      AGENTS — see proactive_agent._READONLY_INTENTS. An agent whose tools can also
+      write (pantry add/mark, budget set_budget, task assign/mark/leave) only exposes
+      its read intents here; the model cannot mutate household data on an unattended
+      run. This is enforced in tools_node itself, not just by the system prompt.
+        ↓
+      Two more tools end the loop:
+        - notify_household(finding_key, message) → services/proactive_notifications.py
+          checks the finding_key wasn't already sent within the last 24h (dedup log —
+          see `proactive_notification_log` below), then send_text_sync()
+        - no_action() → checked, nothing worth surfacing this run (the common case)
+```
+
+Adding a new proactive check needs zero new code most of the time: any read intent
+already registered in `agents/orchestrator/registry.py` becomes available here just by
+adding its tool name (and, if the agent has writes too, the specific read intent names)
+to `_READONLY_INTENTS`.
+
 ### QR Code Regeneration Flow
 
 ```
@@ -496,6 +537,19 @@ prompt, matching what the group sees in the chat.
 | candidates | JSONB | the items the group was asked about |
 | created_at | TIMESTAMPTZ | |
 | expires_at | TIMESTAMPTZ | DEFAULT NOW() + 24h — a stale "yes" is ignored |
+
+### `proactive_notification_log`
+Dedup log for `agents/proactive_agent.py`'s `notify_household` tool — see Proactive
+Household Monitor Flow above. `UNIQUE(household_id, finding_key)` lets a notify call
+upsert the same row on every repeat, so "was this finding already sent recently?" is a
+single lookup rather than scanning history.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| finding_key | TEXT | Stable identifier the agent chooses, e.g. `budget_over:groceries:2026-08` |
+| last_notified_at | TIMESTAMPTZ | Upserted on every send; checked against a 24h cooldown |
 
 ### `api_keys`
 Generic per-household bearer-key table, not MCP-specific — `scope` distinguishes

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import logging
 from datetime import date, timedelta
@@ -145,6 +146,29 @@ async def _send_daily_tasks():
             logger.error(f"[scheduler] Daily tasks failed for household {household_id}: {e}")
 
 
+async def _run_proactive_checks():
+    """Run agents/proactive_agent.py's ReAct check once per household with a connected group."""
+    logger.info("[scheduler] Running proactive household checks...")
+    from agents.proactive_agent import run_proactive_check
+
+    try:
+        res = _db().table("settings").select("household_id, group_jid").execute()
+        settings_list = res.data or []
+    except Exception as e:
+        logger.error(f"[scheduler] Failed to load households for proactive check: {e}")
+        return
+
+    for s in settings_list:
+        household_id = s.get("household_id")
+        group_jid = s.get("group_jid")
+        if not household_id or not group_jid:
+            continue
+        try:
+            await asyncio.to_thread(run_proactive_check, household_id, group_jid)
+        except Exception as e:
+            logger.error(f"[scheduler] Proactive check failed for household {household_id}: {e}")
+
+
 def refresh_summaries(scheduler: AsyncIOScheduler):
     """Load all household settings and reschedule weekly summary jobs."""
     try:
@@ -198,6 +222,13 @@ def create_scheduler() -> AsyncIOScheduler:
         _send_daily_tasks,
         CronTrigger(hour=7, minute=0, timezone="Asia/Singapore"),
         id="daily_tasks",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        _run_proactive_checks,
+        CronTrigger(hour=8, minute=0, timezone="Asia/Singapore"),
+        id="proactive_checks",
         replace_existing=True,
     )
 

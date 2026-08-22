@@ -27,6 +27,7 @@ MANIFEST = AgentManifest(
         },
     ],
     params_schema={"type": "object", "properties": {}},
+    examples=["what's our net worth?", "list our savings accounts"],
 )
 
 

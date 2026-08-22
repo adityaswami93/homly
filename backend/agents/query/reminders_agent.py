@@ -14,6 +14,7 @@ MANIFEST = AgentManifest(
         {"name": "next_reminder", "description": "The single next upcoming reminder"},
     ],
     params_schema={"type": "object", "properties": {}},
+    examples=["what reminders do I have?"],
 )
 
 

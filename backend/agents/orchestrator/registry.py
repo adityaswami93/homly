@@ -21,3 +21,23 @@ AGENTS: list[BaseQueryAgent] = [
     PreferencesQueryAgent(),
 ]
 AGENT_BY_TOOL_NAME: dict[str, BaseQueryAgent] = {a.manifest.tool_name: a for a in AGENTS}
+
+
+def build_help_text() -> str:
+    """WhatsApp-ready capabilities summary, one line per registered agent.
+
+    Built from each agent's manifest.examples rather than hand-maintained
+    separately, so it can't drift out of sync the way a duplicated doc would —
+    see api/routers/internal.py's GET /internal/help and
+    backend/whatsapp/index.js's handleHelpCommand().
+    """
+    lines = ["Here's what I can help with — just ask naturally, e.g.:", ""]
+    for a in AGENTS:
+        m = a.manifest
+        if not m.examples:
+            continue
+        label = m.name.replace("_", " ").title()
+        lines.append(f"• *{label}* — \"{m.examples[0]}\"")
+    lines.append("")
+    lines.append("Just message me like you would a person — I'll figure out what you need.")
+    return "\n".join(lines)

@@ -35,6 +35,7 @@ MANIFEST = AgentManifest(
             },
         },
     },
+    examples=["remember I don't eat pork", "what do you remember about me?"],
 )
 
 

@@ -42,6 +42,7 @@ MANIFEST = AgentManifest(
             "reason": {"type": "string", "description": "Optional reason for request_leave"},
         },
     },
+    examples=["what chores are due today?", "assign vacuuming to the helper every Monday"],
 )
 
 

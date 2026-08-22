@@ -48,6 +48,7 @@ MANIFEST = AgentManifest(
             },
         },
     },
+    examples=["what's in the pantry?", "mark milk as running low"],
 )
 
 

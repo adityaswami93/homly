@@ -49,6 +49,13 @@ async def qr_status(request: Request):
     return {"qr_requested": requested, "connected": whatsapp_state["connected"]}
 
 
+@router.get("/internal/help")
+async def help_text(request: Request):
+    _check(request)
+    from agents.orchestrator.registry import build_help_text
+    return {"text": build_help_text()}
+
+
 # ── LangGraph invocation ──────────────────────────────────────────────────────
 
 

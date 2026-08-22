@@ -724,6 +724,10 @@ One row per household, captured at `/chores/setup` onboarding. Drives the daily-
 | GET | `/internal/qr-status` | Bot | Check/clear QR regeneration flag |
 | GET | `/internal/messages` | Bot | Pop queued messages (clears queue) |
 | GET | `/internal/insurance/renewals` | Bot | Policies renewing in 7 or 30 days |
+| GET | `/internal/help` | Bot | Capabilities summary (`registry.build_help_text()`) for `/help` |
+| POST | `/internal/graph-invoke` | Bot | Invoke `agents/homly_graph.py` for a WhatsApp message (text or image) |
+| GET | `/internal/reminders/due` | Bot | Poll for due `/remind` reminders |
+| GET | `/internal/commands` | Bot | Fetch custom command triggers, cached in the bot |
 
 ### MCP data query (per-household API key, not JWT or `X-Internal-Key`)
 
@@ -809,8 +813,13 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 - **`cronJobs`** — `Map<household_id, CronJob>` — one cron per household, rescheduled when settings change
 - **`currentSock`** — module-level reference to the active Baileys socket, used by QR regeneration poller
 - **`SERVICE_KEY`** — `SUPABASE_KEY` value used as bearer for all backend API calls
-- **Insurance query handling** — `isInsuranceQuery(text)` detects keywords; `handleInsuranceQuery()` formats a reply
 - **Daily renewal cron** — 09:00 SGT cron hits `/internal/insurance/renewals` and sends reminders to household groups
+- **`stripLeadingMentions(text)`** — strips a leading `@<phone>`/`@<name>` mention before any command match or
+  `/internal/graph-invoke` call; without it, `@-mentioning` the bot broke every prefix-based match (custom
+  commands, `/remind`, and `homly_graph.py`'s `classify_node` all check how the string *starts*)
+- **`handleHelpCommand(text, ...)`** — exact-match `/help` or "what can you do", fetches
+  `/internal/help` (built from each registered agent's `manifest.examples`) rather than leaving
+  "what can you do" to the LLM to notice and answer well on its own
 
 ### Env vars (`backend/whatsapp/.env`)
 

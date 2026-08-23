@@ -171,6 +171,40 @@ function stripLeadingMentions(text) {
   return text.replace(/^(@\S+\s*)+/, "").trim();
 }
 
+// Stripping the mention above throws away a fact the backend can't recover:
+// that this message was aimed at the bot. The household's engagement mode
+// (settings.bot_engagement_mode) decides whether an un-addressed message gets
+// a reply at all, so both signals below are forwarded to /internal/graph-invoke
+// alongside the cleaned text. Detecting the bot's *name* is left to the backend
+// — the name is per-household and lives in the settings row.
+function ownPhone(sock) {
+  const id = sock?.user?.id;
+  if (!id) return null;
+  // Baileys hands back "<phone>:<device>@s.whatsapp.net"
+  return id.split("@")[0].split(":")[0] || null;
+}
+
+function wasBotMentioned(msg, sock) {
+  const phone = ownPhone(sock);
+  if (!phone) return false;
+  const ctx =
+    msg.message?.extendedTextMessage?.contextInfo ||
+    msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo;
+  const mentioned = ctx?.mentionedJid || [];
+  return mentioned.some((jid) => jid.split("@")[0].split(":")[0] === phone);
+}
+
+function isReplyToBot(msg, sock) {
+  const phone = ownPhone(sock);
+  if (!phone) return false;
+  const ctx =
+    msg.message?.extendedTextMessage?.contextInfo ||
+    msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo;
+  if (!ctx?.quotedMessage || !ctx.participant) return false;
+  // participant is the author of the message being replied to.
+  return ctx.participant.split("@")[0].split(":")[0] === phone;
+}
+
 // ── Reminder helpers ─────────────────────────────────────────
 const REMIND_RE = /^\/remind\s+(.+)/i;
 
@@ -326,6 +360,13 @@ async function handleMessage(msg, sock) {
       query: text,
       image_b64: null,
       image_mime: null,
+      // Without these the assistant has no idea who in the group it's talking
+      // to — it can't greet them by name or apply a preference recorded against
+      // them. The image path has always sent them; this one hadn't.
+      sender_name: senderName,
+      sender_phone: senderPhone,
+      was_mentioned: wasBotMentioned(msg, sock),
+      is_reply_to_bot: isReplyToBot(msg, sock),
     };
   }
 

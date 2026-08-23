@@ -28,6 +28,68 @@ interface Settings {
   group_name: string | null;
   reimbursement_mode: "all" | "none" | "helpers_only";
   helper_identifiers: string;
+  bot_name: string;
+  bot_engagement_mode: "mentioned" | "smart" | "always";
+  bot_tone: "warm" | "concise" | "playful";
+  bot_casual_chat: boolean;
+  bot_proactive_enabled: boolean;
+}
+
+// Mirrors services/bot_profile.py — the descriptions are what a household
+// actually needs to choose between, so they name the tradeoff rather than the
+// setting.
+const ENGAGEMENT_MODES = [
+  {
+    value: "smart",
+    label: "When it makes sense",
+    desc: "Replies when spoken to, and to anything that reads like a request. Stays out of your conversations with each other.",
+  },
+  {
+    value: "mentioned",
+    label: "Only when spoken to",
+    desc: "Replies only if you @mention it, use its name, or reply to one of its messages.",
+  },
+  {
+    value: "always",
+    label: "Always",
+    desc: "Replies to every message in the group. Chatty — best for a group that's just you and the assistant.",
+  },
+];
+
+const TONES = [
+  { value: "warm", label: "Warm", desc: "Personable and conversational" },
+  { value: "concise", label: "Concise", desc: "Answer first, no small talk" },
+  { value: "playful", label: "Playful", desc: "Light and a little witty" },
+];
+
+function Toggle({
+  checked, onChange, disabled, label, desc,
+}: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; label: string; desc: string }) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      role="switch"
+      aria-checked={checked}
+      className="w-full flex items-start gap-3 text-left disabled:opacity-50 min-h-[44px]"
+    >
+      <span
+        className={`mt-0.5 shrink-0 w-9 h-5 rounded-full transition-colors relative ${
+          checked ? "bg-emerald-600" : "bg-stone-700"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+            checked ? "left-[18px]" : "left-0.5"
+          }`}
+        />
+      </span>
+      <span>
+        <span className="block text-sm font-medium text-stone-300">{label}</span>
+        <span className="block text-xs text-stone-500 mt-0.5">{desc}</span>
+      </span>
+    </button>
+  );
 }
 
 interface McpKey {
@@ -135,6 +197,7 @@ export default function SettingsPage() {
 
   const TABS = [
     { key: "general", label: "General" },
+    { key: "assistant", label: "Assistant" },
     { key: "reimbursement", label: "Reimbursement" },
     { key: "whatsapp", label: "WhatsApp" },
     { key: "mcp", label: "MCP" },
@@ -239,6 +302,105 @@ export default function SettingsPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {isAdmin && (
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition text-sm min-h-[48px]"
+                >
+                  {saving ? "Saving…" : "Save settings"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {activeTab === "assistant" && (
+            <div className="space-y-4">
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-stone-300">Name</h2>
+                <p className="text-xs text-stone-500">
+                  What your household calls the assistant. Saying this name in the group counts as
+                  talking to it.
+                </p>
+                <input
+                  type="text"
+                  value={form.bot_name ?? ""}
+                  onChange={(e) => update("bot_name", e.target.value)}
+                  placeholder="Homly"
+                  maxLength={32}
+                  disabled={!isAdmin}
+                  className="w-full border border-stone-700 bg-stone-800 rounded-xl px-4 py-2.5 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-600 disabled:opacity-50 min-h-[44px] text-base"
+                />
+              </div>
+
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-stone-300">When it replies</h2>
+                <p className="text-xs text-stone-500">
+                  The assistant sees every message in your WhatsApp group, including ones you send
+                  each other. This is how much of that it should answer.
+                </p>
+                <div className="space-y-2">
+                  {ENGAGEMENT_MODES.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => update("bot_engagement_mode", opt.value)}
+                      disabled={!isAdmin}
+                      className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-colors min-h-[60px] disabled:opacity-50 ${
+                        form.bot_engagement_mode === opt.value
+                          ? "border-emerald-700 bg-emerald-900/30 text-emerald-300"
+                          : "border-stone-700 text-stone-400 hover:border-stone-600"
+                      }`}
+                    >
+                      <p className="font-medium">{opt.label}</p>
+                      <p className="text-xs opacity-70 mt-0.5">{opt.desc}</p>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-stone-600 border-t border-stone-800 pt-3">
+                  Receipts, fridge photos, and answers to a question the assistant asked are always
+                  handled, whichever option you pick.
+                </p>
+              </div>
+
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-stone-300">Tone</h2>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {TONES.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => update("bot_tone", opt.value)}
+                      disabled={!isAdmin}
+                      className={`px-2 py-3 rounded-xl border text-xs transition-colors min-h-[64px] disabled:opacity-50 ${
+                        form.bot_tone === opt.value
+                          ? "border-emerald-700 bg-emerald-900/30 text-emerald-300"
+                          : "border-stone-700 text-stone-400 hover:border-stone-600"
+                      }`}
+                    >
+                      <p className="font-medium">{opt.label}</p>
+                      <p className="opacity-70 mt-0.5">{opt.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 space-y-4">
+                <h2 className="text-sm font-semibold text-stone-300">Behaviour</h2>
+                <Toggle
+                  checked={form.bot_casual_chat ?? true}
+                  onChange={(v) => update("bot_casual_chat", v)}
+                  disabled={!isAdmin}
+                  label="Chat and give opinions"
+                  desc="Answers small talk naturally and gives its honest take on things outside your household data, flagged as an opinion. Off: it politely redirects to what it can look up."
+                />
+                <Toggle
+                  checked={form.bot_proactive_enabled ?? true}
+                  onChange={(v) => update("bot_proactive_enabled", v)}
+                  disabled={!isAdmin}
+                  label="Check in on its own"
+                  desc="Looks over budgets, pantry and renewals each morning and messages the group only if something needs attention."
+                />
               </div>
 
               {isAdmin && (

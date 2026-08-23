@@ -24,7 +24,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 
 from agents.orchestrator.registry import AGENT_BY_TOOL_NAME
-from services import preferences, proactive_notifications
+from services import bot_profile, preferences, proactive_notifications
 from services.llm.factory import get_chat_model
 from services.whatsapp_client import send_text_sync
 
@@ -119,8 +119,12 @@ def _readonly_tools() -> list[dict]:
 
 _TOOLS = _readonly_tools() + [_NOTIFY_TOOL, _NO_ACTION_TOOL]
 
+# Identity and tone come from services/bot_profile.py per household — see
+# _build_system_prompt. Unlike the chat supervisor, this loop's persona block
+# omits the casual-chat guidance: nobody is talking to it, so there is no small
+# talk to have.
 _BASE_PROMPT = (
-    "You are Homly, this household's personal assistant, checking in unprompted on a schedule — "
+    "You are checking in unprompted on a schedule — "
     "nobody has asked you anything this run. Check the household's budgets, pantry, insurance, "
     "savings, reminders, tasks, and remembered preferences (query_preferences) using the read-only "
     "tools available, and decide if anything is worth surfacing right now: a budget over or close "
@@ -145,7 +149,9 @@ class ProactiveState(TypedDict):
 
 
 def _build_system_prompt(household_id: str) -> str:
-    prompt = _BASE_PROMPT
+    profile = bot_profile.get_profile(household_id)
+    persona = bot_profile.describe_for_prompt(profile, include_chat_guidance=False)
+    prompt = f"{persona}\n\n{_BASE_PROMPT}"
     # Only household-wide preferences apply here — this run isn't addressed to
     # any one person, so a personal preference (sender_phone set) wouldn't mean
     # anything in a message sent to the whole group.

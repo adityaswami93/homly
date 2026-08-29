@@ -99,6 +99,9 @@ homly/
 │   │   │                           #   prompts on every run; backs agents/query/preferences_agent.py
 │   │   ├── proactive_notifications.py  # dedup log for proactive_agent.py's notify_household tool —
 │   │   │                           #   was_recently_notified()/record_notified(), keyed by finding_key
+│   │   ├── bot_profile.py          # per-household assistant config: persona (name/tone/casual chat)
+│   │   │                           #   folded into both agent system prompts, and should_engage() —
+│   │   │                           #   the single rule for whether a group message gets a reply at all
 │   │   ├── mcp_auth.py             # generate_key()/hash_key()/SCOPE — shared by mcp_keys.py and mcp_data.py
 │   │   ├── mcp_queries.py          # the actual data fetching behind every MCP tool — shared by mcp_data.py
 │   │   │                           # (HTTP, for the local stdio server) and mcp_server/remote.py (in-process)
@@ -127,9 +130,10 @@ homly/
 │   │   ├── 030_pantry_pending_confirmations.sql  # open "add to pantry?" prompts, keyed by group_jid
 │   │   ├── 031_proactive_notifications.sql  # dedup log for the proactive monitor's notify_household tool
 │   │   ├── 032_household_preferences.sql    # standing household/personal preferences, see services/preferences.py
-│   │   └── 033_reimbursement_receipt_link.sql  # receipts.reimbursement_id — single source of truth for
-│   │                                        #   "is this receipt paid", replacing the old (year, week_number)
-│   │                                        #   match against `reimbursements` — see services/reimbursement.py
+│   │   ├── 033_reimbursement_receipt_link.sql  # receipts.reimbursement_id — single source of truth for
+│   │   │                                    #   "is this receipt paid", replacing the old (year, week_number)
+│   │   │                                    #   match against `reimbursements` — see services/reimbursement.py
+│   │   └── 034_bot_personality.sql   # bot_name/tone/engagement_mode/casual_chat/proactive on settings
 │   ├── alembic.ini
 │   ├── requirements.txt
 │   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)
@@ -385,6 +389,47 @@ Format message with receipts, category totals, flagged count
 sock.sendMessage(groupJid, { text: ... })
 ```
 
+### Assistant Engagement Flow (when the bot is allowed to speak)
+
+The bot lives in the household's **shared** WhatsApp group, so `/internal/graph-invoke`
+receives every message members send *each other*, not just the ones meant for it. Two
+separate decisions therefore sit in `homly_graph.py`'s `classify_node`: what kind of
+message this is, and whether to answer it at all.
+
+```
+classify_node (text messages only — an image is always an explicit action)
+    ↓
+addressed = was_mentioned OR is_reply_to_bot OR bot_profile.mentions_name(text, bot_name)
+    ↑ the first two come from whatsapp/index.js, which knows its own JID; the
+    ↑ backend adds the name check because bot_name is per-household
+    ↓
+services/bot_profile.should_engage(message_type, profile, addressed)
+    ↓                                        ↓
+  True → route_by_type sends it on;    False → "silent" → END
+  an "unknown" message_type is
+  rerouted to the query node
+```
+
+`should_engage` is the **only** place this rule lives — don't re-derive it in a caller.
+Its three modes (`settings.bot_engagement_mode`):
+
+| Mode | Answers |
+|------|---------|
+| `mentioned` | only when addressed |
+| `smart` (default) | when addressed, **or** when the message classified as `text_query` / `pantry_command` |
+| `always` | every text message |
+
+Receipts, recipes, fridge scans, `pantry_confirmation` and `payment_confirmation` bypass
+the gate in every mode (`_ALWAYS_ENGAGE`) — a photo is a deliberate action, and swallowing
+a pantry confirmation would strand the flow with a prompt nobody can close.
+
+**Why `unknown` reroutes to the orchestrator instead of `END`:** the classifier is a fixed
+prefix/suffix keyword match, so ordinary conversation ("morning!", "thanks!") never matched
+and the group got silence from something that presents itself as an assistant. The
+orchestrator cannot go silent — `force_finalize_node` strips its tools and forces a text
+answer, and `run_query()` falls back to a fixed string — so handing it the message is what
+makes "always responds" true. **Don't add a new silent path out of `classify_node`.**
+
 ### Proactive Household Monitor Flow
 
 Every other agent in this codebase is reactive — it only runs because a household member
@@ -419,11 +464,16 @@ already registered in `agents/orchestrator/registry.py` becomes available here j
 adding its tool name (and, if the agent has writes too, the specific read intent names)
 to `_READONLY_INTENTS`.
 
+This loop is skipped entirely for a household with `settings.bot_proactive_enabled = false`
+(checked in `whatsapp_scheduler._run_proactive_checks`, not inside the agent).
+
 Both this loop's and the chat supervisor's system prompts are built per-run (not a
 static string) — `_build_system_prompt()` in each folds in the household's remembered
-preferences (`services/preferences.py`), and the chat supervisor's also folds in the
-sender's name, so responses read like a household assistant that knows who it's
-talking to rather than a stateless data lookup. `agents/query/preferences_agent.py`
+preferences (`services/preferences.py`) and its assistant persona
+(`services/bot_profile.describe_for_prompt()` — name and tone; this loop passes
+`include_chat_guidance=False`, since nothing is talking to it on a scheduled run), and the
+chat supervisor's also folds in the sender's name, so responses read like a household
+assistant that knows who it's talking to rather than a stateless data lookup. `agents/query/preferences_agent.py`
 is how a household member adds to that memory ("remember I don't eat pork") — it's a
 normal registered agent, callable like any other from either loop.
 
@@ -512,6 +562,11 @@ Frontend polling picks up new QR within 3s
 | cutoff_mode | TEXT | 'last7days' or 'thisweek' |
 | group_name | TEXT | WhatsApp group display name |
 | group_jid | TEXT | WhatsApp group JID (e.g. `120363...@g.us`) — used for routing |
+| bot_name | TEXT | DEFAULT `'Homly'`. Also an addressing signal — saying it counts as talking to the bot |
+| bot_engagement_mode | TEXT | `mentioned` / `smart` / `always`, DEFAULT `'smart'`. See Assistant Engagement Flow |
+| bot_tone | TEXT | `warm` / `concise` / `playful`, DEFAULT `'warm'` |
+| bot_casual_chat | BOOLEAN | DEFAULT true — may answer small talk and give opinions outside household data |
+| bot_proactive_enabled | BOOLEAN | DEFAULT true — gates the 08:00 proactive check in `whatsapp_scheduler.py` |
 | updated_at | TIMESTAMPTZ | |
 
 ### `invites`
@@ -759,7 +814,7 @@ One row per household, captured at `/chores/setup` onboarding. Drives the daily-
 | GET | `/internal/messages` | Bot | Pop queued messages (clears queue) |
 | GET | `/internal/insurance/renewals` | Bot | Policies renewing in 7 or 30 days |
 | GET | `/internal/help` | Bot | Capabilities summary (`registry.build_help_text()`) for `/help` |
-| POST | `/internal/graph-invoke` | Bot | Invoke `agents/homly_graph.py` for a WhatsApp message (text or image) |
+| POST | `/internal/graph-invoke` | Bot | Invoke `agents/homly_graph.py` for a WhatsApp message (text or image). Text calls also carry `sender_name`/`sender_phone` and the `was_mentioned`/`is_reply_to_bot` addressing flags |
 | GET | `/internal/reminders/due` | Bot | Poll for due `/remind` reminders |
 | GET | `/internal/commands` | Bot | Fetch custom command triggers, cached in the bot |
 
@@ -851,6 +906,12 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 - **`stripLeadingMentions(text)`** — strips a leading `@<phone>`/`@<name>` mention before any command match or
   `/internal/graph-invoke` call; without it, `@-mentioning` the bot broke every prefix-based match (custom
   commands, `/remind`, and `homly_graph.py`'s `classify_node` all check how the string *starts*)
+- **`wasBotMentioned(msg, sock)` / `isReplyToBot(msg, sock)`** — the two addressing signals only the
+  client can see (an `@mention` of its own JID, which `stripLeadingMentions` then removes from the
+  text, and a reply to one of its own messages). Forwarded to `/internal/graph-invoke` so
+  `services/bot_profile.should_engage()` can apply the household's engagement mode — see Assistant
+  Engagement Flow. Detecting the bot's *name* is deliberately left to the backend, which knows
+  each household's `bot_name`.
 - **`handleHelpCommand(text, ...)`** — exact-match `/help` or "what can you do", fetches
   `/internal/help` (built from each registered agent's `manifest.examples`) rather than leaving
   "what can you do" to the LLM to notice and answer well on its own

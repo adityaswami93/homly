@@ -152,7 +152,9 @@ async def _run_proactive_checks():
     from agents.proactive_agent import run_proactive_check
 
     try:
-        res = _db().table("settings").select("household_id, group_jid").execute()
+        res = _db().table("settings").select(
+            "household_id, group_jid, bot_proactive_enabled"
+        ).execute()
         settings_list = res.data or []
     except Exception as e:
         logger.error(f"[scheduler] Failed to load households for proactive check: {e}")
@@ -162,6 +164,10 @@ async def _run_proactive_checks():
         household_id = s.get("household_id")
         group_jid = s.get("group_jid")
         if not household_id or not group_jid:
+            continue
+        # None = settings row predates 034_bot_personality; unprompted check-ins
+        # were on for everyone before the switch existed, so keep them on.
+        if s.get("bot_proactive_enabled") is False:
             continue
         try:
             await asyncio.to_thread(run_proactive_check, household_id, group_jid)

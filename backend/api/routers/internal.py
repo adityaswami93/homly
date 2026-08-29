@@ -69,6 +69,12 @@ class GraphInvokeRequest(BaseModel):
     whatsapp_message_id: Optional[str] = None
     sender_name: Optional[str] = None
     sender_phone: Optional[str] = None
+    # Set by the WhatsApp client from things only it can see: an @mention of the
+    # bot's own JID (stripped from `query` before it gets here) and a reply to
+    # one of the bot's own messages. Both feed the engagement gate in
+    # agents/homly_graph.py's classify_node.
+    was_mentioned: bool = False
+    is_reply_to_bot: bool = False
 
 
 @router.post("/internal/graph-invoke")
@@ -88,6 +94,8 @@ async def graph_invoke(request: Request, body: GraphInvokeRequest):
         "whatsapp_message_id": body.whatsapp_message_id,
         "sender_name": body.sender_name,
         "sender_phone": body.sender_phone,
+        "was_mentioned": body.was_mentioned,
+        "is_reply_to_bot": body.is_reply_to_bot,
         "agent_results": [],
         "context": [],
         "response": None,

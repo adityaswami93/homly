@@ -3,10 +3,11 @@ import logging
 import os
 import re
 from datetime import datetime, timezone as tz
-from operator import add
 from typing import Annotated, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
+
+from services import bot_profile
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,23 @@ _GROCERY_VENDORS = frozenset({
 })
 
 _NON_PANTRY_KEYWORDS = ("plastic bag", "carrier bag", "voucher", "gift card", "receipt")
+
+
+def _merge_agent_results(existing: list | None, new: list | None) -> list:
+    """Append within a run; `None` starts a fresh run.
+
+    `agent_results` used a plain `operator.add`, which is right inside one run
+    (several agent nodes appending independently) but wrong across runs: with
+    get_graph(with_memory=True) the state is checkpointed per group_jid, so
+    results accumulated forever and downstream nodes reading `results[0]` —
+    synthesise_node, classify_receipt_type_node — would keep re-reading the
+    first result this group ever produced instead of the current one.
+
+    classify_node, the entry point, now returns None here to clear the slate.
+    """
+    if new is None:
+        return []
+    return (existing or []) + list(new)
 
 
 class HomlyState(TypedDict):
@@ -36,11 +54,25 @@ class HomlyState(TypedDict):
     sender_name: Optional[str]
     sender_phone: Optional[str]
 
+    # Was this message aimed at the bot? The WhatsApp client sets these two from
+    # things only it can see — an @mention of its own JID, and a reply to one of
+    # its own messages. classify_node adds a third signal (the text using the
+    # household's configured bot_name) and folds all three into `addressed`.
+    was_mentioned: Optional[bool]
+    is_reply_to_bot: Optional[bool]
+    addressed: Optional[bool]
+
     # Classification result
     message_type: Optional[str]  # "receipt"|"recipe"|"text_query"|"pantry_command"|"fridge_scan"|"unknown"
 
+    # Whether the household's engagement mode lets the assistant answer this
+    # one at all (services/bot_profile.py's should_engage). Text messages only —
+    # an image is always an explicit action, never chatter to stay out of.
+    engage: Optional[bool]
+
     # Outputs from agents — reducer lets multiple agents append independently
-    agent_results: Annotated[list, add]
+    # within a run, and `None` resets it between runs (see _merge_agent_results).
+    agent_results: Annotated[list, _merge_agent_results]
 
     # Final WhatsApp-ready response
     response: Optional[str]
@@ -153,13 +185,30 @@ def _looks_like_confirmation(reply: str, candidates: list) -> bool:
     return any(p in names for p in parts)
 
 
+# Fields that describe the message currently being handled, not the group's
+# standing state. classify_node is the entry point, so clearing them here is
+# what stops one run's leftovers from being read as this run's — the graph is
+# checkpointed per group_jid, and `confirmed_items` in particular short-circuits
+# synthesise_node, which would silently swallow the next reply.
+_RUN_RESET = {
+    "agent_results": None,          # _merge_agent_results treats None as "fresh run"
+    "receipt_id": None,
+    "receipt_category": None,
+    "pantry_candidates": None,
+    "pantry_confirmation_pending": None,
+    "confirmed_items": None,
+    "response": None,
+    "error": None,
+}
+
+
 def classify_node(state: HomlyState) -> dict:
     try:
         if state.get("image_bytes"):
             # Caption-based fridge scan detection takes priority over vision classifier
             caption = (state.get("query") or "").lower()
             if any(kw in caption for kw in _FRIDGE_SCAN_KEYWORDS):
-                return {"message_type": "fridge_scan"}
+                return {**_RUN_RESET, "message_type": "fridge_scan"}
 
             from services.llm_client import get_vision_completion
             img_bytes = state["image_bytes"]
@@ -183,22 +232,54 @@ def classify_node(state: HomlyState) -> dict:
             result = json.loads(clean)
             img_type = result.get("type", "other_image")
             mapping = {"receipt": "receipt", "food_photo": "recipe", "other_image": "unknown"}
-            return {"message_type": mapping.get(img_type, "unknown")}
+            # `engage` must be set on every path, not just the gated one. State is
+            # checkpointed per group_jid (get_graph(with_memory=True)), so leaving
+            # it unset here would let a False from an earlier ignored text message
+            # persist into this run and silently drop the receipt.
+            return {**_RUN_RESET, "message_type": mapping.get(img_type, "unknown"), "engage": True}
 
         if state.get("query"):
-            query = _strip_mention_prefix(state["query"])
+            # _strip_mention_prefix drops the "@6591234567 " that WhatsApp leaves
+            # in the raw text, so classification sees the actual words — but the
+            # fact that the bot *was* mentioned is signal we still need, and the
+            # client passes it separately for exactly that reason.
+            raw_query = state["query"]
+            query = _strip_mention_prefix(raw_query)
+            profile = bot_profile.get_profile(state["household_id"])
+
+            # Name check runs against the *raw* text: someone who types
+            # "@Homly what's for dinner" by hand produces no real WhatsApp
+            # mention (so was_mentioned is false), and _strip_mention_prefix
+            # has already eaten the "@Homly" by the time `query` exists.
+            addressed = bool(
+                state.get("was_mentioned")
+                or state.get("is_reply_to_bot")
+                or bot_profile.mentions_name(raw_query, profile.name)
+            )
+
             pending = _load_pending(state)
             if pending and _looks_like_confirmation(
                 query, pending.get("candidates") or []
             ):
-                return {"message_type": "pantry_confirmation", "query": query}
-            return {"message_type": _classify_text(query), "query": query}
+                message_type = "pantry_confirmation"
+            else:
+                message_type = _classify_text(query)
 
-        return {"message_type": "unknown"}
+            return {
+                **_RUN_RESET,
+                "message_type": message_type,
+                "query": query,
+                "addressed": addressed,
+                "engage": bot_profile.should_engage(message_type, profile, addressed),
+            }
+
+        # Neither text nor image — nothing to answer, and nothing to hand the
+        # assistant. Explicitly not engaging (see the note above on stale state).
+        return {**_RUN_RESET, "message_type": "unknown", "engage": False}
 
     except Exception as e:
         logger.error(f"[classify_node] error: {e}")
-        return {"message_type": "unknown", "error": str(e)}
+        return {**_RUN_RESET, "message_type": "unknown", "engage": False, "error": str(e)}
 
 
 # ── Agent nodes ───────────────────────────────────────────────────────────────
@@ -705,7 +786,24 @@ def synthesise_node(state: HomlyState) -> dict:
 
 
 def route_by_type(state: HomlyState) -> str:
-    return state.get("message_type") or "unknown"
+    message_type = state.get("message_type") or "unknown"
+
+    # Images and anything classify_node didn't gate (engage unset) keep their
+    # original routing — the gate is a text-only concern.
+    if state.get("engage") is False:
+        return "silent"
+
+    # Everything else the household has opted to engage with goes to the
+    # assistant, including text the keyword classifier couldn't place. That
+    # last case is the whole point: "morning!", "thanks!", "lol true" used to
+    # route straight to END and the group got silence from something that
+    # presents itself as an assistant. The orchestrator cannot go silent —
+    # force_finalize_node guarantees a text answer — so handing it the message
+    # is what makes "always responds" true.
+    if message_type == "unknown" and state.get("engage"):
+        return "text_query"
+
+    return message_type
 
 
 def route_after_receipt_classify(state: HomlyState) -> str:
@@ -745,6 +843,7 @@ _builder.add_conditional_edges("classify", route_by_type, {
     "payment_confirmation": "payment_confirm",
     "pantry_confirmation": "resume_from_confirmation",
     "unknown": END,
+    "silent": END,
 })
 
 # Receipt path: receipt → classify_receipt_type → extract_pantry_candidates → conditional

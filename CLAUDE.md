@@ -400,11 +400,12 @@ separate decisions therefore sit in `homly_graph.py`'s `classify_node`: what kin
 message this is, and whether to answer it at all.
 
 ```
-classify_node (text messages only — an image is always an explicit action)
+classify_node (text and images both go through this gate)
     ↓
-addressed = was_mentioned OR is_reply_to_bot OR bot_profile.mentions_name(text, bot_name)
+addressed = was_mentioned OR is_reply_to_bot OR bot_profile.mentions_name(text/caption, bot_name)
     ↑ the first two come from whatsapp/index.js, which knows its own JID; the
-    ↑ backend adds the name check because bot_name is per-household
+    ↑ backend adds the name check because bot_name is per-household — for an
+    ↑ image this checks the caption, since that's the only text that exists
     ↓
 services/bot_profile.should_engage(message_type, profile, addressed)
     ↓                                        ↓
@@ -420,11 +421,19 @@ Its three modes (`settings.bot_engagement_mode`):
 |------|---------|
 | `mentioned` | only when addressed |
 | `smart` (default) | when addressed, **or** when the message classified as `text_query` / `pantry_command` |
-| `always` | every text message |
+| `always` | every message |
 
 Receipts, recipes, fridge scans, `pantry_confirmation` and `payment_confirmation` bypass
-the gate in every mode (`_ALWAYS_ENGAGE`) — a photo is a deliberate action, and swallowing
-a pantry confirmation would strand the flow with a prompt nobody can close.
+the gate in every mode (`_ALWAYS_ENGAGE`) — each is a deliberate, unambiguous action, and
+swallowing a pantry confirmation in particular would strand the flow with a prompt nobody
+can close. An **unrecognized photo** (`other_image` — a family photo, a meme, a screenshot)
+is *not* in that set and is gated exactly like unaddressed text chatter: in `mentioned`
+mode it's silently ignored unless the caption addresses the bot. This used to be a bug —
+`classify_node`'s image branch hardcoded `engage: True` for every photo regardless of mode,
+so the bot spoke up on any photo shared in the group. When an unrecognized photo *does*
+engage, it gets a fixed honest reply from `unsupported_image_node` rather than being routed
+into the chat orchestrator — `run_query()` has no way to see the photo itself, only whatever
+caption text came with it, so answering as if it had would just be a confident guess.
 
 Text classification (`_classify_text` in `homly_graph.py`) is LLM-first: a single cheap
 `get_completion()` call sorts a message into `pantry_command` / `text_query` / `unknown`

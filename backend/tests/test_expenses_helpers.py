@@ -4,9 +4,28 @@ custom-week-boundary math CLAUDE.md calls out by name: "custom week
 boundaries not aligning with ISO weeks caused a real reimbursement-total
 bug." These pin down the exact behavior that bug depended on getting right.
 """
+import importlib.util
+import os
 from datetime import date
 
-from api.routers.expenses import _reimbursement_groups, _week_for_date
+# Loaded by file path rather than `from api.routers.expenses import ...`:
+# api/, services/, and agents/ are implicit namespace packages (no
+# __init__.py) while some of their subpackages (api.routers, api.dependencies,
+# services.llm, ...) are regular packages, and that mix has produced
+# environment-dependent import resolution for this module specifically in CI
+# (a working-tree-verified `_reimbursement_groups`/`_week_for_date` still
+# raised "cannot import name" from a dotted import in one CI run). Loading
+# the file directly sidesteps sys.path/namespace-package resolution
+# entirely, so it can't be affected by whatever caused that.
+_expenses_path = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "api", "routers", "expenses.py",
+)
+_spec = importlib.util.spec_from_file_location("_expenses_under_test", _expenses_path)
+_expenses = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_expenses)
+_reimbursement_groups = _expenses._reimbursement_groups
+_week_for_date = _expenses._week_for_date
 
 
 def test_week_for_date_returns_iso_week_and_year():

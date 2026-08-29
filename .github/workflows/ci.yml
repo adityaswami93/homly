@@ -7,7 +7,7 @@ on:
 
 jobs:
   backend:
-    name: Backend (lint + import check)
+    name: Backend (lint + test + import check)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,13 +24,20 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install ruff
+          pip install ruff pytest
 
       - name: Lint (ruff)
         run: ruff check .
 
       - name: Compile check (catch syntax errors)
         run: python -m compileall -q .
+
+      - name: Unit tests
+        run: pytest tests/ -v
+
+      - name: Multi-tenancy scoping scan (informational — see tests/check_household_scoping.py)
+        run: python tests/check_household_scoping.py
+        continue-on-error: true
 
   frontend:
     name: Frontend (lint + typecheck + build)

@@ -63,11 +63,14 @@ class HomlyState(TypedDict):
     addressed: Optional[bool]
 
     # Classification result
-    message_type: Optional[str]  # "receipt"|"recipe"|"text_query"|"pantry_command"|"fridge_scan"|"unknown"
+    message_type: Optional[str]  # "receipt"|"recipe"|"text_query"|"pantry_command"|"fridge_scan"|"other_image"|"unknown"
 
     # Whether the household's engagement mode lets the assistant answer this
-    # one at all (services/bot_profile.py's should_engage). Text messages only —
-    # an image is always an explicit action, never chatter to stay out of.
+    # one at all (services/bot_profile.py's should_engage). Receipts, recipes,
+    # and fridge scans are explicit actions and always pass (should_engage's
+    # _ALWAYS_ENGAGE) — but an unrecognized photo ("other_image") is exactly
+    # as much "chatter to stay out of" as an unaddressed text message is, and
+    # is gated the same way.
     engage: Optional[bool]
 
     # Outputs from agents — reducer lets multiple agents append independently
@@ -205,10 +208,35 @@ _RUN_RESET = {
 def classify_node(state: HomlyState) -> dict:
     try:
         if state.get("image_bytes"):
+            # A photo's caption carries the same addressing signals a text message's
+            # body does — an @mention or the bot's name said in the caption — so an
+            # unrecognized photo can be gated exactly like unaddressed chatter is,
+            # instead of always forcing an unsolicited reply.
+            raw_caption = state.get("query") or ""
+            profile = bot_profile.get_profile(state["household_id"])
+            addressed = bool(
+                state.get("was_mentioned")
+                or state.get("is_reply_to_bot")
+                or bot_profile.mentions_name(raw_caption, profile.name)
+            )
+
+            def _classified(message_type: str) -> dict:
+                # should_engage() is the single source of truth for this decision
+                # (see services/bot_profile.py) — receipt/recipe/fridge_scan are in
+                # its _ALWAYS_ENGAGE set so this is still unconditionally True for
+                # them, exactly as before; only "other_image" newly falls through
+                # to the addressed/engagement-mode checks a text message would get.
+                return {
+                    **_RUN_RESET,
+                    "message_type": message_type,
+                    "addressed": addressed,
+                    "engage": bot_profile.should_engage(message_type, profile, addressed),
+                }
+
             # Caption-based fridge scan detection takes priority over vision classifier
-            caption = (state.get("query") or "").lower()
+            caption = raw_caption.lower()
             if any(kw in caption for kw in _FRIDGE_SCAN_KEYWORDS):
-                return {**_RUN_RESET, "message_type": "fridge_scan"}
+                return _classified("fridge_scan")
 
             from services.llm_client import get_vision_completion
             img_bytes = state["image_bytes"]
@@ -231,12 +259,12 @@ def classify_node(state: HomlyState) -> dict:
                 clean = clean.strip()
             result = json.loads(clean)
             img_type = result.get("type", "other_image")
-            mapping = {"receipt": "receipt", "food_photo": "recipe", "other_image": "unknown"}
-            # `engage` must be set on every path, not just the gated one. State is
-            # checkpointed per group_jid (get_graph(with_memory=True)), so leaving
-            # it unset here would let a False from an earlier ignored text message
-            # persist into this run and silently drop the receipt.
-            return {**_RUN_RESET, "message_type": mapping.get(img_type, "unknown"), "engage": True}
+            # "other_image" is its own message_type (not folded into "unknown") —
+            # it must never reach the chat orchestrator, which has no way to see
+            # the photo itself, only whatever caption text (if any) came with it.
+            # See route_by_type / unsupported_image_node below.
+            mapping = {"receipt": "receipt", "food_photo": "recipe", "other_image": "other_image"}
+            return _classified(mapping.get(img_type, "other_image"))
 
         if state.get("query"):
             # _strip_mention_prefix drops the "@6591234567 " that WhatsApp leaves
@@ -283,6 +311,22 @@ def classify_node(state: HomlyState) -> dict:
 
 
 # ── Agent nodes ───────────────────────────────────────────────────────────────
+
+
+def unsupported_image_node(state: HomlyState) -> dict:
+    """A photo the vision classifier couldn't place as a receipt, dish, or
+    fridge/pantry scan, and that the household engaged with anyway (addressed,
+    or `always` mode). Answers honestly instead of handing it to the chat
+    orchestrator — run_query() only ever sees the caption text, never the
+    image itself, so pretending to have looked at the photo would just be a
+    confident-sounding guess about a picture nobody actually read.
+    """
+    return {
+        "response": (
+            "📷 I can't tell what this photo is for — I can help with receipts, "
+            "fridge/pantry photos, and dishes you want ingredient help with."
+        )
+    }
 
 
 def receipt_node(state: HomlyState) -> dict:
@@ -788,8 +832,10 @@ def synthesise_node(state: HomlyState) -> dict:
 def route_by_type(state: HomlyState) -> str:
     message_type = state.get("message_type") or "unknown"
 
-    # Images and anything classify_node didn't gate (engage unset) keep their
-    # original routing — the gate is a text-only concern.
+    # classify_node sets `engage` on every path now (text and image alike) via
+    # should_engage() — a `False` here means the household's engagement mode
+    # says stay out of this one, whether it's unaddressed chatter or a random
+    # photo nobody asked the bot about.
     if state.get("engage") is False:
         return "silent"
 
@@ -799,7 +845,9 @@ def route_by_type(state: HomlyState) -> str:
     # route straight to END and the group got silence from something that
     # presents itself as an assistant. The orchestrator cannot go silent —
     # force_finalize_node guarantees a text answer — so handing it the message
-    # is what makes "always responds" true.
+    # is what makes "always responds" true. "other_image" does NOT go here —
+    # unlike text, the orchestrator has no way to see the photo itself, so it
+    # gets its own honest fixed reply instead (unsupported_image_node).
     if message_type == "unknown" and state.get("engage"):
         return "text_query"
 
@@ -822,6 +870,7 @@ _builder.add_node("recipe", recipe_node)
 _builder.add_node("query", query_node)
 _builder.add_node("pantry", pantry_node)
 _builder.add_node("payment_confirm", payment_confirm_node)
+_builder.add_node("unsupported_image", unsupported_image_node)
 _builder.add_node("synthesise", synthesise_node)
 
 # Phase 3 nodes
@@ -842,6 +891,7 @@ _builder.add_conditional_edges("classify", route_by_type, {
     "fridge_scan": "fridge_scan",
     "payment_confirmation": "payment_confirm",
     "pantry_confirmation": "resume_from_confirmation",
+    "other_image": "unsupported_image",
     "unknown": END,
     "silent": END,
 })
@@ -874,6 +924,7 @@ _builder.add_edge("recipe", "synthesise")
 _builder.add_edge("query", "synthesise")
 _builder.add_edge("pantry", "synthesise")
 _builder.add_edge("payment_confirm", END)
+_builder.add_edge("unsupported_image", END)
 _builder.add_edge("synthesise", END)
 
 # Stateless graph — used for API calls that don't need memory

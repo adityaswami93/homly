@@ -3,6 +3,8 @@ from fastapi import APIRouter, Request, HTTPException
 from supabase import create_client
 from dotenv import load_dotenv
 
+from services.reimbursement import mark_receipts_reimbursed
+
 load_dotenv()
 
 router = APIRouter()
@@ -24,6 +26,11 @@ def list_reimbursements(request: Request):
 
 @router.post("/reimbursements")
 def mark_reimbursed(request: Request, body: dict):
+    """Pay off every currently-unpaid reimbursable receipt in the given ISO
+    week. Amounts are always derived from the receipts themselves (via
+    services/reimbursement.py's mark_receipts_reimbursed) rather than typed
+    in by the caller, so a payment can never drift from what receipts it
+    actually covers."""
     household_id = request.state.user.get("household_id")
     user_id      = request.state.user["sub"]
     if not household_id:
@@ -31,39 +38,56 @@ def mark_reimbursed(request: Request, body: dict):
 
     year        = body.get("year")
     week_number = body.get("week_number")
-    amount      = body.get("amount")
-    note        = body.get("note")
+    if year is None or week_number is None:
+        raise HTTPException(status_code=400, detail="year and week_number required")
 
-    if year is None or week_number is None or amount is None:
-        raise HTTPException(status_code=400, detail="year, week_number and amount required")
-    try:
-        amount = float(amount)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="amount must be a number")
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="amount must be positive")
+    receipts_res = supabase.table("receipts")\
+        .select("id, date, total, reimbursable, reimbursement_id")\
+        .eq("household_id", household_id)\
+        .eq("year", year)\
+        .eq("week_number", week_number)\
+        .eq("deleted", False)\
+        .execute()
 
-    res = supabase.table("reimbursements").insert({
-        "household_id": household_id,
-        "year":         year,
-        "week_number":  week_number,
-        "amount":       amount,
-        "note":         note,
-        "created_by":   user_id,
-    }).execute()
-    return res.data[0]
+    result = mark_receipts_reimbursed(
+        supabase, household_id, receipts_res.data,
+        note=body.get("note") or f"Week {week_number} reimbursement",
+        created_by=user_id,
+    )
+    if not result:
+        raise HTTPException(status_code=400, detail="Nothing outstanding for this week")
+    return result["reimbursement"]
 
 
 @router.get("/reimbursements/week/{year}/{week_number}")
 def get_week_reimbursements(year: int, week_number: int, request: Request):
+    """Payment history for one ISO week, found via the receipts that week's
+    reimbursable receipts actually link to (receipts.reimbursement_id) —
+    not by matching a (year, week_number) pair on the reimbursements row
+    itself, since one payment can now cover a date range spanning several
+    ISO weeks."""
     household_id = request.state.user.get("household_id")
     if not household_id:
         raise HTTPException(status_code=403, detail="No household found")
+
+    receipts_res = supabase.table("receipts")\
+        .select("reimbursement_id")\
+        .eq("household_id", household_id)\
+        .eq("year", year)\
+        .eq("week_number", week_number)\
+        .eq("deleted", False)\
+        .not_.is_("reimbursement_id", "null")\
+        .execute()
+    reimbursement_ids = sorted({r["reimbursement_id"] for r in receipts_res.data})
+
+    if not reimbursement_ids:
+        return {"reimbursements": [], "total_paid": 0}
+
     res = supabase.table("reimbursements")\
         .select("*")\
-        .eq("household_id",  household_id)\
-        .eq("year",          year)\
-        .eq("week_number",   week_number)\
+        .eq("household_id", household_id)\
+        .in_("id", reimbursement_ids)\
+        .order("paid_at", desc=True)\
         .execute()
     total_paid = sum(float(r["amount"] or 0) for r in res.data)
     return {"reimbursements": res.data, "total_paid": round(total_paid, 2)}

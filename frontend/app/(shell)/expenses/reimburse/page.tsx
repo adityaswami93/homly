@@ -9,8 +9,6 @@ import { ToastContainer } from "@/app/components/Toast";
 
 interface Reimbursement {
   id: string;
-  year: number;
-  week_number: number;
   amount: number;
   note: string | null;
   paid_at: string;
@@ -24,7 +22,7 @@ interface WeekSummary {
   receipt_count: number;
   paid: number;
   outstanding: number;
-  reimbursements: Reimbursement[];
+  reimbursements: Reimbursement[] | null;
 }
 
 function getWeekRange(year: number, week: number): { start: Date; end: Date } {
@@ -85,7 +83,6 @@ export default function ReimbursePage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "unpaid" | "settled">("all");
   const [paying, setPaying] = useState<string | null>(null);
-  const [customAmount, setCustomAmount] = useState<Record<string, string>>({});
   const { toasts, dismissToast, toast } = useToast();
   const router = useRouter();
 
@@ -99,32 +96,22 @@ export default function ReimbursePage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // /weeks is the single source of truth for reimbursable/paid/outstanding
+      // per week (backend-computed from each receipt's own reimbursement_id) —
+      // payment history is fetched lazily per week when expanded, below.
       const weeksRes = await api.get("/weeks");
-      const allReimbursements = await api.get("/reimbursements");
-
-      const reimbMap: Record<string, Reimbursement[]> = {};
-      for (const r of allReimbursements.data) {
-        const key = `${r.year}-${r.week_number}`;
-        if (!reimbMap[key]) reimbMap[key] = [];
-        reimbMap[key].push(r);
-      }
 
       const summaries: WeekSummary[] = (weeksRes.data || [])
         .filter((w: any) => (w.reimbursable_total || 0) > 0)
-        .map((w: any) => {
-          const key = `${w.year}-${w.week_number}`;
-          const reimbs = reimbMap[key] || [];
-          const paid = reimbs.reduce((s: number, r: Reimbursement) => s + Number(r.amount), 0);
-          return {
-            year: w.year,
-            week_number: w.week_number,
-            reimbursable_total: w.reimbursable_total || 0,
-            receipt_count: w.receipt_count || 0,
-            paid: Math.round(paid * 100) / 100,
-            outstanding: Math.round((w.reimbursable_total - paid) * 100) / 100,
-            reimbursements: reimbs,
-          };
-        })
+        .map((w: any) => ({
+          year: w.year,
+          week_number: w.week_number,
+          reimbursable_total: w.reimbursable_total || 0,
+          receipt_count: w.receipt_count || 0,
+          paid: w.paid_reimbursable_total || 0,
+          outstanding: w.outstanding_reimbursable_total ?? w.reimbursable_total,
+          reimbursements: null,
+        }))
         .sort((a: WeekSummary, b: WeekSummary) =>
           b.year !== a.year ? b.year - a.year : b.week_number - a.week_number
         );
@@ -141,19 +128,35 @@ export default function ReimbursePage() {
     if (user) load();
   }, [user, load]);
 
-  const handleMarkPaid = async (week: WeekSummary, amount?: number) => {
+  const toggleExpand = async (week: WeekSummary) => {
+    const key = `${week.year}-${week.week_number}`;
+    if (expanded === key) {
+      setExpanded(null);
+      return;
+    }
+    setExpanded(key);
+    if (week.reimbursements !== null) return;
+    try {
+      const res = await api.get(`/reimbursements/week/${week.year}/${week.week_number}`);
+      setWeeks((prev) =>
+        prev.map((w) =>
+          w.year === week.year && w.week_number === week.week_number
+            ? { ...w, reimbursements: res.data.reimbursements }
+            : w
+        )
+      );
+    } catch {
+      toast.error("Failed to load payment history");
+    }
+  };
+
+  const handleMarkPaid = async (week: WeekSummary) => {
     const key = `${week.year}-${week.week_number}`;
     setPaying(key);
     try {
-      const payAmount = amount ?? week.outstanding;
-      await api.post("/reimbursements", {
-        year: week.year,
-        week_number: week.week_number,
-        amount: payAmount,
-        note: `Week ${week.week_number} reimbursement`,
-      });
-      toast.success(`${fmt(payAmount)} marked as paid`);
-      setCustomAmount((prev) => ({ ...prev, [key]: "" }));
+      await api.post("/reimbursements", { year: week.year, week_number: week.week_number });
+      toast.success(`${fmt(week.outstanding)} marked as paid`);
+      setExpanded(null);
       await load();
     } catch {
       toast.error("Failed to record payment");
@@ -245,7 +248,7 @@ export default function ReimbursePage() {
             return (
               <div key={key} className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden">
                 <button
-                  onClick={() => setExpanded(isExpanded ? null : key)}
+                  onClick={() => toggleExpand(week)}
                   className="w-full px-4 py-4 flex items-center justify-between hover:bg-stone-800 transition-colors text-left min-h-[64px]"
                 >
                   <div>
@@ -273,7 +276,10 @@ export default function ReimbursePage() {
                 {isExpanded && (
                   <div className="border-t border-stone-800 bg-stone-950/50">
                     {/* Payment history */}
-                    {week.reimbursements.length > 0 && (
+                    {week.reimbursements === null && (
+                      <p className="px-4 py-3 text-stone-600 text-xs">Loading history…</p>
+                    )}
+                    {week.reimbursements && week.reimbursements.length > 0 && (
                       <div className="px-4 py-3 border-b border-stone-800">
                         <p className="text-stone-500 text-xs uppercase tracking-widest mb-2">Payment history</p>
                         <div className="space-y-1.5">
@@ -325,25 +331,6 @@ export default function ReimbursePage() {
                         >
                           {isPaying ? "Recording…" : `Mark ${fmt(week.outstanding)} as paid`}
                         </button>
-                        <div className="flex gap-2">
-                          <input
-                            type="number"
-                            placeholder="Custom amount"
-                            value={customAmount[key] || ""}
-                            onChange={(e) => setCustomAmount((prev) => ({ ...prev, [key]: e.target.value }))}
-                            className="flex-1 bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-sm placeholder:text-stone-600 focus:outline-none focus:border-emerald-600"
-                          />
-                          <button
-                            onClick={() => {
-                              const amt = parseFloat(customAmount[key] || "0");
-                              if (amt > 0) handleMarkPaid(week, amt);
-                            }}
-                            disabled={!!isPaying || !customAmount[key]}
-                            className="px-4 py-2 rounded-xl text-sm border border-stone-700 text-stone-400 hover:text-stone-200 hover:border-stone-600 transition-colors disabled:opacity-40"
-                          >
-                            Partial
-                          </button>
-                        </div>
                       </div>
                     ) : (
                       <div className="px-4 py-3 text-center">

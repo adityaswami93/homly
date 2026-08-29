@@ -117,11 +117,73 @@ _QUERY_PREFIXES = (
     "any", "are", "is", "do", "did", "have", "has",
 )
 
-# Exact phrases the household member sends to confirm the weekly payout
+# Exact phrases the household member sends to confirm the weekly payout.
+# Matched before the LLM classifier runs — deterministic and cheap, and
+# money-moving confirmations shouldn't ride on a model call.
 _PAYMENT_EXACT = frozenset({
     "paid", "reimbursed", "payment made", "payment done", "all paid",
     "paid up", "settled", "yes paid", "done paying", "payment settled",
 })
+
+# The message_type values _classify_text (LLM or keyword) may return. Kept
+# separate from the full HomlyState.message_type union — pantry_confirmation,
+# receipt, recipe, and fridge_scan are decided elsewhere in classify_node,
+# never by this text classifier.
+_TEXT_MESSAGE_TYPES = frozenset({"payment_confirmation", "pantry_command", "text_query", "unknown"})
+
+_TEXT_CLASSIFY_SYSTEM = (
+    "You classify a single WhatsApp message sent into a household's shared group chat. "
+    'Reply with ONLY a JSON object, no markdown: {"type": "<value>"} where <value> is exactly '
+    "one of:\n"
+    '  "pantry_command" — reporting on pantry/grocery stock, e.g. "we\'re out of milk", '
+    '"added rice", "running low on eggs", "bought detergent"\n'
+    '  "text_query" — a genuine question or request for information/action about the '
+    "household's expenses, insurance, pantry, savings, budgets, reminders, or chores, e.g. "
+    '"how much did we spend on groceries this month?", "remind the helper to mop Tuesday", '
+    '"when does the car insurance renew?"\n'
+    '  "unknown" — anything else: small talk, chatter between household members, replies to '
+    "each other, statements with no request or report in them\n\n"
+    "Classify only what the message itself says — don't guess at context you don't have."
+)
+_TEXT_CLASSIFY_TIMEOUT_SECONDS = 6.0
+
+
+def _parse_json_object(raw: str) -> dict:
+    clean = (raw or "").strip()
+    if clean.startswith("```"):
+        parts = clean.split("```")
+        clean = parts[1]
+        if clean.startswith("json"):
+            clean = clean[4:]
+        clean = clean.strip()
+    return json.loads(clean)
+
+
+def _classify_text_llm(text: str) -> Optional[str]:
+    """LLM classification of a text message into one of _TEXT_MESSAGE_TYPES.
+
+    Returns None on any failure (timeout, malformed response, an unrecognized
+    type) so the caller falls back to the keyword heuristic instead of
+    blocking message handling on a single model call — this runs on every
+    WhatsApp text message, so it must never become the reason nothing gets
+    classified at all.
+    """
+    try:
+        from services.llm_client import get_completion
+        raw = get_completion(
+            f'Message: "{text}"',
+            system=_TEXT_CLASSIFY_SYSTEM,
+            timeout=_TEXT_CLASSIFY_TIMEOUT_SECONDS,
+        )
+        result = _parse_json_object(raw)
+        message_type = result.get("type")
+        if message_type in _TEXT_MESSAGE_TYPES:
+            return message_type
+        logger.warning(f"[_classify_text_llm] unrecognized type from model: {message_type!r}")
+        return None
+    except Exception as e:
+        logger.warning(f"[_classify_text_llm] falling back to keyword classifier: {e}")
+        return None
 
 # WhatsApp renders an @mention with the contact's display name, but the raw
 # message text carries it as "@<phone_number>" — strip any leading run of
@@ -134,17 +196,25 @@ def _strip_mention_prefix(text: str) -> str:
     return _MENTION_PREFIX_RE.sub("", text or "").strip()
 
 
+def _classify_text_keywords(t: str) -> str:
+    """Prefix/suffix keyword fallback — used when the LLM classifier is
+    unavailable or returns something we don't recognize. `t` is already
+    stripped/lowered/trimmed of trailing punctuation by the caller.
+    """
+    if any(t.startswith(p) for p in _PANTRY_PREFIXES):
+        return "pantry_command"
+    if t.endswith("?") or any(t.startswith(p) for p in _QUERY_PREFIXES):
+        return "text_query"
+    return "unknown"
+
+
 def _classify_text(text: str) -> str:
     t = text.strip().lower().rstrip("!.✓ ")
     if not t:
         return "unknown"
     if t in _PAYMENT_EXACT:
         return "payment_confirmation"
-    if any(t.startswith(p) for p in _PANTRY_PREFIXES):
-        return "pantry_command"
-    if t.endswith("?") or any(t.startswith(p) for p in _QUERY_PREFIXES):
-        return "text_query"
-    return "unknown"
+    return _classify_text_llm(text) or _classify_text_keywords(t)
 
 
 _CONFIRM_YES = frozenset({"yes", "y", "ok", "okay", "yeah", "sure", "yep", "yup", "all"})

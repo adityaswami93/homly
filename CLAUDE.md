@@ -73,7 +73,10 @@ homly/
 │   │   ├── receipt_agent.py        # Vision LLM call → structured JSON receipt data
 │   │   ├── homly_graph.py          # LangGraph state machine: classifies + routes every WhatsApp message
 │   │   ├── orchestrator/           # Chat-query supervisor: registry.py's AGENTS list is the
-│   │   │                           #   extensibility point — add an agent there and it's routable
+│   │   │   ├── supervisor.py       #   extensibility point — add an agent there and it's routable
+│   │   │   └── react_loop.py       # Shared agent⇄tools loop skeleton (bind, invoke, route, iterate)
+│   │   │                           #   used by both supervisor.py and proactive_agent.py, so a fix to
+│   │   │                           #   iteration/routing logic can't drift between the two
 │   │   ├── proactive_agent.py      # Same Reason/Act/Observe loop as orchestrator/, run unprompted on a
 │   │   │                           #   schedule instead of in response to a message — see Proactive
 │   │   │                           #   Household Monitor flow below
@@ -423,12 +426,23 @@ Receipts, recipes, fridge scans, `pantry_confirmation` and `payment_confirmation
 the gate in every mode (`_ALWAYS_ENGAGE`) — a photo is a deliberate action, and swallowing
 a pantry confirmation would strand the flow with a prompt nobody can close.
 
-**Why `unknown` reroutes to the orchestrator instead of `END`:** the classifier is a fixed
-prefix/suffix keyword match, so ordinary conversation ("morning!", "thanks!") never matched
-and the group got silence from something that presents itself as an assistant. The
-orchestrator cannot go silent — `force_finalize_node` strips its tools and forces a text
-answer, and `run_query()` falls back to a fixed string — so handing it the message is what
-makes "always responds" true. **Don't add a new silent path out of `classify_node`.**
+Text classification (`_classify_text` in `homly_graph.py`) is LLM-first: a single cheap
+`get_completion()` call sorts a message into `pantry_command` / `text_query` / `unknown`
+(payment confirmations still match a fixed exact-phrase set — `_PAYMENT_EXACT` — before the
+model is even called, since that one's deterministic and cheap). If the model call fails,
+times out (`_TEXT_CLASSIFY_TIMEOUT_SECONDS`), or returns a type outside that set,
+`_classify_text_keywords()` — the original fixed prefix/suffix keyword match — is the
+fallback, so a single bad LLM call never blocks message handling. `tests/test_classify_text.py`
+covers both layers, plus a small eval set against the keyword fallback.
+
+**Why `unknown` reroutes to the orchestrator instead of `END`:** even the LLM classifier
+only sorts a message into a handful of buckets, so ordinary conversation ("morning!",
+"thanks!") reliably lands in `unknown` rather than matching one of the actionable types —
+and the group must not get silence from something that presents itself as an assistant. The
+orchestrator cannot go silent — `force_finalize_node` (now shared via
+`agents/orchestrator/react_loop.py`, see below) strips its tools and forces a text answer,
+and `run_query()` falls back to a fixed string — so handing it the message is what makes
+"always responds" true. **Don't add a new silent path out of `classify_node`.**
 
 ### Proactive Household Monitor Flow
 
@@ -437,13 +451,24 @@ sent a WhatsApp message. `agents/proactive_agent.py` is the one exception: the s
 Reason/Act/Observe (ReAct) loop shape as `agents/orchestrator/supervisor.py`, run
 unprompted on a schedule instead of triggered by a message.
 
+Both loops are now built on the shared skeleton in `agents/orchestrator/react_loop.py`
+(`make_agent_node`, `build_react_graph`) — the agent⇄tools wiring and iteration/routing
+logic used to be implemented twice and could silently drift between the two callers.
+What each loop still owns independently: its own `tools_node` (this loop's dispatches only
+to the read-only intents below, plus `notify_household`/`no_action`; the supervisor's
+dispatches to any registered agent with sender attribution), its own system prompt builder,
+and what happens at the iteration cap — this loop just ends (`on_exhausted="end"`, silence
+is a fine outcome when nobody's waiting on an answer), where the chat supervisor forces a
+text answer (`on_exhausted="force_finalize"`, see Assistant Engagement Flow above).
+
 ```
 Daily 08:00 SGT cron (services/whatsapp_scheduler.py, in-process, no HTTP hop):
     _run_proactive_checks() loads every household with a connected group_jid
     ↓ per household, on a thread (LLM + Supabase calls are blocking):
     agents/proactive_agent.run_proactive_check(household_id, group_jid)
         ↓
-      LangGraph loop: agent_node (LLM + tool-bound) ⇄ tools_node, up to 8 iterations
+      LangGraph loop (agents/orchestrator/react_loop.build_react_graph):
+      agent_node (LLM + tool-bound) ⇄ tools_node, up to 8 iterations
         ↓ agent_node reasons about what to check; tools_node executes the call and
         ↓ feeds the result back as the next observation
       Tools available are a READ-ONLY SUBSET of agents/orchestrator/registry.py's

@@ -20,12 +20,11 @@ from operator import add
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 
+from agents.orchestrator.react_loop import build_react_graph, make_agent_node
 from agents.orchestrator.registry import AGENT_BY_TOOL_NAME
 from services import bot_profile, preferences, proactive_notifications
-from services.llm.factory import get_chat_model
 from services.whatsapp_client import send_text_sync
 
 logger = logging.getLogger(__name__)
@@ -161,10 +160,7 @@ def _build_system_prompt(household_id: str) -> str:
     return prompt
 
 
-def agent_node(state: ProactiveState) -> dict:
-    model = get_chat_model().bind_tools(_TOOLS)
-    response = model.invoke(state["messages"])
-    return {"messages": [response], "iterations": state.get("iterations", 0) + 1}
+agent_node = make_agent_node(_TOOLS)
 
 
 def _handle_notify(household_id: str, group_jid: str, args: dict) -> str:
@@ -236,22 +232,10 @@ def tools_node(state: ProactiveState) -> dict:
     return {"messages": tool_messages, "notified": notified}
 
 
-def _route_after_agent(state: ProactiveState) -> str:
-    last_message = state["messages"][-1]
-    if not getattr(last_message, "tool_calls", None):
-        return "end"
-    if state.get("iterations", 0) >= _MAX_ITERATIONS:
-        return "end"
-    return "tools"
-
-
-_builder = StateGraph(ProactiveState)
-_builder.add_node("agent", agent_node)
-_builder.add_node("tools", tools_node)
-_builder.set_entry_point("agent")
-_builder.add_conditional_edges("agent", _route_after_agent, {"tools": "tools", "end": END})
-_builder.add_edge("tools", "agent")
-_graph = _builder.compile()
+# Unlike the chat supervisor, hitting _MAX_ITERATIONS here just ends the run —
+# nobody is waiting on an answer, so silence (no notify_household call) is a
+# perfectly fine outcome, not something to force a finalize around.
+_graph = build_react_graph(ProactiveState, agent_node, tools_node, _MAX_ITERATIONS, on_exhausted="end")
 
 
 @dataclass

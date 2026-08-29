@@ -150,7 +150,7 @@ result3 = test_graph.invoke({
 assert result3["message_type"] == "unknown", f"Expected unknown, got {result3['message_type']}"
 assert result3.get("response") is None, f"Expected no response, got {result3.get('response')}"
 print(f"  ✅  message_type: {result3['message_type']}")
-print(f"  ✅  response is None")
+print("  ✅  response is None")
 print()
 
 # ── 5. get_graph stateless ───────────────────────────────────────────────────

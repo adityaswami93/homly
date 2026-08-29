@@ -1,3 +1,7 @@
-mcp>=1.2.0
+# Pinned to match backend/requirements.txt's mcp pin, rather than the
+# `mcp>=1.2.0` floor this file previously declared — see the pinning note
+# in backend/requirements.txt for why an unpinned floor is a reproducibility
+# risk here too.
+mcp==1.28.1
 httpx==0.28.1
 python-dotenv==1.2.1

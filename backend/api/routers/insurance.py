@@ -1,7 +1,6 @@
 import os
 import uuid
 import json
-from datetime import date
 from typing import Optional
 
 import logging

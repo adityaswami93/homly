@@ -1,6 +1,6 @@
 import os
 from fastapi import APIRouter
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from supabase import create_client
 
 router = APIRouter()

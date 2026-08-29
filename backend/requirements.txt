@@ -8,16 +8,36 @@ PyJWT==2.11.0
 cryptography==46.0.5
 slowapi==0.1.9
 python-multipart==0.0.9
-isoweek==1.3.3
 starlette==0.52.1
 pydantic==2.12.5
 apscheduler==3.10.4
 pymupdf==1.24.14
+# Pinned to the floor version each of these previously declared with `>=`.
+# An unpinned floor means every fresh install (a fresh Railway deploy, a new
+# dev's `pip install`, this repo's own CI) can silently resolve a different,
+# untested version of these — see CLAUDE.md's "Backend stays DRY" /
+# reproducibility notes. This sandbox has no PyPI access to verify these
+# exact versions still resolve together, or to check whether the app has
+# come to depend on something newer than its stated floor — verify with
+# `pip install -r requirements.txt` once you have registry access, and bump
+# deliberately (with a changelog check) rather than leaving these floating.
+psycopg[binary]==3.1.4  # 3.1.0 has no published binary-extra wheel; 3.1.4 is the earliest that does
+mcp==1.28.1
+alembic==1.13.0
+SQLAlchemy==2.0.0
+
+# langgraph/langgraph-checkpoint-postgres/langchain-core/langchain-openai are
+# a tightly interdependent cluster (e.g. langgraph 0.2.0 itself requires
+# langchain-core<0.3, >=0.2.27 — exact-pinning each of these independently
+# to its stated floor, as this file first tried, forced an inconsistent
+# combination and produced a real ResolutionImpossible in CI). Restored to
+# the floors this repo already ran with so pip's resolver picks a mutually
+# compatible set (e.g. a langgraph newer than 0.2.0 that supports
+# langchain-core>=0.3). This still needs a real lockfile (e.g. pip-compile)
+# to be truly reproducible, but that requires resolving against the live
+# index, which this sandbox cannot do. Whoever has registry access should
+# generate one and replace these four lines with the resolved exact pins.
 langgraph>=0.2.0
 langgraph-checkpoint-postgres>=2.0.0
-psycopg[binary]>=3.1.0
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
-mcp==1.28.1
-alembic>=1.13.0
-SQLAlchemy>=2.0.0

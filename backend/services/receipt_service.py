@@ -5,7 +5,7 @@ and the LangGraph receipt_node.
 import os
 import uuid
 import logging
-from datetime import date, datetime, timezone as tz
+from datetime import date
 from supabase import create_client
 
 from agents.receipt_agent import analyse_receipt

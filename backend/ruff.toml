@@ -1,0 +1,10 @@
+target-version = "py311"
+line-length = 120
+
+[lint]
+ignore = [
+    "E402",  # sys.path.append(...) before imports is a deliberate pattern in
+             # entrypoint scripts (alembic/env.py, scratch/*.py) — see CLAUDE.md
+    "E741",  # single-letter loop/comprehension variables are used throughout
+             # for terse local scans; not worth a blanket rename
+]

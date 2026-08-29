@@ -6,7 +6,6 @@ from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form, Q
 from typing import Optional
 from supabase import create_client
 from datetime import date, timedelta
-from isoweek import Week
 import logging
 
 from api.dependencies.limiter import limiter
@@ -164,7 +163,6 @@ def list_weeks(request: Request):
 
 @router.get("/weeks/{year}/{week_number}")
 def get_week(year: int, week_number: int, request: Request):
-    user_id      = request.state.user["sub"]
     household_id = request.state.user.get("household_id")
     if not household_id:
         raise HTTPException(status_code=403, detail="No household found")
@@ -297,7 +295,6 @@ def mark_daterange_paid(request: Request, body: dict):
 
 @router.get("/receipts/{receipt_id}")
 def get_receipt(receipt_id: str, request: Request):
-    user_id      = request.state.user["sub"]
     household_id = request.state.user.get("household_id")
     if not household_id:
         raise HTTPException(status_code=403, detail="No household found")
@@ -321,7 +318,6 @@ def get_receipt(receipt_id: str, request: Request):
 
 @router.patch("/receipts/{receipt_id}/flag")
 def toggle_flag(receipt_id: str, request: Request, body: dict):
-    user_id      = request.state.user["sub"]
     household_id = request.state.user.get("household_id")
     if not household_id:
         raise HTTPException(status_code=403, detail="No household found")
@@ -341,7 +337,6 @@ def toggle_flag(receipt_id: str, request: Request, body: dict):
 
 @router.patch("/receipts/{receipt_id}/delete")
 def soft_delete_receipt(receipt_id: str, request: Request, body: dict):
-    user_id      = request.state.user["sub"]
     household_id = request.state.user.get("household_id")
     if not household_id:
         raise HTTPException(status_code=403, detail="No household found")
@@ -361,7 +356,6 @@ def soft_delete_receipt(receipt_id: str, request: Request, body: dict):
 
 @router.patch("/receipts/{receipt_id}/reimbursable")
 def toggle_reimbursable(receipt_id: str, request: Request, body: dict):
-    user_id      = request.state.user["sub"]
     household_id = request.state.user.get("household_id")
     if not household_id:
         raise HTTPException(status_code=403, detail="No household found")

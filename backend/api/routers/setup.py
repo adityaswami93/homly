@@ -1,6 +1,6 @@
 import os
 import logging
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request
 from supabase import create_client
 
 from api.routers.internal import whatsapp_state

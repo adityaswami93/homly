@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import date, datetime, timezone
+from datetime import date
 
 from supabase import create_client
 

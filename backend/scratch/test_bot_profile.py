@@ -82,7 +82,7 @@ check("empty text",               mentions_name("", "Homly"), False)
 check("one-char name ignored",    mentions_name("a b c", "a"), False)
 
 
-# ── 3. _coerce — a settings row from before migration 033 must not break ─────
+# ── 3. _coerce — a settings row from before migration 034 must not break ─────
 
 print("\n[3] _coerce fallbacks")
 

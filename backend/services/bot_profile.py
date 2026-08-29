@@ -12,7 +12,7 @@ This is the single source of truth for two things that used to be hard-coded:
     is the *only* place the rule lives, so the WhatsApp path and any future
     caller can't drift apart on it.
 
-The columns live on `settings` (migration 033_bot_personality.sql) and are
+The columns live on `settings` (migration 034_bot_personality.sql) and are
 edited from the dashboard's Settings → Assistant tab.
 """
 import logging
@@ -89,7 +89,7 @@ def _coerce(row: dict) -> BotProfile:
     """Build a profile from a settings row, falling back per-field.
 
     Deliberately tolerant: a household whose settings row predates migration
-    033 (or was written by an older deploy) is missing these keys entirely, and
+    034 (or was written by an older deploy) is missing these keys entirely, and
     a half-configured assistant should degrade to the defaults rather than
     raise on a WhatsApp message.
     """

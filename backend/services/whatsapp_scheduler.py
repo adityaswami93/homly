@@ -165,7 +165,7 @@ async def _run_proactive_checks():
         group_jid = s.get("group_jid")
         if not household_id or not group_jid:
             continue
-        # None = settings row predates 033_bot_personality; unprompted check-ins
+        # None = settings row predates 034_bot_personality; unprompted check-ins
         # were on for everyone before the switch existed, so keep them on.
         if s.get("bot_proactive_enabled") is False:
             continue

@@ -20,7 +20,7 @@ DEFAULTS = {
     "helper_identifiers": "",
     # Assistant persona + engagement — see services/bot_profile.py. Kept in sync
     # with that module's defaults and the CHECK constraints in
-    # migrations/033_bot_personality.sql.
+    # migrations/034_bot_personality.sql.
     "bot_name":              bot_profile.DEFAULT_NAME,
     "bot_engagement_mode":   bot_profile.DEFAULT_ENGAGEMENT_MODE,
     "bot_tone":              bot_profile.DEFAULT_TONE,

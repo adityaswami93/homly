@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, HTTPException
 from supabase import create_client
 from dotenv import load_dotenv
 
-from api.routers.expenses import _reimbursement_groups, _paid_for_week
+from services.reimbursement import compute_reimbursement_totals
 
 load_dotenv()
 
@@ -158,10 +158,7 @@ async def build_daterange_total(household_id: str, start: str, end: str) -> str:
         cat = item["category"] or "other"
         category_totals[cat] = round(category_totals.get(cat, 0) + (item["line_total"] or 0), 2)
 
-    reimbursable_total = round(sum(r["total"] or 0 for r in receipts if r.get("reimbursable")), 2)
-    groups = _reimbursement_groups(receipts)
-    already_paid = round(sum(_paid_for_week(household_id, g["year"], g["week_number"]) for g in groups), 2)
-    outstanding_reimbursable_total = round(max(0, reimbursable_total - already_paid), 2)
+    outstanding_reimbursable_total = compute_reimbursement_totals(receipts)["outstanding_reimbursable_total"]
     flagged = sum(1 for r in receipts if r.get("flagged"))
 
     receipt_lines = []

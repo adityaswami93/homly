@@ -48,14 +48,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No `cache: npm` here: actions/setup-node's cache step hard-fails (not
+      # just skips) when cache-dependency-path doesn't resolve to a real
+      # file, and frontend/package-lock.json doesn't exist yet — see the
+      # TODO below. Re-add `cache: npm` / cache-dependency-path once the
+      # lockfile is committed.
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
 
-      # TODO: switch to `npm ci` once frontend/package-lock.json is committed
-      # (there is currently no lockfile in the repo — see CLAUDE.md production-readiness notes).
+      # TODO: switch to `npm ci` (and re-enable npm caching above) once
+      # frontend/package-lock.json is committed — there is currently no
+      # lockfile in the repo, see CLAUDE.md production-readiness notes.
       - name: Install dependencies
         run: npm install
 

@@ -21,7 +21,7 @@ pymupdf==1.24.14
 # come to depend on something newer than its stated floor — verify with
 # `pip install -r requirements.txt` once you have registry access, and bump
 # deliberately (with a changelog check) rather than leaving these floating.
-psycopg[binary]==3.1.0
+psycopg[binary]==3.1.4  # 3.1.0 has no published binary-extra wheel; 3.1.4 is the earliest that does
 mcp==1.28.1
 alembic==1.13.0
 SQLAlchemy==2.0.0

@@ -24,7 +24,12 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install ruff pytest
+          # Pinned to the exact version this repo's ruff.toml/rule set was
+          # actually verified against — an unpinned `pip install ruff` here
+          # once resolved a newer ruff whose default rule selection flagged
+          # ~400 findings (BLE001, DTZ011, ...) never selected or reviewed
+          # for this codebase.
+          pip install ruff==0.15.8 pytest
 
       - name: Lint (ruff)
         run: ruff check .

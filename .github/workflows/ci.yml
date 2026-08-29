@@ -12,6 +12,15 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    outputs:
+      ruff_outcome: ${{ steps.ruff.outcome }}
+      ruff_output: ${{ steps.ruff.outputs.output }}
+      compile_outcome: ${{ steps.compile.outcome }}
+      compile_output: ${{ steps.compile.outputs.output }}
+      pytest_outcome: ${{ steps.pytest.outcome }}
+      pytest_output: ${{ steps.pytest.outputs.output }}
+      scoping_outcome: ${{ steps.scoping.outcome }}
+      scoping_output: ${{ steps.scoping.outputs.output }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,18 +40,58 @@ jobs:
           # for this codebase.
           pip install ruff==0.15.8 pytest
 
+      # Each check below runs with continue-on-error so the job can capture
+      # its output for the PR summary comment even on failure; the final
+      # "Fail job if blocking checks failed" step is what actually fails
+      # the job for the blocking checks (ruff, compile, pytest) — scoping
+      # stays informational-only, per its own step.
       - name: Lint (ruff)
-        run: ruff check .
+        id: ruff
+        continue-on-error: true
+        run: |
+          set +e
+          ruff check . 2>&1 | tee /tmp/ruff_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<RUFF_EOF"; tail -c 4000 /tmp/ruff_output.txt; echo "RUFF_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
 
       - name: Compile check (catch syntax errors)
-        run: python -m compileall -q .
+        id: compile
+        continue-on-error: true
+        run: |
+          set +e
+          python -m compileall . 2>&1 | tee /tmp/compile_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<COMPILE_EOF"; tail -c 4000 /tmp/compile_output.txt; echo "COMPILE_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
 
       - name: Unit tests
-        run: pytest tests/ -v
+        id: pytest
+        continue-on-error: true
+        run: |
+          set +e
+          pytest tests/ -v 2>&1 | tee /tmp/pytest_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<PYTEST_EOF"; tail -c 4000 /tmp/pytest_output.txt; echo "PYTEST_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
 
       - name: Multi-tenancy scoping scan (informational — see tests/check_household_scoping.py)
-        run: python tests/check_household_scoping.py
+        id: scoping
         continue-on-error: true
+        run: |
+          set +e
+          python tests/check_household_scoping.py 2>&1 | tee /tmp/scoping_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<SCOPING_EOF"; tail -c 4000 /tmp/scoping_output.txt; echo "SCOPING_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Fail job if blocking checks failed
+        if: steps.ruff.outcome == 'failure' || steps.compile.outcome == 'failure' || steps.pytest.outcome == 'failure'
+        run: exit 1
 
   frontend:
     name: Frontend (lint + typecheck + build)
@@ -50,6 +99,13 @@ jobs:
     defaults:
       run:
         working-directory: frontend
+    outputs:
+      eslint_outcome: ${{ steps.eslint.outcome }}
+      eslint_output: ${{ steps.eslint.outputs.output }}
+      typecheck_outcome: ${{ steps.typecheck.outcome }}
+      typecheck_output: ${{ steps.typecheck.outputs.output }}
+      build_outcome: ${{ steps.build.outcome }}
+      build_output: ${{ steps.build.outputs.output }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,16 +135,156 @@ jobs:
       # unsafe to fix blind. Needs a dedicated cleanup pass; flip to blocking
       # once that's done.
       - name: Lint (eslint)
-        run: npm run lint
+        id: eslint
         continue-on-error: true
+        run: |
+          set +e
+          npm run lint 2>&1 | tee /tmp/eslint_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<ESLINT_EOF"; tail -c 4000 /tmp/eslint_output.txt; echo "ESLINT_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
 
       - name: Typecheck
-        run: npx tsc --noEmit
+        id: typecheck
+        continue-on-error: true
+        run: |
+          set +e
+          npx tsc --noEmit 2>&1 | tee /tmp/typecheck_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<TYPECHECK_EOF"; tail -c 4000 /tmp/typecheck_output.txt; echo "TYPECHECK_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
 
       - name: Build (static export smoke test)
+        id: build
+        continue-on-error: true
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
           NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key"
           NEXT_PUBLIC_API_URL: "https://placeholder.example.com"
           NEXT_PUBLIC_SITE_URL: "https://placeholder.example.com"
-        run: npm run build
+        run: |
+          set +e
+          npm run build 2>&1 | tee /tmp/build_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<BUILD_EOF"; tail -c 4000 /tmp/build_output.txt; echo "BUILD_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Fail job if blocking checks failed
+        if: steps.typecheck.outcome == 'failure' || steps.build.outcome == 'failure'
+        run: exit 1
+
+  comment:
+    name: Post CI summary comment
+    needs: [backend, frontend]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Upsert sticky PR comment with run details
+        uses: actions/github-script@v7
+        env:
+          BACKEND_JOB_RESULT: ${{ needs.backend.result }}
+          FRONTEND_JOB_RESULT: ${{ needs.frontend.result }}
+          BACKEND_RUFF_OUTCOME: ${{ needs.backend.outputs.ruff_outcome }}
+          BACKEND_RUFF_OUTPUT: ${{ needs.backend.outputs.ruff_output }}
+          BACKEND_COMPILE_OUTCOME: ${{ needs.backend.outputs.compile_outcome }}
+          BACKEND_COMPILE_OUTPUT: ${{ needs.backend.outputs.compile_output }}
+          BACKEND_PYTEST_OUTCOME: ${{ needs.backend.outputs.pytest_outcome }}
+          BACKEND_PYTEST_OUTPUT: ${{ needs.backend.outputs.pytest_output }}
+          BACKEND_SCOPING_OUTCOME: ${{ needs.backend.outputs.scoping_outcome }}
+          BACKEND_SCOPING_OUTPUT: ${{ needs.backend.outputs.scoping_output }}
+          FRONTEND_ESLINT_OUTCOME: ${{ needs.frontend.outputs.eslint_outcome }}
+          FRONTEND_ESLINT_OUTPUT: ${{ needs.frontend.outputs.eslint_output }}
+          FRONTEND_TYPECHECK_OUTCOME: ${{ needs.frontend.outputs.typecheck_outcome }}
+          FRONTEND_TYPECHECK_OUTPUT: ${{ needs.frontend.outputs.typecheck_output }}
+          FRONTEND_BUILD_OUTCOME: ${{ needs.frontend.outputs.build_outcome }}
+          FRONTEND_BUILD_OUTPUT: ${{ needs.frontend.outputs.build_output }}
+        with:
+          script: |
+            const marker = "<!-- homly-ci-summary -->";
+
+            const icon = (outcome) => ({
+              success: "✅",
+              failure: "❌",
+              skipped: "⚪",
+              cancelled: "⚠️",
+            }[outcome] || "⚠️");
+
+            const label = (outcome) => outcome || "unknown";
+
+            function section(title, outcome, output, note) {
+              const head = `**${icon(outcome)} ${title}** — ${label(outcome)}`;
+              const body = (output || "").trim();
+              const lines = [note ? `${head}  \n*${note}*` : head];
+              if (body) {
+                lines.push(
+                  "<details><summary>Details</summary>",
+                  "",
+                  "```",
+                  body.slice(-4000),
+                  "```",
+                  "",
+                  "</details>",
+                );
+              }
+              return lines.join("\n");
+            }
+
+            const parts = [];
+            parts.push(marker);
+            parts.push(`### CI run summary — \`${context.sha.slice(0, 7)}\``);
+            parts.push(
+              `Backend job: **${process.env.BACKEND_JOB_RESULT}** · ` +
+              `Frontend job: **${process.env.FRONTEND_JOB_RESULT}**`
+            );
+            parts.push("");
+            parts.push("#### Backend");
+            parts.push(section("Lint (ruff)", process.env.BACKEND_RUFF_OUTCOME, process.env.BACKEND_RUFF_OUTPUT));
+            parts.push(section("Compile check", process.env.BACKEND_COMPILE_OUTCOME, process.env.BACKEND_COMPILE_OUTPUT));
+            parts.push(section("Unit tests (pytest)", process.env.BACKEND_PYTEST_OUTCOME, process.env.BACKEND_PYTEST_OUTPUT));
+            parts.push(section(
+              "Multi-tenancy scoping scan", process.env.BACKEND_SCOPING_OUTCOME, process.env.BACKEND_SCOPING_OUTPUT,
+              "Informational only — findings need manual security triage before this blocks CI."
+            ));
+            parts.push("");
+            parts.push("#### Frontend");
+            parts.push(section(
+              "Lint (eslint)", process.env.FRONTEND_ESLINT_OUTCOME, process.env.FRONTEND_ESLINT_OUTPUT,
+              "Informational only — pre-existing findings pending a dedicated cleanup pass."
+            ));
+            parts.push(section("Typecheck", process.env.FRONTEND_TYPECHECK_OUTCOME, process.env.FRONTEND_TYPECHECK_OUTPUT));
+            parts.push(section("Build", process.env.FRONTEND_BUILD_OUTCOME, process.env.FRONTEND_BUILD_OUTPUT));
+            parts.push("");
+            parts.push(
+              `_Full logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}_`
+            );
+
+            const body = parts.join("\n");
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

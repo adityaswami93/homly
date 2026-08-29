@@ -22,13 +22,14 @@ def _get_client() -> OpenAI:
     return _client
 
 
-def get_completion(prompt: str, system: str = "You are a helpful assistant.") -> str:
+def get_completion(prompt: str, system: str = "You are a helpful assistant.", timeout: float | None = None) -> str:
     response = _get_client().chat.completions.create(
         model=_COMPLETION_MODEL,
         messages=[
             {"role": "system", "content": system},
             {"role": "user",   "content": prompt}
-        ]
+        ],
+        timeout=timeout,
     )
     return response.choices[0].message.content
 

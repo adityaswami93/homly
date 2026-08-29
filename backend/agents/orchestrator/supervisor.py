@@ -4,14 +4,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langgraph.graph import END, StateGraph
 from supabase import create_client
 
 from agents.base_agent import AgentResult
+from agents.orchestrator.react_loop import build_react_graph, make_agent_node
 from agents.orchestrator.registry import AGENT_BY_TOOL_NAME, AGENTS
 from agents.orchestrator.state import SupervisorState
 from services import bot_profile, preferences
-from services.llm.factory import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +93,7 @@ def _build_system_prompt(household_id: str, sender_name: str | None, sender_phon
 
 # ── Nodes ─────────────────────────────────────────────────────────────────────
 
-
-def agent_node(state: SupervisorState) -> dict:
-    model = get_chat_model().bind_tools(_TOOLS)
-    response = model.invoke(state["messages"])
-    return {
-        "messages": [response],
-        "iterations": state.get("iterations", 0) + 1,
-    }
+agent_node = make_agent_node(_TOOLS)
 
 
 def tools_node(state: SupervisorState) -> dict:
@@ -145,43 +137,13 @@ def tools_node(state: SupervisorState) -> dict:
     }
 
 
-def force_finalize_node(state: SupervisorState) -> dict:
-    # No tools bound here — the model can't loop again, it must answer in text.
-    model = get_chat_model()
-    nudge = SystemMessage(
-        content="You've used all available tool calls for this turn. Answer the user "
-        "now with what you've found so far, and say plainly if something is incomplete."
-    )
-    response = model.invoke(state["messages"] + [nudge])
-    return {"messages": [response]}
-
-
-def _route_after_agent(state: SupervisorState) -> str:
-    last_message = state["messages"][-1]
-    if not getattr(last_message, "tool_calls", None):
-        return "end"
-    if state.get("iterations", 0) >= _MAX_ITERATIONS:
-        return "force_finalize"
-    return "tools"
-
-
 # ── Graph ─────────────────────────────────────────────────────────────────────
+# Chat must never end mid-tool-call with nothing said — force_finalize strips
+# tools and makes the model answer in text once _MAX_ITERATIONS is hit.
 
-_builder = StateGraph(SupervisorState)
-_builder.add_node("agent", agent_node)
-_builder.add_node("tools", tools_node)
-_builder.add_node("force_finalize", force_finalize_node)
-
-_builder.set_entry_point("agent")
-_builder.add_conditional_edges("agent", _route_after_agent, {
-    "tools": "tools",
-    "force_finalize": "force_finalize",
-    "end": END,
-})
-_builder.add_edge("tools", "agent")
-_builder.add_edge("force_finalize", END)
-
-_graph = _builder.compile()
+_graph = build_react_graph(
+    SupervisorState, agent_node, tools_node, _MAX_ITERATIONS, on_exhausted="force_finalize"
+)
 
 
 @dataclass

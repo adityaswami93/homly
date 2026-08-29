@@ -611,6 +611,7 @@ def payment_confirm_node(state: HomlyState) -> dict:
     import os
     from datetime import date, timedelta
     from supabase import create_client as _create
+    from services.reimbursement import mark_receipts_reimbursed
 
     db = _create(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
     household_id = state["household_id"]
@@ -636,11 +637,12 @@ def payment_confirm_node(state: HomlyState) -> dict:
 
     period = f"{_fmt(cycle_start)} – {_fmt(cycle_end)}"
 
-    # Fetch total reimbursable for the completed cycle
+    # Fetch the cycle's receipts, including reimbursement_id so
+    # mark_receipts_reimbursed can tell which ones are already paid.
     try:
         r = (
             db.table("receipts")
-            .select("total, reimbursable")
+            .select("id, date, total, reimbursable, reimbursement_id")
             .eq("household_id", household_id)
             .eq("deleted", False)
             .gte("date", cycle_start.isoformat())
@@ -655,43 +657,22 @@ def payment_confirm_node(state: HomlyState) -> dict:
     if not receipts:
         return {"response": f"📋 No receipts found for {period}.\n\nNothing to mark as paid."}
 
-    total = round(sum((rec.get("total") or 0) for rec in receipts if rec.get("reimbursable", True)), 2)
-
-    # Check for duplicate confirmation
-    iso = cycle_start.isocalendar()
     try:
-        existing = (
-            db.table("reimbursements")
-            .select("amount")
-            .eq("household_id", household_id)
-            .eq("year", iso.year)
-            .eq("week_number", iso.week)
-            .execute()
+        result = mark_receipts_reimbursed(
+            db, household_id, receipts,
+            note=f"{period} reimbursed via WhatsApp", created_by=None,
         )
-        if existing.data:
-            already = sum(r["amount"] for r in existing.data)
-            return {"response": f"✅ Already recorded — {period} was marked as paid (SGD {already:.2f})."}
     except Exception as e:
-        logger.error(f"[payment_confirm_node] duplicate check: {e}")
-
-    # Record the reimbursement
-    try:
-        db.table("reimbursements").insert({
-            "household_id": household_id,
-            "year":         iso.year,
-            "week_number":  iso.week,
-            "amount":       total,
-            "note":         f"{period} reimbursed via WhatsApp",
-            "created_by":   None,
-        }).execute()
-    except Exception as e:
-        logger.error(f"[payment_confirm_node] insert: {e}")
+        logger.error(f"[payment_confirm_node] mark reimbursed: {e}")
         return {"response": "❌ Failed to record payment. Please try again or use the app."}
+
+    if not result:
+        return {"response": f"✅ Already recorded — {period} was already marked as paid."}
 
     return {
         "response": (
             f"✅ *Payment confirmed!*\n\n"
-            f"SGD {total:.2f} marked as reimbursed for {period}.\n\n"
+            f"SGD {result['amount']:.2f} marked as reimbursed for {period}.\n\n"
             f"New cycle starts today — fresh slate! 🎉"
         )
     }

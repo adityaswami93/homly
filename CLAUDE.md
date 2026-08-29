@@ -86,7 +86,11 @@ homly/
 │   │                               #   household- or person-scoped preferences (services/preferences.py)
 │   ├── services/
 │   │   ├── llm_client.py           # Facade: get_completion(), get_vision_completion()
-│   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook
+│   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook;
+│   │   │                          #   compute_reimbursement_totals()/mark_receipts_reimbursed() — single
+│   │   │                          #   source of truth for reimbursement totals and for marking receipts
+│   │   │                          #   paid (receipts.reimbursement_id), used by expenses.py, messages.py,
+│   │   │                          #   reimbursements.py, and homly_graph.py's payment_confirm_node
 │   │   ├── receipts.py             # compute_category_totals() — shared item-category aggregation
 │   │   ├── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
 │   │   ├── pantry_confirmations.py # pending "add these to your pantry?" prompts, keyed by group_jid
@@ -126,7 +130,10 @@ homly/
 │   │   ├── 030_pantry_pending_confirmations.sql  # open "add to pantry?" prompts, keyed by group_jid
 │   │   ├── 031_proactive_notifications.sql  # dedup log for the proactive monitor's notify_household tool
 │   │   ├── 032_household_preferences.sql    # standing household/personal preferences, see services/preferences.py
-│   │   └── 033_bot_personality.sql   # bot_name/tone/engagement_mode/casual_chat/proactive on settings
+│   │   ├── 033_reimbursement_receipt_link.sql  # receipts.reimbursement_id — single source of truth for
+│   │   │                                    #   "is this receipt paid", replacing the old (year, week_number)
+│   │   │                                    #   match against `reimbursements` — see services/reimbursement.py
+│   │   └── 034_bot_personality.sql   # bot_name/tone/engagement_mode/casual_chat/proactive on settings
 │   ├── alembic.ini
 │   ├── requirements.txt
 │   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)
@@ -529,6 +536,8 @@ Frontend polling picks up new QR within 3s
 | sender_name / sender_phone | TEXT | who submitted via WhatsApp |
 | week_number / year | INT | ISO week |
 | image_path | TEXT | Supabase Storage path |
+| reimbursable | BOOLEAN | DEFAULT true — whether this receipt counts toward reimbursement |
+| reimbursement_id | UUID (nullable FK → reimbursements) | Set once this receipt has been paid — the single source of truth for "is this receipt paid" (see `reimbursements` below) |
 
 ### `items`
 | Column | Type | Notes |
@@ -570,6 +579,31 @@ Frontend polling picks up new QR within 3s
 | token | TEXT (UNIQUE) | invite link token |
 | accepted | BOOLEAN | |
 | expires_at | TIMESTAMPTZ | NOW() + 7 days |
+
+### `reimbursements`
+One row per reimbursement payment. `services/reimbursement.py`'s
+`mark_receipts_reimbursed()` is the *only* code path allowed to insert here —
+it always derives `amount` from the specific receipts being paid off and
+stamps this row's id onto each of them via `receipts.reimbursement_id`, so a
+payment can never drift from what it actually covers. `year`/`week_number`
+are legacy (nullable) — a payment now typically covers a `start_date`/
+`end_date` range that can span more than one ISO week (a household's custom
+summary week, from `settings.summary_day`, doesn't line up with the ISO
+Monday–Sunday grid). Deleting a row here cascades to `receipts.reimbursement_id
+= NULL` on whatever it covered (`ON DELETE SET NULL`), making those receipts
+outstanding again.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| year / week_number | INT (nullable) | Legacy — prefer `start_date`/`end_date` |
+| start_date / end_date | DATE (nullable) | Date range of the receipts this payment covers |
+| amount | NUMERIC(10,2) | Always derived from covered receipts, never typed in by a caller |
+| paid_at | TIMESTAMPTZ | |
+| note | TEXT | |
+| created_by | UUID (FK → auth.users, nullable) | NULL for WhatsApp-initiated payments |
+| created_at | TIMESTAMPTZ | |
 
 ### `insurance_policies`
 | Column | Type | Notes |
@@ -954,13 +988,13 @@ The frontend's job is to call an endpoint and render what it returns. If you're 
 
 **What to do instead:** add a field to an existing response, or add a new endpoint, that returns the already-computed value; have the frontend just read and display it. When fixing a bug in a computed value shown in the UI, check whether the computation is happening client-side before patching it there — if it is, move it server-side as part of the fix rather than patching the frontend copy.
 
-This codebase currently has known offenders worth cleaning up opportunistically (custom-week math and receipt re-aggregation in `expenses/page.tsx`, the multi-endpoint join in `expenses/reimburse/page.tsx`, duplicated `getWeekRange`/`daysUntil` helpers across pages, client-side premium normalization in `insurance/page.tsx`, and the parallel net-worth calc in `savings/page.tsx`) — prefer moving one of these to the backend over adding a new client-side computation next to it.
+This codebase currently has known offenders worth cleaning up opportunistically (custom-week math and receipt re-aggregation in `expenses/page.tsx`, duplicated `getWeekRange`/`daysUntil` helpers across pages, client-side premium normalization in `insurance/page.tsx`, and the parallel net-worth calc in `savings/page.tsx`) — prefer moving one of these to the backend over adding a new client-side computation next to it. (`expenses/reimburse/page.tsx` used to join `/weeks` + `/reimbursements` client-side to compute per-week outstanding — that's now backend-computed on `/weeks` itself via `services/reimbursement.py`'s `compute_reimbursement_totals()`.)
 
 ### Backend stays DRY — no copy-pasted business-logic helpers across routers
 
 The same rule applies within the backend: if a helper needs to be called from more than one router, it belongs in `backend/services/` (or another shared module), imported by both — not reimplemented in each file. Copy-pasted logic drifts the same way duplicated frontend math does, except here it can mean the WhatsApp bot path and the web upload path silently disagree on a business rule.
 
-Known offender: `_get_reimbursable()` is duplicated verbatim in `api/routers/expenses.py` and `api/routers/webhook.py`. A future change to reimbursement rules (e.g. a new `reimbursement_mode`) is one edit away from applying to receipts uploaded via the dashboard but not ones submitted via WhatsApp, or vice versa. Extract it to a shared module next time either copy needs to change.
+`get_reimbursable()` (eligibility) and `compute_reimbursement_totals()`/`mark_receipts_reimbursed()` (totals and paid-state) already live in `services/reimbursement.py` for exactly this reason — every router that touches reimbursement (`expenses.py`, `messages.py`, `reimbursements.py`, `webhook.py`, `homly_graph.py`) calls into it rather than reimplementing the rule. Keep it that way: a future change to reimbursement rules is one edit away from applying inconsistently across the dashboard, WhatsApp bot, and weekly summary paths otherwise.
 
 ### Multi-tenancy: every query on a shared table must filter by `household_id`
 

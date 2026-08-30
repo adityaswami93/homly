@@ -74,22 +74,22 @@ const ROADMAP = [
   {
     emoji: "🏠",
     title: "One assistant, every household app",
-    desc:  "Expenses, insurance, chores, pantry, budgets, and savings already share one AI layer — new household apps plug into the same assistant instead of becoming a separate silo.",
+    desc:  "Expenses, insurance, chores, pantry, budgets, and savings run on a single AI layer, so new household apps plug into the same assistant instead of becoming a separate silo.",
   },
   {
     emoji: "🧠",
     title: "Gets to know your household",
-    desc:  "Homly already remembers standing preferences (\"we don't eat pork\", \"remind me 3 days before renewals\"). That memory keeps growing — the assistant should feel less like a bot and more like a household member over time.",
+    desc:  "Homly remembers standing preferences — dietary needs, reminder timing, how your household likes things done — so it feels less like a bot and more like a household member.",
   },
   {
     emoji: "🔌",
     title: "Bring your own AI",
-    desc:  "Homly already speaks MCP (Model Context Protocol), so your household data can be queried directly from Claude or other AI tools — not locked inside our dashboard.",
+    desc:  "Homly speaks MCP (Model Context Protocol), so your household data can be queried directly from Claude or other AI tools — not locked inside our dashboard.",
   },
   {
     emoji: "📈",
     title: "Smarter money decisions",
-    desc:  "Price intelligence across vendors, budget-vs-actual tracking, and savings/net worth are live today. Next: a household assistant that proactively suggests where you're overspending, not just reports it.",
+    desc:  "Price intelligence across vendors, budget-vs-actual tracking, and savings all feed one assistant that will proactively flag where you're overspending, not just report it after the fact.",
   },
 ];
 
@@ -100,7 +100,7 @@ const FAQS = [
   },
   {
     q: "Is Homly just an expense tracker?",
-    a: "Not anymore. It started there, but it now also handles insurance renewals, helper chore scheduling and leave requests, pantry and shopping lists, and budgets — all through the same WhatsApp assistant and dashboard.",
+    a: "No. Homly also handles insurance renewals, helper chore scheduling and leave requests, pantry and shopping lists, and budgets — all through the same WhatsApp assistant and dashboard.",
   },
   {
     q: "Can I just ask it questions instead of opening the dashboard?",
@@ -281,11 +281,11 @@ export default function LandingPage() {
       <section className="max-w-5xl mx-auto px-4 md:px-6 py-20 border-t border-stone-800/60">
         <div className="text-center mb-14">
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">
-            More than an expense tracker
+            One assistant for the whole household
           </h2>
           <p className="text-stone-400 text-base max-w-xl mx-auto">
-            Built for Singapore households employing domestic helpers — now covering the
-            whole household, not just the receipts.
+            Built for Singapore households employing domestic helpers — expenses,
+            insurance, chores, and pantry, in one place.
           </p>
         </div>
 
@@ -307,11 +307,11 @@ export default function LandingPage() {
       <section className="max-w-5xl mx-auto px-4 md:px-6 py-20 border-t border-stone-800/60">
         <div className="text-center mb-14">
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">
-            Where this is going
+            What&apos;s next
           </h2>
           <p className="text-stone-400 text-base max-w-xl mx-auto">
-            Homly started as a way to stop tallying receipts by hand. It&apos;s grown into a
-            household assistant — here&apos;s the direction we&apos;re building in.
+            The roadmap for making Homly feel less like a tool and more like a member
+            of the household.
           </p>
         </div>
 
@@ -407,7 +407,7 @@ export default function LandingPage() {
       <section className="border-t border-stone-800/60 py-20">
         <div className="max-w-xl mx-auto px-4 text-center">
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">
-            Ready for a household assistant, not just a receipt tracker?
+            Ready to run your household with AI?
           </h2>
           <p className="text-stone-400 text-base mb-8">
             Join the waitlist and we will set up your household when your spot is ready.

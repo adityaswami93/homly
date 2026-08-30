@@ -77,13 +77,43 @@ class GraphInvokeRequest(BaseModel):
     is_reply_to_bot: bool = False
 
 
+def _inbound_text(body: "GraphInvokeRequest") -> str:
+    """What this message looks like in the transcript.
+
+    A photo's caption is the only part of it the assistant can read back later,
+    so the marker is what keeps "what was that receipt again?" answerable
+    instead of leaving a silent gap in the conversation.
+    """
+    text = (body.query or "").strip()
+    if body.image_b64:
+        return f"[sent a photo] {text}".strip()
+    return text
+
+
 @router.post("/internal/graph-invoke")
 async def graph_invoke(request: Request, body: GraphInvokeRequest):
     _check(request)
 
     from agents.homly_graph import get_graph
+    from services import conversation
 
     image_bytes = base64.b64decode(body.image_b64) if body.image_b64 else None
+
+    # Load the conversation *before* recording this message, so the context the
+    # graph reasons over is everything said up to now and this message appears
+    # exactly once (as the query itself, not also as the last context entry).
+    context = await asyncio.to_thread(
+        conversation.get_context, body.household_id, body.group_jid
+    )
+    await asyncio.to_thread(
+        conversation.record_user_message,
+        body.household_id,
+        body.group_jid,
+        _inbound_text(body),
+        body.sender_name,
+        body.sender_phone,
+        body.whatsapp_message_id,
+    )
 
     state = {
         "household_id": body.household_id,
@@ -97,7 +127,7 @@ async def graph_invoke(request: Request, body: GraphInvokeRequest):
         "was_mentioned": body.was_mentioned,
         "is_reply_to_bot": body.is_reply_to_bot,
         "agent_results": [],
-        "context": [],
+        "context": context,
         "response": None,
         "error": None,
     }
@@ -107,6 +137,19 @@ async def graph_invoke(request: Request, body: GraphInvokeRequest):
 
     g = get_graph(with_memory=True)
     result = await asyncio.to_thread(g.invoke, state, config)
+
+    # Only the reply the bot actually sends back through this response goes in
+    # here. Anything a node pushed out mid-run (a pantry confirmation prompt,
+    # for instance) was already recorded by services/whatsapp_client.py as it
+    # was sent, so it lands in the transcript in the order the group saw it.
+    if result.get("response"):
+        await asyncio.to_thread(
+            conversation.record_assistant_message,
+            body.household_id,
+            body.group_jid,
+            result["response"],
+            result.get("message_type"),
+        )
 
     return {
         "response": result.get("response"),

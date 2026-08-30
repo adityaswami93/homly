@@ -8,8 +8,15 @@ router = APIRouter()
 _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 
+# Landing-page hero variants the frontend may report (see frontend/app/page.tsx).
+# Anything else is stored as NULL rather than trusted — this value comes straight
+# from an unauthenticated request body and is only ever read back in aggregate.
+_KNOWN_VARIANTS = {"concierge", "pain"}
+
+
 class WaitlistRequest(BaseModel):
     email: str
+    variant: str | None = None
 
 
 @router.post("/waitlist")
@@ -19,7 +26,9 @@ async def join_waitlist(payload: WaitlistRequest):
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Invalid email")
 
-    result = _supabase.table("waitlist").insert({"email": email}).execute()
+    variant = payload.variant if payload.variant in _KNOWN_VARIANTS else None
+
+    result = _supabase.table("waitlist").insert({"email": email, "variant": variant}).execute()
 
     if result.data is None:
         error = getattr(result, "error", None)

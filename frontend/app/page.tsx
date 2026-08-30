@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import config from "@/lib/config";
 
@@ -130,9 +130,94 @@ const FAQS = [
   },
 ];
 
+/* -------------------------------------------------------------- variants
+   Two ways of opening the same page. `concierge` leads with the promise;
+   `pain` names the problem first and offers Homly as the answer. Everything
+   below the hero is identical in both, so conversion differences are
+   attributable to the framing and nothing else.                             */
+
+type VariantId = "concierge" | "pain";
+
+const VARIANTS: Record<VariantId, { headline: React.ReactNode; sub: string }> = {
+  concierge: {
+    headline: (
+      <>
+        Every family should have{" "}
+        <span className="text-emerald-400">a&nbsp;concierge</span>
+      </>
+    ),
+    sub: "Homly looks after the running of your home and keeps watch over your family's money — reading what it needs, learning how you like things done, and telling you what matters before you have to ask. Reach it in your group chat or on the dashboard.",
+  },
+  pain: {
+    headline: (
+      <>
+        You shouldn&apos;t have to be{" "}
+        <span className="text-emerald-400">your household&apos;s&nbsp;admin</span>
+      </>
+    ),
+    sub: "Receipts nobody logs. A budget nobody tracks. A renewal that lapsed before anyone noticed. Homly takes the running of your home and the watching of your money off your plate, and comes to you only when something actually needs you.",
+  },
+};
+
+const VARIANT_STORAGE_KEY = "homly_lp_variant";
+
+/**
+ * Resolved once per page load and cached, because useSyncExternalStore requires
+ * a snapshot that is stable between calls — recomputing (and re-rolling the
+ * coin) on every read would loop forever.
+ */
+let resolvedVariant: VariantId | null = null;
+
+function resolveVariant(): VariantId {
+  if (resolvedVariant) return resolvedVariant;
+
+  // ?v=pain / ?v=concierge forces one, for previewing and for sharing a specific
+  // version. Deliberately not persisted, so previewing cannot poison this
+  // visitor's real assignment.
+  const forced = new URLSearchParams(window.location.search).get("v");
+  if (forced === "pain" || forced === "concierge") {
+    resolvedVariant = forced;
+    return resolvedVariant;
+  }
+
+  // localStorage throws outright in some privacy modes. Failing here should cost
+  // the visitor a stable assignment across reloads, never the page itself.
+  try {
+    const stored = window.localStorage.getItem(VARIANT_STORAGE_KEY);
+    if (stored === "pain" || stored === "concierge") {
+      resolvedVariant = stored;
+      return resolvedVariant;
+    }
+    const assigned: VariantId = Math.random() < 0.5 ? "concierge" : "pain";
+    window.localStorage.setItem(VARIANT_STORAGE_KEY, assigned);
+    resolvedVariant = assigned;
+  } catch {
+    resolvedVariant = Math.random() < 0.5 ? "concierge" : "pain";
+  }
+  return resolvedVariant;
+}
+
+/** The assignment never changes within a page load, so there is nothing to subscribe to. */
+const subscribeToNothing = () => () => {};
+
+/**
+ * This page is a static export, so the variant cannot be chosen during render —
+ * that would bake one variant into the prerendered HTML. useSyncExternalStore is
+ * the supported way to render a server snapshot and then swap to a client-only
+ * value after hydration, without a setState-in-effect. The server snapshot is
+ * `concierge`, so a visitor with JS disabled still gets a coherent page.
+ */
+function useVariant(): VariantId {
+  return useSyncExternalStore<VariantId>(
+    subscribeToNothing,
+    resolveVariant,
+    () => "concierge",
+  );
+}
+
 /* ----------------------------------------------------------- components */
 
-function WaitlistForm({ className = "" }: { className?: string }) {
+function WaitlistForm({ className = "", variant }: { className?: string; variant: VariantId }) {
   const [email,   setEmail]   = useState("");
   const [loading, setLoading] = useState(false);
   const [done,    setDone]    = useState(false);
@@ -146,7 +231,7 @@ function WaitlistForm({ className = "" }: { className?: string }) {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/waitlist`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email }),
+        body:    JSON.stringify({ email, variant }),
       });
       if (!res.ok) throw new Error("Failed");
       setDone(true);
@@ -297,6 +382,9 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 /* ---------------------------------------------------------------- page */
 
 export default function LandingPage() {
+  const variant = useVariant();
+  const hero = VARIANTS[variant];
+
   return (
     <main className="min-h-screen bg-[#0f0e0c] text-stone-100">
 
@@ -329,15 +417,14 @@ export default function LandingPage() {
             </div>
 
             <h1 className="text-[2.6rem] leading-[1.05] md:text-6xl md:leading-[1.03] font-bold tracking-tight mb-6">
-              Every family should have{" "}
-              <span className="text-emerald-400">a&nbsp;concierge</span>
+              {hero.headline}
             </h1>
 
             <p className="text-stone-400 text-lg leading-relaxed mb-9 max-w-xl mx-auto lg:mx-0">
-              {config.description}
+              {hero.sub}
             </p>
 
-            <WaitlistForm className="mx-auto lg:mx-0" />
+            <WaitlistForm className="mx-auto lg:mx-0" variant={variant} />
 
             <p className="text-stone-600 text-xs mt-4">
               Free during early access · No credit card required
@@ -491,7 +578,7 @@ export default function LandingPage() {
               ))}
             </ul>
             <div className="mt-7">
-              <WaitlistForm />
+              <WaitlistForm variant={variant} />
             </div>
           </div>
 
@@ -547,7 +634,7 @@ export default function LandingPage() {
           <p className="text-stone-400 text-base md:text-lg mb-9">
             Join the waitlist and we will set you up when your spot is ready.
           </p>
-          <WaitlistForm className="mx-auto" />
+          <WaitlistForm className="mx-auto" variant={variant} />
         </div>
       </section>
 

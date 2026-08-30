@@ -16,14 +16,14 @@ const FEATURES = [
     desc:  "Homly reads each receipt and extracts the vendor, total, and line items automatically. Categorised instantly.",
   },
   {
-    emoji: "📊",
-    title: "Weekly dashboard",
-    desc:  "See exactly what was spent, by whom, and by category. Navigate back through past weeks any time.",
+    emoji: "💬",
+    title: "Ask it anything",
+    desc:  "\"How much did we spend on groceries this month?\" \"When does the car insurance renew?\" Just ask in the group — no dashboard required.",
   },
   {
-    emoji: "💬",
-    title: "WhatsApp summaries",
-    desc:  "Every Saturday morning, Homly posts a spending summary to your group automatically. Send one on demand any time.",
+    emoji: "🔔",
+    title: "Proactive alerts",
+    desc:  "Homly checks in on your household every morning and speaks up when something needs attention — over budget, a renewal coming up — before you ask.",
   },
   {
     emoji: "💰",
@@ -31,9 +31,24 @@ const FEATURES = [
     desc:  "Track what you owe your helper. Mark weeks as paid, record partial payments, and see your outstanding balance at a glance.",
   },
   {
+    emoji: "🛡️",
+    title: "Insurance renewals",
+    desc:  "Add your policies once. Homly reminds the group 30 and 7 days before each one renews.",
+  },
+  {
+    emoji: "🧹",
+    title: "Helper task scheduling",
+    desc:  "Describe your helper's week once. Homly builds a chore schedule, nudges the group daily, and tracks leave requests.",
+  },
+  {
+    emoji: "🥫",
+    title: "Pantry & shopping list",
+    desc:  "Groceries from a receipt are added to your pantry automatically. Run low on something and it lands on the shopping list.",
+  },
+  {
     emoji: "👨‍👩‍👧",
     title: "Built for households",
-    desc:  "Invite your spouse or partner. Set admin and member roles. Manage your household your way.",
+    desc:  "Invite your spouse or partner. Set admin and member roles. Manage budgets, savings, and price trends together.",
   },
 ];
 
@@ -50,8 +65,31 @@ const STEPS = [
   },
   {
     number: "03",
-    title:  "Check your dashboard",
-    desc:   "Log in to see this week's spending, broken down by category. Get a summary in WhatsApp every Saturday.",
+    title:  "Check the dashboard, or just ask",
+    desc:   "Log in for the full picture, or ask Homly directly in the group — spending, budgets, insurance, chores. It answers and checks in on its own.",
+  },
+];
+
+const ROADMAP = [
+  {
+    emoji: "🏠",
+    title: "One assistant, every household app",
+    desc:  "Expenses, insurance, chores, pantry, budgets, and savings already share one AI layer — new household apps plug into the same assistant instead of becoming a separate silo.",
+  },
+  {
+    emoji: "🧠",
+    title: "Gets to know your household",
+    desc:  "Homly already remembers standing preferences (\"we don't eat pork\", \"remind me 3 days before renewals\"). That memory keeps growing — the assistant should feel less like a bot and more like a household member over time.",
+  },
+  {
+    emoji: "🔌",
+    title: "Bring your own AI",
+    desc:  "Homly already speaks MCP (Model Context Protocol), so your household data can be queried directly from Claude or other AI tools — not locked inside our dashboard.",
+  },
+  {
+    emoji: "📈",
+    title: "Smarter money decisions",
+    desc:  "Price intelligence across vendors, budget-vs-actual tracking, and savings/net worth are live today. Next: a household assistant that proactively suggests where you're overspending, not just reports it.",
   },
 ];
 
@@ -61,16 +99,24 @@ const FAQS = [
     a: "No. They just send receipt photos to your WhatsApp group as they normally would. Nothing changes for them.",
   },
   {
+    q: "Is Homly just an expense tracker?",
+    a: "Not anymore. It started there, but it now also handles insurance renewals, helper chore scheduling and leave requests, pantry and shopping lists, and budgets — all through the same WhatsApp assistant and dashboard.",
+  },
+  {
+    q: "Can I just ask it questions instead of opening the dashboard?",
+    a: "Yes. Ask it in the group — \"how much on groceries this week\", \"when's the insurance due\", \"what's left to do today\" — and it answers directly. It also checks in on its own each morning and flags anything worth knowing.",
+  },
+  {
     q: "Which WhatsApp does this work with?",
     a: "Regular WhatsApp. No WhatsApp Business account needed.",
   },
   {
     q: "Is my data secure?",
-    a: "Yes. Receipt images are stored privately. Your dashboard is password protected. Data is never shared or sold.",
+    a: "Yes. Every household's data is isolated, receipt images are stored privately, your dashboard is password protected, and data is never shared or sold.",
   },
   {
-    q: "What languages are supported?",
-    a: "Homly reads English receipts. Most Singapore supermarket and household receipts print in English.",
+    q: "Can I connect Homly to Claude or another AI tool?",
+    a: "Yes — Homly supports the Model Context Protocol (MCP), so you can query your household's expenses, budgets, and insurance directly from Claude Code, Claude Desktop, or claude.ai using a household-scoped key.",
   },
   {
     q: "How accurate is the OCR?",
@@ -190,8 +236,8 @@ export default function LandingPage() {
         </div>
 
         <h1 className="text-4xl md:text-6xl font-bold tracking-tight leading-tight mb-6">
-          Household expenses,{" "}
-          <span className="text-emerald-400">tracked automatically</span>
+          Your household,{" "}
+          <span className="text-emerald-400">run by AI</span>
         </h1>
 
         <p className="text-stone-400 text-lg md:text-xl leading-relaxed mb-10 max-w-2xl mx-auto">
@@ -235,10 +281,11 @@ export default function LandingPage() {
       <section className="max-w-5xl mx-auto px-4 md:px-6 py-20 border-t border-stone-800/60">
         <div className="text-center mb-14">
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">
-            Everything you need
+            More than an expense tracker
           </h2>
           <p className="text-stone-400 text-base max-w-xl mx-auto">
-            Built specifically for Singapore households employing domestic helpers.
+            Built for Singapore households employing domestic helpers — now covering the
+            whole household, not just the receipts.
           </p>
         </div>
 
@@ -251,6 +298,32 @@ export default function LandingPage() {
               <p className="text-2xl mb-3">{feature.emoji}</p>
               <h3 className="text-stone-100 font-medium mb-1.5 text-sm">{feature.title}</h3>
               <p className="text-stone-500 text-sm leading-relaxed">{feature.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Roadmap / vision */}
+      <section className="max-w-5xl mx-auto px-4 md:px-6 py-20 border-t border-stone-800/60">
+        <div className="text-center mb-14">
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">
+            Where this is going
+          </h2>
+          <p className="text-stone-400 text-base max-w-xl mx-auto">
+            Homly started as a way to stop tallying receipts by hand. It's grown into a
+            household assistant — here's the direction we're building in.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          {ROADMAP.map((item) => (
+            <div
+              key={item.title}
+              className="bg-stone-900/40 border border-stone-800 rounded-2xl p-5"
+            >
+              <p className="text-2xl mb-3">{item.emoji}</p>
+              <h3 className="text-stone-100 font-medium mb-1.5 text-sm">{item.title}</h3>
+              <p className="text-stone-500 text-sm leading-relaxed">{item.desc}</p>
             </div>
           ))}
         </div>
@@ -334,7 +407,7 @@ export default function LandingPage() {
       <section className="border-t border-stone-800/60 py-20">
         <div className="max-w-xl mx-auto px-4 text-center">
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">
-            Ready to stop tallying receipts?
+            Ready for a household assistant, not just a receipt tracker?
           </h2>
           <p className="text-stone-400 text-base mb-8">
             Join the waitlist and we will set up your household when your spot is ready.

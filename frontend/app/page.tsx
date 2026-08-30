@@ -4,51 +4,66 @@ import { useState } from "react";
 import Link from "next/link";
 import config from "@/lib/config";
 
+/* ---------------------------------------------------------------- icons */
+
+const ICON_PATHS: Record<string, string> = {
+  chat:     "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z",
+  receipt:  "M4 3v18l2.5-1.5L9 21l2.5-1.5L14 21l2.5-1.5L19 21V3l-2.5 1.5L14 3l-2.5 1.5L9 3 6.5 4.5 4 3zM8 9h7M8 13h7",
+  ask:      "M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  bell:     "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0",
+  wallet:   "M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5M16 12h.01",
+  calendar: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 16l2 2 4-4",
+};
+
+function Icon({ name }: { name: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="w-5 h-5"
+      aria-hidden="true"
+    >
+      <path d={ICON_PATHS[name]} />
+    </svg>
+  );
+}
+
+/* ----------------------------------------------------------------- data */
+
 const FEATURES = [
   {
-    emoji: "📱",
-    title: "No app for your helper",
-    desc:  "Your helper sends receipt photos to your household WhatsApp group — exactly as they do today. Nothing changes for them.",
+    icon:  "chat",
+    title: "Nothing new for your helper",
+    desc:  "They send receipt photos to the same group they already use. No app to install, no account, no training.",
   },
   {
-    emoji: "🧾",
-    title: "Automatic OCR",
-    desc:  "Homly reads each receipt and extracts the vendor, total, and line items automatically. Categorised instantly.",
+    icon:  "receipt",
+    title: "Receipts read on arrival",
+    desc:  "Vendor, total and line items are extracted and categorised within seconds. Anything unclear is flagged for you to check.",
   },
   {
-    emoji: "💬",
-    title: "Ask it anything",
-    desc:  "\"How much did we spend on groceries this month?\" \"When does the car insurance renew?\" Just ask in the group — no dashboard required.",
+    icon:  "ask",
+    title: "Ask in plain English",
+    desc:  "\"How much on groceries this month?\" \"When does the car insurance renew?\" Ask in the group and get an answer back.",
   },
   {
-    emoji: "🔔",
-    title: "Proactive alerts",
-    desc:  "Homly checks in on your household every morning and speaks up when something needs attention — over budget, a renewal coming up — before you ask.",
+    icon:  "bell",
+    title: "Tells you before you ask",
+    desc:  "Homly reviews your household each morning and speaks up about what matters — over budget, a renewal due, a chore missed.",
   },
   {
-    emoji: "💰",
-    title: "Reimbursement tracking",
-    desc:  "Track what you owe your helper. Mark weeks as paid, record partial payments, and see your outstanding balance at a glance.",
+    icon:  "wallet",
+    title: "Reimbursements without the spreadsheet",
+    desc:  "A running balance of what you owe your helper, down to the receipt. Mark it paid and the balance clears.",
   },
   {
-    emoji: "🛡️",
-    title: "Insurance renewals",
-    desc:  "Add your policies once. Homly reminds the group 30 and 7 days before each one renews.",
-  },
-  {
-    emoji: "🧹",
-    title: "Helper task scheduling",
-    desc:  "Describe your helper's week once. Homly builds a chore schedule, nudges the group daily, and tracks leave requests.",
-  },
-  {
-    emoji: "🥫",
-    title: "Pantry & shopping list",
-    desc:  "Groceries from a receipt are added to your pantry automatically. Run low on something and it lands on the shopping list.",
-  },
-  {
-    emoji: "👨‍👩‍👧",
-    title: "Built for households",
-    desc:  "Invite your spouse or partner. Set admin and member roles. Manage budgets, savings, and price trends together.",
+    icon:  "calendar",
+    title: "Chores, leave and renewals",
+    desc:  "Daily chore reminders in the group, leave requests you can approve, and insurance renewals flagged well ahead of time.",
   },
 ];
 
@@ -56,77 +71,63 @@ const STEPS = [
   {
     number: "01",
     title:  "Add Homly to your group",
-    desc:   "Add the Homly number to your existing household WhatsApp group. Takes 30 seconds.",
+    desc:   "One number added to the household WhatsApp group you already have. Takes about a minute.",
   },
   {
     number: "02",
-    title:  "Helper sends receipts as usual",
-    desc:   "No training needed. Your helper sends receipt photos to the group — Homly detects them automatically.",
+    title:  "Everyone carries on as normal",
+    desc:   "Your helper photographs receipts the way they always have. Homly picks them up and files them.",
   },
   {
     number: "03",
-    title:  "Check the dashboard, or just ask",
-    desc:   "Log in for the full picture, or ask Homly directly in the group — spending, budgets, insurance, chores. It answers and checks in on its own.",
+    title:  "Ask, or just get told",
+    desc:   "Question in the chat when you want something. A dashboard when you want the full picture.",
   },
 ];
 
-const ROADMAP = [
-  {
-    emoji: "🏠",
-    title: "One assistant, every household app",
-    desc:  "Expenses, insurance, chores, pantry, budgets, and savings run on a single AI layer, so new household apps plug into the same assistant instead of becoming a separate silo.",
-  },
-  {
-    emoji: "🧠",
-    title: "Gets to know your household",
-    desc:  "Homly remembers standing preferences — dietary needs, reminder timing, how your household likes things done — so it feels less like a bot and more like a household member.",
-  },
-  {
-    emoji: "🔌",
-    title: "Bring your own AI",
-    desc:  "Homly speaks MCP (Model Context Protocol), so your household data can be queried directly from Claude or other AI tools — not locked inside our dashboard.",
-  },
-  {
-    emoji: "📈",
-    title: "Smarter money decisions",
-    desc:  "Price intelligence across vendors, budget-vs-actual tracking, and savings all feed one assistant that will proactively flag where you're overspending, not just report it after the fact.",
-  },
+type ChatMessage = {
+  from:     "them" | "bot";
+  name?:    string;
+  text?:    string;
+  receipt?: { vendor: string; total: string };
+};
+
+const CHAT: ChatMessage[] = [
+  { from: "them", name: "Helper",  receipt: { vendor: "NTUC FairPrice", total: "$84.20" } },
+  { from: "bot",  text: "Filed — NTUC FairPrice, $84.20. 12 items, mostly groceries. Added to this week." },
+  { from: "them", name: "Priya",   text: "how much have we spent on groceries this month?" },
+  { from: "bot",  text: "$612.40 across 9 receipts — about 12% under your $700 budget with 4 days to go." },
+  { from: "bot",  text: "Heads up: your car insurance renews in 7 days ($1,240). Want me to remind you again on Friday?" },
 ];
 
 const FAQS = [
   {
     q: "Does my helper need to install anything?",
-    a: "No. They just send receipt photos to your WhatsApp group as they normally would. Nothing changes for them.",
+    a: "No. They send receipt photos to your WhatsApp group exactly as they do today. There is no app, no account and nothing to learn on their side.",
   },
   {
-    q: "Is Homly just an expense tracker?",
-    a: "No. Homly also handles insurance renewals, helper chore scheduling and leave requests, pantry and shopping lists, and budgets — all through the same WhatsApp assistant and dashboard.",
+    q: "Is this only for tracking expenses?",
+    a: "No. Homly also handles chore schedules and leave requests, insurance renewal reminders, pantry and shopping lists, and monthly budgets — all through the same group chat and dashboard.",
   },
   {
-    q: "Can I just ask it questions instead of opening the dashboard?",
-    a: "Yes. Ask it in the group — \"how much on groceries this week\", \"when's the insurance due\", \"what's left to do today\" — and it answers directly. It also checks in on its own each morning and flags anything worth knowing.",
+    q: "Can I just ask it things instead of opening the dashboard?",
+    a: "Yes. Ask in the group — \"how much on groceries this week\", \"when is the insurance due\", \"what is left to do today\" — and Homly answers there. It also checks in each morning and raises anything worth knowing.",
   },
   {
     q: "Which WhatsApp does this work with?",
-    a: "Regular WhatsApp. No WhatsApp Business account needed.",
+    a: "Regular WhatsApp. No WhatsApp Business account required.",
   },
   {
     q: "Is my data secure?",
-    a: "Yes. Every household's data is isolated, receipt images are stored privately, your dashboard is password protected, and data is never shared or sold.",
-  },
-  {
-    q: "Can I connect Homly to Claude or another AI tool?",
-    a: "Yes — Homly supports the Model Context Protocol (MCP), so you can query your household's expenses, budgets, and insurance directly from Claude Code, Claude Desktop, or claude.ai using a household-scoped key.",
-  },
-  {
-    q: "How accurate is the OCR?",
-    a: "High confidence on most printed receipts. Homly flags anything it is unsure about for your review.",
+    a: "Each household's data is fully isolated from every other. Receipt images are stored privately, the dashboard is password protected, and nothing is shared or sold.",
   },
   {
     q: "How much does it cost?",
-    a: "Free during early access. Paid plan at SGD 9.99/month planned after launch.",
+    a: "Free during early access. A paid plan at SGD 9.99/month is planned after launch, and early access members will get plenty of notice before anything changes.",
   },
 ];
+
+/* ----------------------------------------------------------- components */
 
 function WaitlistForm() {
   const [email,   setEmail]   = useState("");
@@ -156,8 +157,8 @@ function WaitlistForm() {
   if (done) {
     return (
       <div className="text-center">
-        <p className="text-emerald-400 font-medium text-lg mb-1">✓ You're on the list</p>
-        <p className="text-stone-400 text-sm">We'll be in touch when your spot is ready.</p>
+        <p className="text-emerald-400 font-medium text-lg mb-1">You&apos;re on the list</p>
+        <p className="text-stone-400 text-sm">We&apos;ll be in touch when your spot is ready.</p>
       </div>
     );
   }
@@ -175,7 +176,7 @@ function WaitlistForm() {
       <button
         onClick={handleSubmit}
         disabled={loading}
-        className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold px-6 py-3 rounded-xl transition text-sm whitespace-nowrap"
+        className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold px-6 py-3 rounded-xl transition text-sm whitespace-nowrap min-h-[44px]"
       >
         {loading ? "Joining..." : "Join waitlist"}
       </button>
@@ -186,13 +187,74 @@ function WaitlistForm() {
   );
 }
 
+function ChatDemo() {
+  return (
+    <div className="max-w-md mx-auto bg-stone-900/70 border border-stone-800 rounded-2xl p-4 md:p-5">
+      {/* group header */}
+      <div className="flex items-center gap-3 pb-4 mb-4 border-b border-stone-800">
+        <div className="w-9 h-9 rounded-full bg-stone-800 flex items-center justify-center text-stone-400 text-xs font-semibold">
+          FH
+        </div>
+        <div className="min-w-0">
+          <p className="text-stone-200 text-sm font-medium truncate">Family — Home</p>
+          <p className="text-stone-500 text-xs truncate">You, Priya, Helper, Homly</p>
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        {CHAT.map((msg, i) => (
+          <div
+            key={i}
+            className={`flex ${msg.from === "bot" ? "justify-end" : "justify-start"}`}
+          >
+            <div
+              className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 ${
+                msg.from === "bot"
+                  ? "bg-emerald-600/15 border border-emerald-500/25"
+                  : "bg-stone-800/80 border border-stone-700/60"
+              }`}
+            >
+              {msg.from === "bot" && (
+                <p className="text-emerald-400/80 text-[10px] font-semibold tracking-wide mb-1">
+                  HOMLY
+                </p>
+              )}
+              {msg.name && (
+                <p className="text-stone-400 text-[10px] font-semibold tracking-wide mb-1">
+                  {msg.name.toUpperCase()}
+                </p>
+              )}
+
+              {msg.receipt ? (
+                <div className="bg-stone-950/60 border border-stone-700/60 rounded-lg px-3 py-2.5 w-44">
+                  <div className="space-y-1">
+                    <div className="h-1.5 w-20 rounded-full bg-stone-700" />
+                    <div className="h-1.5 w-28 rounded-full bg-stone-800" />
+                    <div className="h-1.5 w-24 rounded-full bg-stone-800" />
+                  </div>
+                  <div className="mt-2.5 pt-2 border-t border-stone-800 flex items-baseline justify-between">
+                    <span className="text-stone-400 text-[11px]">{msg.receipt.vendor}</span>
+                    <span className="text-stone-200 text-xs font-semibold">{msg.receipt.total}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-stone-200 text-sm leading-relaxed">{msg.text}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FaqItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="border border-stone-800 rounded-xl overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-stone-900/40 transition-colors"
+        className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-stone-900/40 transition-colors min-h-[44px]"
       >
         <p className="text-stone-200 text-sm font-medium pr-4">{q}</p>
         <span className={`text-stone-500 transition-transform duration-200 shrink-0 ${open ? "rotate-45" : ""}`}>
@@ -207,6 +269,8 @@ function FaqItem({ q, a }: { q: string; a: string }) {
     </div>
   );
 }
+
+/* ---------------------------------------------------------------- page */
 
 export default function LandingPage() {
   return (
@@ -229,15 +293,15 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero */}
-      <section className="max-w-3xl mx-auto px-4 md:px-6 pt-20 pb-24 text-center">
+      <section className="max-w-3xl mx-auto px-4 md:px-6 pt-20 pb-16 text-center">
         <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1.5 mb-8">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-emerald-300 text-xs font-medium">Early access — Singapore</span>
         </div>
 
         <h1 className="text-4xl md:text-6xl font-bold tracking-tight leading-tight mb-6">
-          Your household,{" "}
-          <span className="text-emerald-400">run by AI</span>
+          Your household, handled{" "}
+          <span className="text-emerald-400">in WhatsApp</span>
         </h1>
 
         <p className="text-stone-400 text-lg md:text-xl leading-relaxed mb-10 max-w-2xl mx-auto">
@@ -251,6 +315,14 @@ export default function LandingPage() {
         </p>
       </section>
 
+      {/* Product proof — the chat itself */}
+      <section className="max-w-5xl mx-auto px-4 md:px-6 pb-20">
+        <ChatDemo />
+        <p className="text-center text-stone-500 text-sm mt-6 max-w-md mx-auto">
+          This is the whole product. No one in your household has to open anything.
+        </p>
+      </section>
+
       {/* How it works */}
       <section className="max-w-5xl mx-auto px-4 md:px-6 py-20 border-t border-stone-800/60">
         <div className="text-center mb-14">
@@ -258,7 +330,7 @@ export default function LandingPage() {
             How it works
           </h2>
           <p className="text-stone-400 text-base max-w-xl mx-auto">
-            Set up in under 5 minutes. No training for your helper.
+            Set up once, in under five minutes. Nothing to roll out to anyone.
           </p>
         </div>
 
@@ -284,8 +356,8 @@ export default function LandingPage() {
             One assistant for the whole household
           </h2>
           <p className="text-stone-400 text-base max-w-xl mx-auto">
-            Built for Singapore households employing domestic helpers — expenses,
-            insurance, chores, and pantry, in one place.
+            Built for Singapore families with a domestic helper — money, chores and
+            renewals in one place.
           </p>
         </div>
 
@@ -295,35 +367,11 @@ export default function LandingPage() {
               key={feature.title}
               className="bg-stone-900/40 border border-stone-800 rounded-2xl p-5 hover:border-stone-700 transition-colors"
             >
-              <p className="text-2xl mb-3">{feature.emoji}</p>
+              <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4">
+                <Icon name={feature.icon} />
+              </div>
               <h3 className="text-stone-100 font-medium mb-1.5 text-sm">{feature.title}</h3>
               <p className="text-stone-500 text-sm leading-relaxed">{feature.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Roadmap / vision */}
-      <section className="max-w-5xl mx-auto px-4 md:px-6 py-20 border-t border-stone-800/60">
-        <div className="text-center mb-14">
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">
-            What&apos;s next
-          </h2>
-          <p className="text-stone-400 text-base max-w-xl mx-auto">
-            The roadmap for making Homly feel less like a tool and more like a member
-            of the household.
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-4">
-          {ROADMAP.map((item) => (
-            <div
-              key={item.title}
-              className="bg-stone-900/40 border border-stone-800 rounded-2xl p-5"
-            >
-              <p className="text-2xl mb-3">{item.emoji}</p>
-              <h3 className="text-stone-100 font-medium mb-1.5 text-sm">{item.title}</h3>
-              <p className="text-stone-500 text-sm leading-relaxed">{item.desc}</p>
             </div>
           ))}
         </div>
@@ -345,12 +393,12 @@ export default function LandingPage() {
           <div className="bg-stone-900/40 border border-stone-800 rounded-2xl p-6">
             <p className="text-stone-400 text-sm mb-2">Early access</p>
             <p className="text-3xl font-bold mb-1">Free</p>
-            <p className="text-stone-500 text-sm mb-6">While we're in early access</p>
+            <p className="text-stone-500 text-sm mb-6">While we&apos;re in early access</p>
             <ul className="space-y-2.5 text-sm text-stone-400">
               {[
                 "Unlimited receipts",
                 "Full dashboard access",
-                "WhatsApp summaries",
+                "Chores, insurance and budgets",
                 "Reimbursement tracking",
                 "Up to 2 household members",
               ].map((f) => (
@@ -366,15 +414,15 @@ export default function LandingPage() {
 
           {/* Paid */}
           <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6">
-            <p className="text-emerald-400/70 text-sm mb-2">Coming soon</p>
+            <p className="text-emerald-400/70 text-sm mb-2">After launch</p>
             <div className="flex items-end gap-1 mb-1">
               <p className="text-3xl font-bold">SGD 9.99</p>
               <p className="text-stone-400 text-sm mb-1">/month</p>
             </div>
-            <p className="text-stone-500 text-sm mb-6">After early access</p>
+            <p className="text-stone-500 text-sm mb-6">Early access members get notice first</p>
             <ul className="space-y-2.5 text-sm text-stone-400">
               {[
-                "Everything in free",
+                "Everything in early access",
                 "Unlimited history",
                 "Unlimited members",
                 "PayNow QR generation",
@@ -407,10 +455,10 @@ export default function LandingPage() {
       <section className="border-t border-stone-800/60 py-20">
         <div className="max-w-xl mx-auto px-4 text-center">
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-3">
-            Ready to run your household with AI?
+            Get your household off the spreadsheet
           </h2>
           <p className="text-stone-400 text-base mb-8">
-            Join the waitlist and we will set up your household when your spot is ready.
+            Join the waitlist and we will set you up when your spot is ready.
           </p>
           <WaitlistForm />
         </div>

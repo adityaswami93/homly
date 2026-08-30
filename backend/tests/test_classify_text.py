@@ -52,8 +52,10 @@ def test_llm_classify_falls_back_to_none_on_exception(monkeypatch):
 def test_llm_classify_passes_a_timeout():
     import inspect
     sig = inspect.signature(hg._classify_text_llm)
-    # sanity: the function exists and takes the raw text, not the lowered form
-    assert list(sig.parameters) == ["text"]
+    # sanity: the function exists and takes the raw text, not the lowered form,
+    # plus the group's recent conversation (services/conversation.py) so a
+    # follow-up is classified by what it's following up on.
+    assert list(sig.parameters) == ["text", "context"]
 
 
 # ── _classify_text: payment short-circuit, LLM path, fallback path ─────────

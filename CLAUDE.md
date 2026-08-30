@@ -97,6 +97,11 @@ homly/
 │   │   ├── receipts.py             # compute_category_totals() — shared item-category aggregation
 │   │   ├── price_history.py        # compute_price_insights() — shared price-trend/best-vendor math
 │   │   ├── pantry_confirmations.py # pending "add these to your pantry?" prompts, keyed by group_jid
+│   │   ├── conversation.py         # the group's rolling chat transcript — the assistant's short-term
+│   │   │                           #   memory. Owns what counts as "the current conversation"
+│   │   │                           #   (how many turns, how old, is the bot still awaiting a reply);
+│   │   │                           #   read by internal.py before every graph run, written by it and
+│   │   │                           #   by whatsapp_client.py on every bot-initiated send
 │   │   ├── preferences.py          # get/upsert/delete_preference() + format_for_prompt() — folded into
 │   │   │                           #   both orchestrator/supervisor.py's and proactive_agent.py's system
 │   │   │                           #   prompts on every run; backs agents/query/preferences_agent.py
@@ -136,7 +141,8 @@ homly/
 │   │   ├── 033_reimbursement_receipt_link.sql  # receipts.reimbursement_id — single source of truth for
 │   │   │                                    #   "is this receipt paid", replacing the old (year, week_number)
 │   │   │                                    #   match against `reimbursements` — see services/reimbursement.py
-│   │   └── 034_bot_personality.sql   # bot_name/tone/engagement_mode/casual_chat/proactive on settings
+│   │   ├── 034_bot_personality.sql   # bot_name/tone/engagement_mode/casual_chat/proactive on settings
+│   │   └── 035_conversation_messages.sql  # per-group chat transcript, see services/conversation.py
 │   ├── alembic.ini
 │   ├── requirements.txt
 │   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)
@@ -403,9 +409,14 @@ message this is, and whether to answer it at all.
 classify_node (text and images both go through this gate)
     ↓
 addressed = was_mentioned OR is_reply_to_bot OR bot_profile.mentions_name(text/caption, bot_name)
+            OR conversation.is_awaiting_reply(context)
     ↑ the first two come from whatsapp/index.js, which knows its own JID; the
     ↑ backend adds the name check because bot_name is per-household — for an
     ↑ image this checks the caption, since that's the only text that exists
+    ↑ the fourth is conversational continuity: the bot spoke last, recently,
+    ↑ with nothing said in between, so this message is a reply to it (people
+    ↑ don't re-@mention an assistant mid-conversation) — see Conversation
+    ↑ Memory Flow below
     ↓
 services/bot_profile.should_engage(message_type, profile, addressed)
     ↓                                        ↓
@@ -452,6 +463,58 @@ orchestrator cannot go silent — `force_finalize_node` (now shared via
 `agents/orchestrator/react_loop.py`, see below) strips its tools and forces a text answer,
 and `run_query()` falls back to a fixed string — so handing it the message is what makes
 "always responds" true. **Don't add a new silent path out of `classify_node`.**
+
+### Conversation Memory Flow (how the assistant retains context)
+
+The WhatsApp bot makes **one stateless HTTP request per message**
+(`/internal/graph-invoke`), so nothing about a conversation survives between messages
+on its own. `run_query()` has always taken a `context` argument; the WhatsApp entry
+point hard-coded it to `[]` and nothing ever wrote a turn down, so the assistant
+reasoned about every message in total isolation — it answered a reply to its *own*
+message with "that's a big reaction for no context", and couldn't resolve a follow-up
+like "how much then?".
+
+`conversation_messages` (migration `035`) is the transcript that fixes that, and
+`services/conversation.py` is the **only** place the "what counts as the current
+conversation" rules live (how many turns, how old, whether the bot is still awaiting a
+reply). Don't re-derive them in a caller.
+
+```
+Inbound — api/routers/internal.py's /internal/graph-invoke:
+    conversation.get_context(household_id, group_jid)   ← BEFORE recording this message,
+    ↓                                                     so it appears once, as the query
+    conversation.record_user_message(...)                 (role='user', every message —
+    ↓                                                      including ones the engagement
+    ↓                                                      gate won't answer: that chatter
+    ↓                                                      is the conversation it sits in)
+    graph.invoke(state with context=…)
+        ↓ classify_node reads it twice:
+        ↓   _classify_text(query, context)  — a follow-up ("and last month?") is classified
+        ↓     by what it follows up on; the keyword fallback stays context-free on purpose
+        ↓   _is_follow_up(state)            — the fourth `addressed` signal above
+        ↓ query_node / pantry_node pass it to run_query(context=…), which folds it into the
+        ↓   supervisor's message list ahead of the current question (_to_lc_messages)
+    ↓
+    conversation.record_assistant_message(...) if the run produced a response
+
+Outbound the bot initiates (pantry prompts, weekly summaries, renewal reminders,
+proactive notifications, POST /messages/send) doesn't come back through that response,
+so it's recorded at the one choke point they all pass through:
+    services/whatsapp_client.py's send_text()/send_text_sync() → conversation.record_…
+    (household_id optional there — resolve_household_id() maps the group JID)
+```
+
+Notes for anyone touching this:
+
+* **The LangGraph checkpointer is not this.** `get_graph(with_memory=True)` persists
+  *graph state* per thread, and `classify_node` deliberately wipes the per-message
+  fields on every run (`_RUN_RESET`). It was never a transcript, and it silently falls
+  back to a stateless graph when `SUPABASE_DB_URL` is unset.
+* A user turn is stored with the sender's name and rendered as `"Aditya: …"` — a group
+  has more than two speakers, so who said it is part of the message.
+* `POST /query` (dashboard) supplies its own `context`; nothing in the graph overwrites
+  what a caller passed in.
+* Every failure here degrades to "no memory", never to a dropped message.
 
 ### Proactive Household Monitor Flow
 
@@ -688,6 +751,27 @@ single lookup rather than scanning history.
 | finding_key | TEXT | Stable identifier the agent chooses, e.g. `budget_over:groceries:2026-08` |
 | last_notified_at | TIMESTAMPTZ | Upserted on every send; checked against a 24h cooldown |
 
+### `conversation_messages`
+The rolling transcript of one WhatsApp group's chat — the assistant's short-term
+memory, read and written through `services/conversation.py` only (see Conversation
+Memory Flow above). Holds both directions: `role='user'` for every household member's
+message (including ones the engagement gate chose not to answer) and `role='assistant'`
+for everything the bot said into the group, whether it came back from
+`/internal/graph-invoke` or was pushed out directly by `services/whatsapp_client.py`.
+No retention job yet — reads are always bounded by a recency window and a row limit.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| group_jid | TEXT | The WhatsApp group this was said in |
+| role | TEXT | `user` or `assistant` |
+| content | TEXT | Message text; a photo is recorded as `[sent a photo] <caption>` |
+| sender_name / sender_phone | TEXT | Who said it — NULL for the assistant |
+| message_type | TEXT | `classify_node`'s verdict, when there was one |
+| whatsapp_message_id | TEXT | UNIQUE per household where not null — a Baileys redelivery must not double up a turn |
+| created_at | TIMESTAMPTZ | Ordering key, with `(household_id, group_jid, created_at DESC)` |
+
 ### `household_preferences`
 Standing preferences the household or an individual member has told the bot to
 remember (`services/preferences.py`) — folded into `orchestrator/supervisor.py`'s
@@ -848,7 +932,7 @@ One row per household, captured at `/chores/setup` onboarding. Drives the daily-
 | GET | `/internal/messages` | Bot | Pop queued messages (clears queue) |
 | GET | `/internal/insurance/renewals` | Bot | Policies renewing in 7 or 30 days |
 | GET | `/internal/help` | Bot | Capabilities summary (`registry.build_help_text()`) for `/help` |
-| POST | `/internal/graph-invoke` | Bot | Invoke `agents/homly_graph.py` for a WhatsApp message (text or image). Text calls also carry `sender_name`/`sender_phone` and the `was_mentioned`/`is_reply_to_bot` addressing flags |
+| POST | `/internal/graph-invoke` | Bot | Invoke `agents/homly_graph.py` for a WhatsApp message (text or image). Text calls also carry `sender_name`/`sender_phone`, `whatsapp_message_id`, and the `was_mentioned`/`is_reply_to_bot` addressing flags. Also loads and records the group's conversation transcript around the run — see Conversation Memory Flow |
 | GET | `/internal/reminders/due` | Bot | Poll for due `/remind` reminders |
 | GET | `/internal/commands` | Bot | Fetch custom command triggers, cached in the bot |
 

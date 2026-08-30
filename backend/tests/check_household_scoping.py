@@ -29,6 +29,7 @@ HOUSEHOLD_SCOPED_TABLES = {
     "reimbursements", "pantry_items", "pantry_pending_confirmations",
     "price_history", "household_preferences", "proactive_notification_log",
     "api_keys", "shopping_list", "budgets", "savings_accounts", "reminders",
+    "conversation_messages",
 }
 
 # file -> set of line numbers (of the `.table(...)` call) that are known,

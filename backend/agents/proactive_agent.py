@@ -172,7 +172,7 @@ def _handle_notify(household_id: str, group_jid: str, args: dict) -> str:
     if proactive_notifications.was_recently_notified(household_id, finding_key, _NOTIFY_COOLDOWN_HOURS):
         return f"Skipped — '{finding_key}' was already notified within the last {_NOTIFY_COOLDOWN_HOURS}h."
 
-    send_text_sync(group_jid, message)
+    send_text_sync(group_jid, message, household_id)
     proactive_notifications.record_notified(household_id, finding_key)
     return f"Sent to the household group: {message}"
 

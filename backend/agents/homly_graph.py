@@ -80,7 +80,14 @@ class HomlyState(TypedDict):
     # Final WhatsApp-ready response
     response: Optional[str]
 
-    # Conversation context — last N turns for follow-up queries
+    # The group's recent conversation, oldest first, as
+    # [{"role", "content", "sender_name", "created_at"}] — loaded by
+    # api/routers/internal.py from services/conversation.py before the run and
+    # passed straight in (the WhatsApp bot is one stateless request per
+    # message, so this is the assistant's entire short-term memory). Read in
+    # three places: the text classifier, the `addressed` check in classify_node
+    # (_is_follow_up), and run_query()'s `context`. /query callers supply their
+    # own instead; nothing here overwrites what was passed in.
     context: Optional[list]
 
     # Error state
@@ -135,7 +142,7 @@ _PAYMENT_EXACT = frozenset({
 _TEXT_MESSAGE_TYPES = frozenset({"payment_confirmation", "pantry_command", "text_query", "unknown"})
 
 _TEXT_CLASSIFY_SYSTEM = (
-    "You classify a single WhatsApp message sent into a household's shared group chat. "
+    "You classify the latest WhatsApp message sent into a household's shared group chat. "
     'Reply with ONLY a JSON object, no markdown: {"type": "<value>"} where <value> is exactly '
     "one of:\n"
     '  "pantry_command" — reporting on pantry/grocery stock, e.g. "we\'re out of milk", '
@@ -146,7 +153,11 @@ _TEXT_CLASSIFY_SYSTEM = (
     '"when does the car insurance renew?"\n'
     '  "unknown" — anything else: small talk, chatter between household members, replies to '
     "each other, statements with no request or report in them\n\n"
-    "Classify only what the message itself says — don't guess at context you don't have."
+    "When earlier messages are shown, read the latest one as part of that conversation — "
+    "a short follow-up (\"how much?\", \"and last month?\", \"yes do that\") inherits the "
+    "subject of what came before it, so classify it by what it is actually asking for, not "
+    "by how little it says on its own. With no earlier messages, classify only what the "
+    "message itself says — don't invent context you don't have."
 )
 _TEXT_CLASSIFY_TIMEOUT_SECONDS = 6.0
 
@@ -162,7 +173,7 @@ def _parse_json_object(raw: str) -> dict:
     return json.loads(clean)
 
 
-def _classify_text_llm(text: str) -> Optional[str]:
+def _classify_text_llm(text: str, context: Optional[list] = None) -> Optional[str]:
     """LLM classification of a text message into one of _TEXT_MESSAGE_TYPES.
 
     Returns None on any failure (timeout, malformed response, an unrecognized
@@ -172,9 +183,16 @@ def _classify_text_llm(text: str) -> Optional[str]:
     classified at all.
     """
     try:
+        from services.conversation import render_for_prompt
         from services.llm_client import get_completion
+
+        transcript = render_for_prompt(context or [])
+        prompt = f'Message: "{text}"'
+        if transcript:
+            prompt = f"Recent conversation in the group:\n{transcript}\n\nLatest message: \"{text}\""
+
         raw = get_completion(
-            f'Message: "{text}"',
+            prompt,
             system=_TEXT_CLASSIFY_SYSTEM,
             timeout=_TEXT_CLASSIFY_TIMEOUT_SECONDS,
         )
@@ -211,13 +229,20 @@ def _classify_text_keywords(t: str) -> str:
     return "unknown"
 
 
-def _classify_text(text: str) -> str:
+def _classify_text(text: str, context: Optional[list] = None) -> str:
+    """`context` is the recent group conversation (services/conversation.py).
+
+    It only reaches the LLM layer: the keyword fallback matches on how the
+    string starts, which says nothing useful about a follow-up, and guessing
+    at one from prefixes alone would be worse than the honest "unknown" that
+    already routes to the assistant.
+    """
     t = text.strip().lower().rstrip("!.✓ ")
     if not t:
         return "unknown"
     if t in _PAYMENT_EXACT:
         return "payment_confirmation"
-    return _classify_text_llm(text) or _classify_text_keywords(t)
+    return _classify_text_llm(text, context) or _classify_text_keywords(t)
 
 
 _CONFIRM_YES = frozenset({"yes", "y", "ok", "okay", "yeah", "sure", "yep", "yup", "all"})
@@ -258,6 +283,21 @@ def _looks_like_confirmation(reply: str, candidates: list) -> bool:
     return any(p in names for p in parts)
 
 
+def _is_follow_up(state: "HomlyState") -> bool:
+    """True if this message lands right after something the bot itself said.
+
+    The fourth addressing signal, alongside the @mention, the WhatsApp reply,
+    and the bot's name (see classify_node). People don't re-address an
+    assistant mid-conversation — they answer it, react to it, or ask the
+    obvious next question — so without this, half of a conversation the bot
+    started gets dropped by the engagement gate. The window and the
+    "nothing said in between" rule live in services/conversation.py's
+    is_awaiting_reply(); this is just where the signal is applied.
+    """
+    from services.conversation import is_awaiting_reply
+    return is_awaiting_reply(state.get("context") or [])
+
+
 # Fields that describe the message currently being handled, not the group's
 # standing state. classify_node is the entry point, so clearing them here is
 # what stops one run's leftovers from being read as this run's — the graph is
@@ -288,6 +328,7 @@ def classify_node(state: HomlyState) -> dict:
                 state.get("was_mentioned")
                 or state.get("is_reply_to_bot")
                 or bot_profile.mentions_name(raw_caption, profile.name)
+                or _is_follow_up(state)
             )
 
             def _classified(message_type: str) -> dict:
@@ -353,6 +394,7 @@ def classify_node(state: HomlyState) -> dict:
                 state.get("was_mentioned")
                 or state.get("is_reply_to_bot")
                 or bot_profile.mentions_name(raw_query, profile.name)
+                or _is_follow_up(state)
             )
 
             pending = _load_pending(state)
@@ -361,7 +403,7 @@ def classify_node(state: HomlyState) -> dict:
             ):
                 message_type = "pantry_confirmation"
             else:
-                message_type = _classify_text(query)
+                message_type = _classify_text(query, state.get("context"))
 
             return {
                 **_RUN_RESET,
@@ -576,7 +618,7 @@ def send_pantry_confirmation_node(state: HomlyState) -> dict:
     )
 
     if group_jid:
-        send_text_sync(group_jid, message)
+        send_text_sync(group_jid, message, state["household_id"])
 
     if group_jid and not saved:
         # We asked the group a question we have nowhere to record, so their

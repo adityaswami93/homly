@@ -53,7 +53,7 @@ async def send_message(request: Request, body: dict):
         raise HTTPException(status_code=400, detail="No WhatsApp group configured for this household")
 
     from services.whatsapp_client import send_text
-    await send_text(group_jid, text)
+    await send_text(group_jid, text, household_id)
     return {"status": "queued", "text": text}
 
 

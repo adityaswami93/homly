@@ -360,6 +360,11 @@ async function handleMessage(msg, sock) {
       query: text,
       image_b64: null,
       image_mime: null,
+      // Baileys can redeliver a message after a reconnect. The image path has
+      // always sent this (receipt dedup); text needs it so a redelivery isn't
+      // written into the conversation transcript twice and read back as the
+      // group having said the same thing twice.
+      whatsapp_message_id: msg.key?.id || null,
       // Without these the assistant has no idea who in the group it's talking
       // to — it can't greet them by name or apply a preference recorded against
       // them. The image path has always sent them; this one hadn't.

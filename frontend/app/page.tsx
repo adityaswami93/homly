@@ -310,8 +310,8 @@ export default function LandingPage() {
             Where this is going
           </h2>
           <p className="text-stone-400 text-base max-w-xl mx-auto">
-            Homly started as a way to stop tallying receipts by hand. It's grown into a
-            household assistant — here's the direction we're building in.
+            Homly started as a way to stop tallying receipts by hand. It&apos;s grown into a
+            household assistant — here&apos;s the direction we&apos;re building in.
           </p>
         </div>
 

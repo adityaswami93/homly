@@ -33,7 +33,7 @@ async def _send_weekly_summary(group_jid: str, household_id: str, cutoff_mode: s
         # Only prompt for confirmation if there are actually receipts to pay
         if not text.startswith("No receipts"):
             text += "\n\n💳 Reply *paid* once reimbursed to close this cycle."
-        await send_text(group_jid, text)
+        await send_text(group_jid, text, household_id)
         logger.info(f"[scheduler] Summary sent to {group_jid}")
     except Exception as e:
         logger.error(f"[scheduler] Summary failed for {group_jid}: {e}")
@@ -72,7 +72,7 @@ async def _check_insurance_renewals():
                     f"{premium_line}\n\n"
                     f"Make sure your payment is up to date!"
                 )
-                await send_text(group_jid, msg)
+                await send_text(group_jid, msg, policy.get("household_id"))
         except Exception as e:
             logger.error(f"[scheduler] Renewal check failed for {target_date}: {e}")
 
@@ -140,7 +140,7 @@ async def _send_daily_tasks():
                 continue
 
             msg = _compose_daily_tasks_message(pending)
-            await send_text(group_jid, msg)
+            await send_text(group_jid, msg, household_id)
             logger.info(f"[scheduler] Daily tasks sent to {group_jid}")
         except Exception as e:
             logger.error(f"[scheduler] Daily tasks failed for household {household_id}: {e}")

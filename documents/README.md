@@ -33,6 +33,17 @@ documents/005-messages/
 | 017 | insurance-document-analysis | Upload policy documents → AI extraction, auto-fill, coverage summary, Coverage Checker page | 🔄 In Review |
 | 023 | reimbursement-calc-fix | Fix "to reimburse" total (custom-week vs ISO-week mismatch), move calc to backend, dedupe get_reimbursable() | ✅ Released |
 | 024 | agentic-supervisor | LangGraph ReAct supervisor replacing the single-shot query router; pluggable LLM adapter/factory | 🔄 In Review |
+| 025–036 | *(not documented)* | Shipped before documentation became a required part of every PR — see the note below | ⚠️ Undocumented |
+| 037 | conversation-memory | Rolling per-group chat transcript giving the WhatsApp assistant short-term memory (follow-ups, replies to itself) | 🔄 In Review |
+
+> **The 025–036 gap is a warning, not a precedent.** Roughly a dozen features —
+> the pantry confirmation flow, household chores, MCP data queries, the Alembic
+> migration runner, bot personality/engagement modes, the proactive monitor — shipped
+> with no entry here. Their design decisions now live only in commit messages and in
+> whatever made it into `CLAUDE.md`. That is exactly the cost this folder exists to
+> avoid, and it is why documentation is now **required in the same PR as the code**
+> rather than promised as a follow-up. See "Every PR ships its documentation" in
+> `CLAUDE.md`.
 
 ---
 

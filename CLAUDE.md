@@ -16,6 +16,58 @@ This has already drifted once: `backend/api/routers/` has noticeably more router
 
 ---
 
+## Every PR Ships Its Documentation
+
+**Every PR adds or updates a `documents/<task-ID>-<short-name>/` folder, in the same
+change as the code.** Not a follow-up, not "if the change is big enough", not a promise
+in the PR description. A PR that changes behaviour and ships no document is incomplete
+in the same way a PR that changes behaviour and ships no code is.
+
+Two files, both required, templates in `documents/README.md`:
+
+| File | Answers | Written for |
+|------|---------|-------------|
+| `implementation.md` | What was broken, why *this* approach, what was rejected and why, what's deliberately narrow, what was left out | The next agent who has to change this code and needs the reasoning, not the diff |
+| `release.md` | What changed for the user, files touched, **migrations to run**, env vars, deploy order, how to verify it worked, known issues | Whoever deploys it and has to tell whether it's working |
+
+Then add a row to the index table in `documents/README.md`.
+
+**What actually needs to be in there.** The diff already says what changed — the
+document exists for what the diff *can't* say:
+
+- **The failure, concretely.** What the user saw, ideally verbatim (the message the bot
+  sent, the wrong number on the page). "Improved context handling" documents nothing.
+- **The root cause, not the symptom.** Which line, which assumption, why it was written
+  that way in the first place.
+- **The approach that looked obvious and was wrong.** This is the highest-value
+  paragraph in the file: it's what stops the next agent re-litigating a settled
+  question. `021`'s "don't reintroduce `interrupt()`" note and `037`'s "the LangGraph
+  checkpointer is not conversation memory" note are both this.
+- **Deliberate narrowness.** A rule that's tight on purpose reads like an oversight six
+  months later, and someone "fixes" it. Say why it's tight.
+- **What you didn't do.** Scope you consciously left — with enough detail that picking
+  it up doesn't mean rediscovering the problem.
+
+**Verification claims must be honest.** If the tests couldn't run in your environment,
+the document says so and says what you did instead. A `release.md` that implies
+verification that never happened is worse than no document.
+
+**Not every PR is a feature.** A one-line typo fix or a comment change doesn't need a
+folder. A behaviour change, a schema change, a new module, a bug fix with a non-obvious
+cause, or anything that changes how the bot talks to a household does. When unsure:
+write it.
+
+**This is separate from, and additional to, "Keep This File in Sync" above.** `CLAUDE.md`
+is the map of what the system *is now*; `documents/` is the record of how it got that
+way and what was ruled out. Neither substitutes for the other, and a PR that needs both
+ships both.
+
+Note how the *last twelve* features (025–036) shipped with no entry at all — that gap is
+recorded at the bottom of `documents/README.md`'s index. Their reasoning is now only
+recoverable from commit messages. Don't add to it.
+
+---
+
 ## Task ID & Branch Naming Convention
 
 All work is tracked by task IDs (e.g. `010`, `011`). Use the format:

@@ -247,3 +247,9 @@ npm run dev
 - **Users** — Supabase JWT; the frontend attaches it as `Authorization: Bearer` on every request
 - **WhatsApp bot** — uses the Supabase service role key (never expires); endpoints read `household_id` from the request body/query param
 - **Internal endpoints** (`/internal/*`, `/setup/*`) — validated via `X-Internal-Key` header, not JWT
+
+---
+
+## License
+
+This repository is public for viewing purposes only. All rights reserved — see [LICENSE](LICENSE) for details. No permission is granted to copy, modify, or reuse this code without prior written consent.

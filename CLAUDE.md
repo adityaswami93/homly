@@ -194,7 +194,9 @@ homly/
 │   │   │                                    #   "is this receipt paid", replacing the old (year, week_number)
 │   │   │                                    #   match against `reimbursements` — see services/reimbursement.py
 │   │   ├── 034_bot_personality.sql   # bot_name/tone/engagement_mode/casual_chat/proactive on settings
-│   │   └── 035_conversation_messages.sql  # per-group chat transcript, see services/conversation.py
+│   │   ├── 035_conversation_messages.sql  # per-group chat transcript, see services/conversation.py
+│   │   └── 036_waitlist_variant.sql  # waitlist.variant — which landing-page hero a signup came from,
+│   │                                 #   so the headline A/B test is settled by conversion data
 │   ├── alembic.ini
 │   ├── requirements.txt
 │   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)

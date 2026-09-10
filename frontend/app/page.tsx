@@ -43,7 +43,7 @@ const PILLARS = [
   {
     icon:  "home",
     title: "Your home",
-    lead:  "The running of the house, without a rota on the fridge door.",
+    lead:  "The daily running of your home, handled end to end.",
     points: [
       "Chore schedules, and a record of who actually did what",
       "Helper leave requests, and approvals in a tap",
@@ -55,12 +55,12 @@ const PILLARS = [
   {
     icon:  "wallet",
     title: "Your money",
-    lead:  "Not a ledger you fill in. Someone keeping an eye on it for you.",
+    lead:  "Watched over every day, and explained in plain numbers.",
     points: [
       "Every receipt read, categorised and filed on arrival",
       "Budgets watched against real spend, flagged before they break",
       "What you owe your helper, settled to the cent",
-      "Insurance cover, the gaps in it, and renewals caught early",
+      "Insurance cover mapped, gaps surfaced, renewals caught early",
       "Savings and net worth, so you know where you stand",
       "Price trends across the shops you actually use",
     ],
@@ -72,11 +72,11 @@ const QUALITIES = [
   {
     icon:  "ask",
     title: "You just ask",
-    desc:  "No forms, no filters, no reports to configure. Ask about your household the way you would ask a person, and get a straight answer back.",
+    desc:  "Ask about your household the way you would ask a person, and get a straight answer back — in the group chat or on the dashboard.",
   },
   {
     icon:  "scan",
-    title: "It reads, so nobody types",
+    title: "It reads everything for you",
     desc:  "Photograph a receipt and it becomes structured data — vendor, items, categories — on its own. Same for a fridge shelf or a policy document.",
   },
   {
@@ -87,7 +87,7 @@ const QUALITIES = [
   {
     icon:  "bolt",
     title: "It speaks up first",
-    desc:  "The mark of a good manager is hearing about it before you had to ask. It reviews the household each morning and raises only what deserves raising.",
+    desc:  "A good manager tells you before you have to ask. Homly reviews your household each morning and raises what matters.",
   },
 ];
 
@@ -101,42 +101,42 @@ const CHAT = [
 
 const FAQS = [
   {
-    q: "Is Homly an expense tracker?",
-    a: "No. Reading receipts is one thing it does, but the point is oversight rather than bookkeeping — budgets watched against real spend, insurance cover and gaps, savings and net worth, what you owe your helper. Alongside that it runs the home itself: chores, helper leave, pantry and shopping lists.",
+    q: "What does Homly manage?",
+    a: "Your money and your home, as one system. On the money side: receipts read and categorised, budgets watched against real spend, insurance cover and renewals, savings and net worth, and what you owe your helper. On the home side: chore schedules, helper leave, pantry stock and shopping lists.",
   },
   {
     q: "What do you mean by a household manager?",
-    a: "Large households have always had someone running them — a house manager, an estate manager, a family office. Those families do not track their own receipts or chase their own renewals. Homly is that role for everyone else: it knows how your home works, you can simply ask it for things, and it comes to you when something needs a decision instead of waiting to be checked on.",
+    a: "Large households have always had someone running them — a house manager, an estate manager, a family office. Homly is that role for everyone else: it knows how your home works, you can simply ask it for things, and it comes to you when something needs a decision.",
   },
   {
-    q: "Do I have to use WhatsApp?",
-    a: "No. WhatsApp is simply the easiest place to reach it, because it is where your household already talks. Everything is equally available on the dashboard, and anything done in one shows up in the other.",
+    q: "Where do I use Homly?",
+    a: "Wherever suits you. WhatsApp is the easiest place to reach it, because it is where your household already talks. Everything is equally available on the dashboard, and anything done in one shows up in the other.",
   },
   {
-    q: "Does my helper need to install anything?",
-    a: "No. They send receipt photos to the group exactly as they do today. There is no app, no account and nothing to learn on their side.",
+    q: "What does my helper do differently?",
+    a: "Exactly what they do today — send receipt photos to your household group. Homly takes it from there, so their day stays the same.",
   },
   {
-    q: "What does it do without being asked?",
-    a: "It reviews your household each morning and raises only what is worth raising — a budget heading over, a renewal approaching, a chore repeatedly missed. It stays quiet when there is nothing to say, and you can turn this off entirely.",
+    q: "What does Homly do on its own?",
+    a: "It reviews your household each morning and raises what matters — a budget heading over, a renewal approaching, a chore that keeps slipping. On a normal day it stays quiet, and you stay in control of how much it says.",
   },
   {
-    q: "Is my data secure?",
-    a: "Each household's data is fully isolated from every other. Receipt images are stored privately, the dashboard is password protected, and nothing is shared or sold.",
+    q: "How is my data kept safe?",
+    a: "Each household's data is fully isolated from every other. Receipt images are stored privately, the dashboard is password protected, and your data stays yours.",
   },
   {
     q: "How much does it cost?",
-    a: "Free during early access. A paid plan at SGD 9.99/month is planned after launch, and early access members will get plenty of notice before anything changes.",
+    a: "Free during early access. A paid plan at SGD 9.99/month is planned after launch, and early access members get plenty of notice before anything changes.",
   },
 ];
 
 /* -------------------------------------------------------------- variants
-   Two ways of opening the same page. `manager` leads with the category claim;
-   `pain` names the problem first and offers Homly as the answer. Everything
-   below the hero is identical in both, so conversion differences are
-   attributable to the framing and nothing else.                             */
+   Two ways of opening the same page, both stated positively. `manager` leads
+   with the role; `system` leads with the family-operating-system framing.
+   Everything below the hero is identical in both, so conversion differences
+   are attributable to the framing and nothing else.                          */
 
-type VariantId = "manager" | "pain";
+type VariantId = "manager" | "system";
 
 const VARIANTS: Record<VariantId, { headline: React.ReactNode; sub: string }> = {
   manager: {
@@ -147,16 +147,16 @@ const VARIANTS: Record<VariantId, { headline: React.ReactNode; sub: string }> = 
         <span className="text-emerald-400 md:block">Now yours has&nbsp;one.</span>
       </>
     ),
-    sub: "Homly manages what your household actually runs on — the money, the supplies, the schedule, the renewals. It reads what it needs, learns how you like things done, and comes to you only when something needs a decision.",
+    sub: "Homly manages what your household runs on — the money, the supplies, the schedule, the renewals. It reads what it needs, learns how you like things done, and comes to you when something needs a decision.",
   },
-  pain: {
+  system: {
     headline: (
       <>
-        You shouldn&apos;t have to be{" "}
-        <span className="text-emerald-400">your household&apos;s&nbsp;admin</span>
+        The operating system{" "}
+        <span className="text-emerald-400 md:block">for your&nbsp;family.</span>
       </>
     ),
-    sub: "Receipts nobody logs. A budget nobody tracks. A renewal that lapsed before anyone noticed. Homly manages what your household runs on — the money, the supplies, the schedule, the renewals — and comes to you only when something needs a decision.",
+    sub: "One system for the money, the supplies, the schedule and the renewals — with an agent running it for you. Reach it in your group chat or on the dashboard.",
   },
 };
 
@@ -172,11 +172,11 @@ let resolvedVariant: VariantId | null = null;
 function resolveVariant(): VariantId {
   if (resolvedVariant) return resolvedVariant;
 
-  // ?v=pain / ?v=manager forces one, for previewing and for sharing a specific
+  // ?v=system / ?v=manager forces one, for previewing and for sharing a specific
   // version. Deliberately not persisted, so previewing cannot poison this
   // visitor's real assignment.
   const forced = new URLSearchParams(window.location.search).get("v");
-  if (forced === "pain" || forced === "manager") {
+  if (forced === "system" || forced === "manager") {
     resolvedVariant = forced;
     return resolvedVariant;
   }
@@ -185,15 +185,15 @@ function resolveVariant(): VariantId {
   // the visitor a stable assignment across reloads, never the page itself.
   try {
     const stored = window.localStorage.getItem(VARIANT_STORAGE_KEY);
-    if (stored === "pain" || stored === "manager") {
+    if (stored === "system" || stored === "manager") {
       resolvedVariant = stored;
       return resolvedVariant;
     }
-    const assigned: VariantId = Math.random() < 0.5 ? "manager" : "pain";
+    const assigned: VariantId = Math.random() < 0.5 ? "manager" : "system";
     window.localStorage.setItem(VARIANT_STORAGE_KEY, assigned);
     resolvedVariant = assigned;
   } catch {
-    resolvedVariant = Math.random() < 0.5 ? "manager" : "pain";
+    resolvedVariant = Math.random() < 0.5 ? "manager" : "system";
   }
   return resolvedVariant;
 }
@@ -428,7 +428,7 @@ export default function LandingPage() {
             <WaitlistForm className="mx-auto lg:mx-0" variant={variant} />
 
             <p className="text-stone-600 text-xs mt-4">
-              Free during early access · No credit card required
+              Free during early access · Just your email
             </p>
           </div>
 
@@ -444,13 +444,12 @@ export default function LandingPage() {
       <section className="border-y border-stone-800/60 bg-[#131210]">
         <div className="max-w-6xl mx-auto px-5 md:px-8 py-20 md:py-28">
           <div className="max-w-2xl mb-14 md:mb-16">
-            <Eyebrow>What it looks after</Eyebrow>
+            <Eyebrow>What it manages</Eyebrow>
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-              It looks after two things
+              Everything your household runs on
             </h2>
             <p className="text-stone-400 text-base md:text-lg leading-relaxed">
-              Your home and your money — as one manager who sees both, not two apps
-              that happen to share a login.
+              Your home and your money, managed by one system that sees both.
             </p>
           </div>
 
@@ -486,11 +485,10 @@ export default function LandingPage() {
         <div className="max-w-2xl mb-14">
           <Eyebrow>How it works</Eyebrow>
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-            A manager, not another app to keep up with
+            It runs itself
           </h2>
           <p className="text-stone-400 text-base md:text-lg leading-relaxed">
-            Software waits for you to operate it. A manager does the work and comes to
-            you when something needs you.
+            A manager does the work and comes to you when something needs a decision.
           </p>
         </div>
 
@@ -516,8 +514,8 @@ export default function LandingPage() {
               Reach it wherever you already are
             </h2>
             <p className="text-stone-400 text-base md:text-lg leading-relaxed">
-              The manager is the product. WhatsApp and the dashboard are just two doors
-              into it, and both show the same household.
+              WhatsApp and the dashboard are two doors into the same system, and both
+              show the same household.
             </p>
           </div>
 
@@ -525,7 +523,7 @@ export default function LandingPage() {
             {[
               {
                 title: "In your group chat",
-                desc:  "Add Homly to the household WhatsApp group you already have. Your helper keeps sending receipt photos exactly as they do now — no app, no account, nothing to learn.",
+                desc:  "Add Homly to the household WhatsApp group you already have. Your helper keeps sending receipt photos exactly as they do now, and anyone in the group can ask it something.",
               },
               {
                 title: "On the dashboard",
@@ -533,7 +531,7 @@ export default function LandingPage() {
               },
               {
                 title: "Set up in about a minute",
-                desc:  "One number added to one group, and a short setup on the dashboard. Nothing to roll out to the rest of the household.",
+                desc:  "One number added to one group, and a short setup on the dashboard. Everyone else is ready from the first message.",
               },
             ].map((item) => (
               <div
@@ -556,7 +554,7 @@ export default function LandingPage() {
             Simple pricing
           </h2>
           <p className="text-stone-400 text-base md:text-lg">
-            Free during early access. No surprises.
+            Free during early access. Simple after that.
           </p>
         </div>
 
@@ -630,7 +628,7 @@ export default function LandingPage() {
       <section className="bg-gradient-to-b from-emerald-950/40 to-[#0f0e0c] border-t border-emerald-900/30">
         <div className="max-w-2xl mx-auto px-5 md:px-8 py-24 md:py-28 text-center">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-            Hand it to someone else
+            Put your household on Homly
           </h2>
           <p className="text-stone-400 text-base md:text-lg mb-9">
             Join the waitlist and we will set you up when your spot is ready.

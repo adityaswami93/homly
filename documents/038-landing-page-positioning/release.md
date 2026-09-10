@@ -23,10 +23,10 @@ every icon, and the closing CTA is a single colour band.
 | Variant | Headline |
 |---|---|
 | `manager` | Every home needs a manager. Now yours has one. |
-| `pain` | You shouldn't have to be your household's admin |
+| `system` | The operating system for your family. |
 
 Visitors are assigned 50/50, sticky per browser via `localStorage`. `?v=manager` /
-`?v=pain` forces one for preview and is deliberately not persisted. The assigned variant
+`?v=system` forces one for preview and is deliberately not persisted. The assigned variant
 rides along on the waitlist POST and is stored on the row.
 
 ## Files changed
@@ -71,7 +71,7 @@ Rolling back the frontend alone is safe: the backend treats a missing `variant` 
 
 ## How to verify
 
-- Load `/?v=pain` and `/?v=manager` — the headline and subhead should differ; everything
+- Load `/?v=system` and `/?v=manager` — the headline and subhead should differ; everything
   below the hero should be identical.
 - Load `/` with no parameter, then reload — the variant must not change. Check
   `localStorage.getItem('homly_lp_variant')`.

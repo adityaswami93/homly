@@ -94,6 +94,21 @@ vocabulary — *MCP*, *"a single AI layer"*, *"silo"* — on a page whose reader
 employing a helper, and a roadmap section advertises what you have **not** built to
 someone deciding whether to trust you with their receipts. Don't reintroduce it.
 
+**A problem-first ("pain") hero.** Built, then replaced. The headline was *"You
+shouldn't have to be your household's admin"*, with a subhead listing failures —
+"Receipts nobody logs. A budget nobody tracks." It tested well as a *hypothesis*, but it
+conflicts with the voice the brand settled on: straightforward and positively stated.
+Running a test arm you would refuse to ship on brand grounds answers nothing, so the
+second arm is now `system` (the family-operating-system framing) — role vs system, both
+stated positively.
+
+**Negation as a copy device.** The page leaned on it heavily — *"Not a ledger you fill
+in"*, *"no forms, no filters"*, *"nobody types"*, and five FAQ answers opening with
+"No." Each was defensible alone; together they made the page read defensive, as though
+it were rebutting accusations. Every one is now a positive statement of what the product
+does, and the FAQ questions were reframed so the answers do not have to open by denying
+something ("Is Homly an expense tracker?" → "What does Homly manage?").
+
 **Deciding the framing by argument.** Rejected in favour of the test below. Several
 different positionings were argued with equal confidence during this PR, which is itself
 the evidence that argument was not going to settle it.

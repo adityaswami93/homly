@@ -35,7 +35,7 @@ documents/005-messages/
 | 024 | agentic-supervisor | LangGraph ReAct supervisor replacing the single-shot query router; pluggable LLM adapter/factory | 🔄 In Review |
 | 025–036 | *(not documented)* | Shipped before documentation became a required part of every PR — see the note below | ⚠️ Undocumented |
 | 037 | conversation-memory | Rolling per-group chat transcript giving the WhatsApp assistant short-term memory (follow-ups, replies to itself) | 🔄 In Review |
-| 038 | landing-page-positioning | Landing page rewritten from "expense tracker" to household concierge (home + money), redesigned for hierarchy, plus a 50/50 hero A/B test recorded on `waitlist.variant` | 🔄 In Review |
+| 038 | landing-page-positioning | Landing page rewritten from "expense tracker" to household manager (home + money), redesigned for hierarchy, plus a 50/50 hero A/B test recorded on `waitlist.variant` | 🔄 In Review |
 
 > **The 025–036 gap is a warning, not a precedent.** Roughly a dozen features —
 > the pantry confirmation flow, household chores, MCP data queries, the Alembic

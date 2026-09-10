@@ -38,7 +38,7 @@ function Icon({ name }: { name: string }) {
 
 /* ----------------------------------------------------------------- data */
 
-/** The two things a concierge looks after. Money is oversight, not bookkeeping. */
+/** The two things a household manager looks after. Money is oversight, not bookkeeping. */
 const PILLARS = [
   {
     icon:  "home",
@@ -67,7 +67,7 @@ const PILLARS = [
   },
 ];
 
-/** What separates a concierge from software you have to operate. */
+/** What separates a manager from software you have to operate. */
 const QUALITIES = [
   {
     icon:  "ask",
@@ -87,7 +87,7 @@ const QUALITIES = [
   {
     icon:  "bolt",
     title: "It speaks up first",
-    desc:  "The mark of a good concierge is hearing about it before you had to ask. It reviews the household each morning and raises only what deserves raising.",
+    desc:  "The mark of a good manager is hearing about it before you had to ask. It reviews the household each morning and raises only what deserves raising.",
   },
 ];
 
@@ -105,8 +105,8 @@ const FAQS = [
     a: "No. Reading receipts is one thing it does, but the point is oversight rather than bookkeeping — budgets watched against real spend, insurance cover and gaps, savings and net worth, what you owe your helper. Alongside that it runs the home itself: chores, helper leave, pantry and shopping lists.",
   },
   {
-    q: "What do you mean by concierge?",
-    a: "Someone who knows how your household works, who you can simply ask for things, and who comes to you when something needs attention instead of waiting to be checked on. That is the standard we build to — not a dashboard you have to remember to open.",
+    q: "What do you mean by a household manager?",
+    a: "Large households have always had someone running them — a house manager, an estate manager, a family office. Those families do not track their own receipts or chase their own renewals. Homly is that role for everyone else: it knows how your home works, you can simply ask it for things, and it comes to you when something needs a decision instead of waiting to be checked on.",
   },
   {
     q: "Do I have to use WhatsApp?",
@@ -131,22 +131,23 @@ const FAQS = [
 ];
 
 /* -------------------------------------------------------------- variants
-   Two ways of opening the same page. `concierge` leads with the promise;
+   Two ways of opening the same page. `manager` leads with the category claim;
    `pain` names the problem first and offers Homly as the answer. Everything
    below the hero is identical in both, so conversion differences are
    attributable to the framing and nothing else.                             */
 
-type VariantId = "concierge" | "pain";
+type VariantId = "manager" | "pain";
 
 const VARIANTS: Record<VariantId, { headline: React.ReactNode; sub: string }> = {
-  concierge: {
+  manager: {
     headline: (
       <>
-        Every family should have{" "}
-        <span className="text-emerald-400">a&nbsp;concierge</span>
+        Every home needs a manager.{" "}
+        {/* Own line on md+ so the two sentences read as two beats, not one run-on. */}
+        <span className="text-emerald-400 md:block">Now yours has&nbsp;one.</span>
       </>
     ),
-    sub: "Homly looks after the running of your home and keeps watch over your family's money — reading what it needs, learning how you like things done, and telling you what matters before you have to ask. Reach it in your group chat or on the dashboard.",
+    sub: "Homly manages what your household actually runs on — the money, the supplies, the schedule, the renewals. It reads what it needs, learns how you like things done, and comes to you only when something needs a decision.",
   },
   pain: {
     headline: (
@@ -155,7 +156,7 @@ const VARIANTS: Record<VariantId, { headline: React.ReactNode; sub: string }> = 
         <span className="text-emerald-400">your household&apos;s&nbsp;admin</span>
       </>
     ),
-    sub: "Receipts nobody logs. A budget nobody tracks. A renewal that lapsed before anyone noticed. Homly takes the running of your home and the watching of your money off your plate, and comes to you only when something actually needs you.",
+    sub: "Receipts nobody logs. A budget nobody tracks. A renewal that lapsed before anyone noticed. Homly manages what your household runs on — the money, the supplies, the schedule, the renewals — and comes to you only when something needs a decision.",
   },
 };
 
@@ -171,11 +172,11 @@ let resolvedVariant: VariantId | null = null;
 function resolveVariant(): VariantId {
   if (resolvedVariant) return resolvedVariant;
 
-  // ?v=pain / ?v=concierge forces one, for previewing and for sharing a specific
+  // ?v=pain / ?v=manager forces one, for previewing and for sharing a specific
   // version. Deliberately not persisted, so previewing cannot poison this
   // visitor's real assignment.
   const forced = new URLSearchParams(window.location.search).get("v");
-  if (forced === "pain" || forced === "concierge") {
+  if (forced === "pain" || forced === "manager") {
     resolvedVariant = forced;
     return resolvedVariant;
   }
@@ -184,15 +185,15 @@ function resolveVariant(): VariantId {
   // the visitor a stable assignment across reloads, never the page itself.
   try {
     const stored = window.localStorage.getItem(VARIANT_STORAGE_KEY);
-    if (stored === "pain" || stored === "concierge") {
+    if (stored === "pain" || stored === "manager") {
       resolvedVariant = stored;
       return resolvedVariant;
     }
-    const assigned: VariantId = Math.random() < 0.5 ? "concierge" : "pain";
+    const assigned: VariantId = Math.random() < 0.5 ? "manager" : "pain";
     window.localStorage.setItem(VARIANT_STORAGE_KEY, assigned);
     resolvedVariant = assigned;
   } catch {
-    resolvedVariant = Math.random() < 0.5 ? "concierge" : "pain";
+    resolvedVariant = Math.random() < 0.5 ? "manager" : "pain";
   }
   return resolvedVariant;
 }
@@ -205,13 +206,13 @@ const subscribeToNothing = () => () => {};
  * that would bake one variant into the prerendered HTML. useSyncExternalStore is
  * the supported way to render a server snapshot and then swap to a client-only
  * value after hydration, without a setState-in-effect. The server snapshot is
- * `concierge`, so a visitor with JS disabled still gets a coherent page.
+ * `manager`, so a visitor with JS disabled still gets a coherent page.
  */
 function useVariant(): VariantId {
   return useSyncExternalStore<VariantId>(
     subscribeToNothing,
     resolveVariant,
-    () => "concierge",
+    () => "manager",
   );
 }
 
@@ -416,7 +417,7 @@ export default function LandingPage() {
               <span className="text-emerald-300 text-xs font-medium">Early access — Singapore</span>
             </div>
 
-            <h1 className="text-[2.6rem] leading-[1.05] md:text-6xl md:leading-[1.03] font-bold tracking-tight mb-6">
+            <h1 className="text-[2.6rem] leading-[1.05] md:text-[3.4rem] md:leading-[1.06] font-bold tracking-tight mb-6">
               {hero.headline}
             </h1>
 
@@ -448,7 +449,7 @@ export default function LandingPage() {
               It looks after two things
             </h2>
             <p className="text-stone-400 text-base md:text-lg leading-relaxed">
-              Your home and your money — as one concierge that sees both, not two apps
+              Your home and your money — as one manager who sees both, not two apps
               that happen to share a login.
             </p>
           </div>
@@ -485,10 +486,10 @@ export default function LandingPage() {
         <div className="max-w-2xl mb-14">
           <Eyebrow>How it works</Eyebrow>
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-            A concierge, not another app to keep up with
+            A manager, not another app to keep up with
           </h2>
           <p className="text-stone-400 text-base md:text-lg leading-relaxed">
-            Software waits for you to operate it. A concierge does the work and comes to
+            Software waits for you to operate it. A manager does the work and comes to
             you when something needs you.
           </p>
         </div>
@@ -515,7 +516,7 @@ export default function LandingPage() {
               Reach it wherever you already are
             </h2>
             <p className="text-stone-400 text-base md:text-lg leading-relaxed">
-              The concierge is the product. WhatsApp and the dashboard are just two doors
+              The manager is the product. WhatsApp and the dashboard are just two doors
               into it, and both show the same household.
             </p>
           </div>
@@ -566,7 +567,7 @@ export default function LandingPage() {
             <p className="text-stone-500 text-sm mb-7">While we&apos;re in early access</p>
             <ul className="space-y-3 text-sm text-stone-400">
               {[
-                "The full concierge",
+                "Everything Homly manages",
                 "Your home and your money",
                 "Unlimited receipts",
                 "WhatsApp and dashboard",

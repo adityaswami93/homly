@@ -33,20 +33,48 @@ could not answer from the chair.
 
 ### Positioning
 
-Homly is a **concierge for your home and your family's money**. The page is now built
-around two pillars — *Your home* (chores, helper leave, pantry, shopping lists, daily
-nudges) and *Your money* (receipts, budgets, reimbursement, insurance cover and gaps,
-savings and net worth, price trends) — plus a section on how it behaves (you just ask,
-it reads, it learns your household, it speaks up first), and one on where to reach it.
+Homly is a **household manager for families**. The brand idea underneath it:
+
+> Large households have always had someone running them — a house manager, an estate
+> manager, a family office. Those families do not track their own receipts or chase
+> their own renewals. Homly is that role for everyone else.
+
+That gives a category (household manager), a reason to exist that is not "another app",
+and a frame that survives scale — chores, helper leave, supplies and renewals *are*
+household-management work, not finance work.
+
+The page is built around two pillars — *Your home* (chores, helper leave, pantry,
+shopping lists, daily nudges) and *Your money* (receipts, budgets, reimbursement,
+insurance cover and gaps, savings and net worth, price trends) — plus a section on how
+it behaves (you just ask, it reads, it learns your household, it speaks up first), and
+one on where to reach it.
 
 ### A/B test
 
-Whether "concierge" is the right frame for a Singapore family employing a helper is a
-question about that audience, not a question about the product. It was being argued
-rather than measured, so the page now ships two hero framings and records which one a
-signup came from.
+Whether the category claim or the pain lands better with a Singapore family employing a
+helper is a question about that audience, not about the product. It was being argued
+rather than measured, so the page ships two hero framings and records which one a signup
+came from.
 
 ## Approaches tried and rejected
+
+**"Concierge" as the category word.** Shipped, then replaced by "manager" — and the
+reason matters, because concierge is the more charming word and someone will want it
+back. Two problems. First, *accuracy*: a concierge waits at a desk to be asked. This
+product runs an unattended morning check and raises things nobody requested
+(`agents/proactive_agent.py`), which is manager behaviour, not concierge behaviour —
+the metaphor was under-describing the most differentiated thing in the codebase.
+Second, *audience*: concierge carries a luxury-hotel connotation, and in Singapore
+employing a domestic helper is ordinary middle class, not elite. The frame risked
+reading as *not for me* to exactly the person it was aimed at. "Manager" is plainer and
+truer, and it lets the page make the real claim — that this role has always existed for
+households that could staff it.
+
+**Leading with "Family Operating System"** (the repo's own description). Rejected for
+customer-facing copy. An OS is something *you* operate; an agent is something that
+operates things *for* you — leading with the OS undercuts the promise, and it is a
+builder's frame, not a buyer's. It remains the right internal and investor framing,
+which is why it stays in `CLAUDE.md` and not on the page.
 
 **Renaming the product.** Considered; rejected. The domain is Vercel-assigned so a rename
 is cheap in mechanics, but "Homly" is short and roots on *home*, which stretches to cover
@@ -66,7 +94,7 @@ vocabulary — *MCP*, *"a single AI layer"*, *"silo"* — on a page whose reader
 employing a helper, and a roadmap section advertises what you have **not** built to
 someone deciding whether to trust you with their receipts. Don't reintroduce it.
 
-**Deciding concierge-vs-pain by argument.** Rejected in favour of the test below. Three
+**Deciding the framing by argument.** Rejected in favour of the test below. Several
 different positionings were argued with equal confidence during this PR, which is itself
 the evidence that argument was not going to settle it.
 
@@ -86,7 +114,7 @@ client-only value after hydration. The snapshot function must be **stable betwee
 so the resolved variant is cached in a module-level variable — recomputing would re-roll
 the coin on every read and loop forever.
 
-The server snapshot is `concierge`, which means a visitor with JS disabled gets a coherent
+The server snapshot is `manager`, which means a visitor with JS disabled gets a coherent
 page rather than a blank hero.
 
 ## Deliberately narrow

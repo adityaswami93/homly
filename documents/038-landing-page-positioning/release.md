@@ -6,7 +6,7 @@ The public landing page (`/`) was rewritten and redesigned, and the waitlist now
 which of two hero framings a signup came from.
 
 **Positioning.** The page previously described a receipt-scanning expense tracker. It now
-presents Homly as a concierge for the home and the family's money, with two pillars —
+presents Homly as a household manager for families, with two pillars —
 *Your home* (chores, helper leave, pantry, shopping lists, daily nudges) and *Your money*
 (receipts, budgets, reimbursement, insurance cover and gaps, savings and net worth, price
 trends) — a section on how it behaves, and a section presenting WhatsApp and the dashboard
@@ -22,10 +22,10 @@ every icon, and the closing CTA is a single colour band.
 
 | Variant | Headline |
 |---|---|
-| `concierge` | Every family should have a concierge |
+| `manager` | Every home needs a manager. Now yours has one. |
 | `pain` | You shouldn't have to be your household's admin |
 
-Visitors are assigned 50/50, sticky per browser via `localStorage`. `?v=concierge` /
+Visitors are assigned 50/50, sticky per browser via `localStorage`. `?v=manager` /
 `?v=pain` forces one for preview and is deliberately not persisted. The assigned variant
 rides along on the waitlist POST and is stored on the row.
 
@@ -71,7 +71,7 @@ Rolling back the frontend alone is safe: the backend treats a missing `variant` 
 
 ## How to verify
 
-- Load `/?v=pain` and `/?v=concierge` — the headline and subhead should differ; everything
+- Load `/?v=pain` and `/?v=manager` — the headline and subhead should differ; everything
   below the hero should be identical.
 - Load `/` with no parameter, then reload — the variant must not change. Check
   `localStorage.getItem('homly_lp_variant')`.

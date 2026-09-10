@@ -11,7 +11,7 @@ _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 # Landing-page hero variants the frontend may report (see frontend/app/page.tsx).
 # Anything else is stored as NULL rather than trusted — this value comes straight
 # from an unauthenticated request body and is only ever read back in aggregate.
-_KNOWN_VARIANTS = {"concierge", "pain"}
+_KNOWN_VARIANTS = {"manager", "pain"}
 
 
 class WaitlistRequest(BaseModel):

@@ -142,9 +142,10 @@ homly/
 │   ├── services/
 │   │   ├── db.py                   # get_supabase() — THE Supabase client. Every router, service
 │   │   │                           #   and agent uses it; nothing else calls create_client().
-│   │   │                           #   Wraps httpx with a retry transport, because Supabase's edge
-│   │   │                           #   closes a pooled HTTP/2 connection after a couple of requests
-│   │   │                           #   and the next call on it used to surface as a dashboard 500
+│   │   │                           #   Takes its httpx sessions off HTTP/2 and wraps them in a retry
+│   │   │                           #   transport, because Supabase's edge closes a pooled HTTP/2
+│   │   │                           #   connection after two requests and the next call on it used to
+│   │   │                           #   surface as a dashboard 500 — see "Talking to Supabase" below
 │   │   ├── llm_client.py           # Facade: get_completion(), get_vision_completion()
 │   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook;
 │   │   │                          #   compute_reimbursement_totals()/mark_receipts_reimbursed() — single
@@ -1175,38 +1176,67 @@ The same rule applies within the backend: if a helper needs to be called from mo
 
 `get_reimbursable()` (eligibility) and `compute_reimbursement_totals()`/`mark_receipts_reimbursed()` (totals and paid-state) already live in `services/reimbursement.py` for exactly this reason — every router that touches reimbursement (`expenses.py`, `messages.py`, `reimbursements.py`, `webhook.py`, `homly_graph.py`) calls into it rather than reimplementing the rule. Keep it that way: a future change to reimbursement rules is one edit away from applying inconsistently across the dashboard, WhatsApp bot, and weekly summary paths otherwise.
 
-### One Supabase client — `services/db.py`'s `get_supabase()`
+### Talking to Supabase
 
-**Never call `create_client()` directly.** Every router, service and agent gets its
-client from `services/db.py`:
+Every Supabase call in this backend is an HTTPS round trip to PostgREST over a pooled
+connection, and the pool is now **process-wide and shared**. Five rules follow from
+that. They exist because breaking them took the dashboard down on 2026-09-12 — 28 × 500
+in seven minutes plus 27 requests that silently answered "you have no household" — see
+`documents/039-supabase-connection-retries/`.
+
+**1. Get the client from `services/db.py`. Only from there.**
 
 ```python
 from services.db import get_supabase
-supabase = get_supabase()          # cached; safe at import or inside a function
+supabase = get_supabase()          # cached; fine at import or inside a function
 ```
 
-There used to be 40 of them, one per module, each with its own httpx connection pool.
-That mattered because Supabase's edge hands back a GOAWAY after serving two streams on
-a pooled HTTP/2 connection, and over HTTP/2 httpcore cannot tell: the GOAWAY sits unread
-in the socket buffer, so the next call goes out on a dead connection and comes back as
-`httpx.RemoteProtocolError` with no response at all. It reached users as a dashboard
-500 — `GET /household` failing on its *third* Supabase query while the two before it
-succeeded (28 of them in one seven-minute window, see
-`documents/039-supabase-connection-retries/`).
+Never `create_client()` in a router, service or agent, and never hand-roll an
+`httpx`/`requests` call against `<SUPABASE_URL>/rest/v1/…`. There were 40 separate
+clients once, each with its own connection pool and its own exposure to the bug below,
+and no single place to fix it.
 
-`get_supabase()` does two things about that, and **both matter**:
+**2. Don't write your own retry or connection handling around `.execute()`.**
+`get_supabase()` already does two things, and both matter:
 
-1. **Takes the sessions off HTTP/2** (`_disable_http2`). httpcore's HTTP/1.1 pool checks
-   whether an idle socket has gone readable before reusing it, so a server that hung up
-   is spotted *before* a request is put on the connection. Its HTTP/2 pool only checks
-   the keep-alive clock. This is the actual fix.
-2. **Wraps each session's transport in a retry** (`_RetryTransport`) for whatever still
-   slips through. Retrying alone was tried first and was not enough — see the document.
+- **The sessions are taken off HTTP/2** (`_disable_http2`). Supabase's edge sends a
+  GOAWAY after serving two streams on a connection; over HTTP/2 httpcore can't see it
+  (the frame sits unread in the socket buffer) so the next request goes out on a dead
+  connection and comes back as `httpx.RemoteProtocolError` with no response at all.
+  httpcore's HTTP/1.1 pool checks whether an idle socket has gone readable before
+  reusing it, so it spots the close first. **Do not turn HTTP/2 back on.**
+- **Each session's transport retries** (`_RetryTransport`) for what still slips through:
+  connection failures only, never status codes, and a write only when the error proves
+  the server never processed it, so a retry can't duplicate an insert.
 
-The retry is for connections that died with no answer, not for answers you don't like:
-a 4xx/5xx from PostgREST is passed straight through to the caller. Writes are only
-re-sent when the failure itself proves the server never processed them (see
-`_server_never_processed_it`), so a retry can't duplicate an insert.
+A 4xx/5xx from PostgREST is an *answer* — handle it in your endpoint. A dropped
+connection is the transport's problem and is already handled.
+
+**3. A query that failed is not a query that came back empty.**
+Never turn a Supabase exception into a plausible-looking empty result on a path where
+the caller can't tell the difference. The auth middleware used to `except Exception` on
+its membership lookup and continue with `household_id = None`; `GET /household` then
+answered `200 {"household": null}`, and the dashboard showed the onboarding flow to a
+member who has a household. It returns `503` now. If a caller genuinely can degrade,
+say so where it degrades and keep it bounded — `services/conversation.py` is the model:
+every failure there falls back to "no memory", which is stated in its docstring, is
+invisible to correctness, and never drops a message.
+
+**4. Fewer round trips per request.**
+Each `.execute()` is a network call, and a handler that fires three of them in a row is
+what surfaced the connection bug in the first place. Select what you need in one query
+(PostgREST embeds related rows: `select("*, items(*)")`), fetch a set with `.in_()`
+rather than one id at a time, and **never put an `.execute()` inside a loop over rows
+you just fetched**. `GET /admin/households` still does `1 + 2N` queries — it's the
+known offender to fix when you're next in there, not the pattern to copy.
+
+**5. The client is shared — don't mutate it.**
+One `Client`, one pool, every household's requests and every scheduler thread going
+through it. Query builders (`.table(...)`) are per-call and safe. Anything that changes
+client-level state is not: no `postgrest.auth(jwt)`, no writing to `.headers`, no
+per-request timeout on the client object. That state would leak across households and
+across threads. Per-request options belong on the query, and the service key is the only
+credential this backend uses against Supabase.
 
 ### Multi-tenancy: every query on a shared table must filter by `household_id`
 

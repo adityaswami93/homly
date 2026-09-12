@@ -45,9 +45,9 @@ jobs:
 
       # Each check below runs with continue-on-error so the job can capture
       # its output for the PR summary comment even on failure; the final
-      # "Fail job if blocking checks failed" step is what actually fails
-      # the job for the blocking checks (ruff, compile, pytest) — scoping
-      # stays informational-only, per its own step.
+      # "Fail job if blocking checks failed" step is what actually fails the
+      # job. ADDING A CHECK HERE MEANS ADDING IT TO THAT CONDITION TOO —
+      # otherwise it reports into the comment and nothing more.
       - name: Lint (ruff)
         id: ruff
         continue-on-error: true
@@ -81,7 +81,13 @@ jobs:
           { echo "output<<PYTEST_EOF"; tail -c 4000 /tmp/pytest_output.txt; echo "PYTEST_EOF"; } >> "$GITHUB_OUTPUT"
           exit $code
 
-      - name: Multi-tenancy scoping scan (informational — see tests/check_household_scoping.py)
+      # Blocking as of task 040. It was informational because it reported 51
+      # findings, almost all false positives of safe patterns it couldn't see —
+      # and because it never called sys.exit, so this step went green anyway.
+      # It now understands those patterns (51 -> 0), exits non-zero, and has its
+      # own tests in tests/test_household_scoping_check.py proving it still
+      # catches a real leak. RLS is disabled on these tables; this is the guard.
+      - name: Multi-tenancy scoping scan (see tests/check_household_scoping.py)
         id: scoping
         continue-on-error: true
         run: |
@@ -93,7 +99,11 @@ jobs:
           exit $code
 
       - name: Fail job if blocking checks failed
-        if: steps.ruff.outcome == 'failure' || steps.compile.outcome == 'failure' || steps.pytest.outcome == 'failure'
+        if: >-
+          steps.ruff.outcome == 'failure' ||
+          steps.compile.outcome == 'failure' ||
+          steps.pytest.outcome == 'failure' ||
+          steps.scoping.outcome == 'failure'
         run: exit 1
 
   frontend:
@@ -184,9 +194,63 @@ jobs:
         if: steps.typecheck.outcome == 'failure' || steps.build.outcome == 'failure'
         run: exit 1
 
+  whatsapp:
+    name: WhatsApp bot (syntax + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/whatsapp
+    outputs:
+      check_outcome: ${{ steps.check.outcome }}
+      check_output: ${{ steps.check.outputs.output }}
+      test_outcome: ${{ steps.test.outcome }}
+      test_output: ${{ steps.test.outputs.output }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # No `npm install`: both steps below are deliberately dependency-free, so
+      # this job stays fast and cannot break because of a transitive release.
+      # `npm run check` is `node --check` over every file — the equivalent of
+      # the backend job's `compileall`, and the thing that would have caught a
+      # broken deploy. `npm run test` is node's built-in runner over
+      # lib/parsing.js, the pure helpers extracted out of index.js.
+      #
+      # NB: `node --check` accepts only ONE file and silently ignores the rest,
+      # so `check` pipes through `xargs -n1`. An earlier `-exec ... +` version
+      # of it passed while a syntax error sat in the tree.
+      - name: Syntax check (node --check)
+        id: check
+        continue-on-error: true
+        run: |
+          set +e
+          npm run check 2>&1 | tee /tmp/wa_check_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<WACHECK_EOF"; tail -c 4000 /tmp/wa_check_output.txt; echo "WACHECK_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Unit tests (node --test)
+        id: test
+        continue-on-error: true
+        run: |
+          set +e
+          npm test 2>&1 | tee /tmp/wa_test_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<WATEST_EOF"; tail -c 4000 /tmp/wa_test_output.txt; echo "WATEST_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Fail job if blocking checks failed
+        if: steps.check.outcome == 'failure' || steps.test.outcome == 'failure'
+        run: exit 1
+
   comment:
     name: Post CI summary comment
-    needs: [backend, frontend]
+    needs: [backend, frontend, whatsapp]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -211,6 +275,11 @@ jobs:
           FRONTEND_TYPECHECK_OUTPUT: ${{ needs.frontend.outputs.typecheck_output }}
           FRONTEND_BUILD_OUTCOME: ${{ needs.frontend.outputs.build_outcome }}
           FRONTEND_BUILD_OUTPUT: ${{ needs.frontend.outputs.build_output }}
+          WHATSAPP_JOB_RESULT: ${{ needs.whatsapp.result }}
+          WHATSAPP_CHECK_OUTCOME: ${{ needs.whatsapp.outputs.check_outcome }}
+          WHATSAPP_CHECK_OUTPUT: ${{ needs.whatsapp.outputs.check_output }}
+          WHATSAPP_TEST_OUTCOME: ${{ needs.whatsapp.outputs.test_outcome }}
+          WHATSAPP_TEST_OUTPUT: ${{ needs.whatsapp.outputs.test_output }}
         with:
           script: |
             const marker = "<!-- homly-ci-summary -->";
@@ -247,7 +316,8 @@ jobs:
             parts.push(`### CI run summary — \`${context.sha.slice(0, 7)}\``);
             parts.push(
               `Backend job: **${process.env.BACKEND_JOB_RESULT}** · ` +
-              `Frontend job: **${process.env.FRONTEND_JOB_RESULT}**`
+              `Frontend job: **${process.env.FRONTEND_JOB_RESULT}** · ` +
+              `WhatsApp bot job: **${process.env.WHATSAPP_JOB_RESULT}**`
             );
             parts.push("");
             parts.push("#### Backend");
@@ -256,7 +326,7 @@ jobs:
             parts.push(section("Unit tests (pytest)", process.env.BACKEND_PYTEST_OUTCOME, process.env.BACKEND_PYTEST_OUTPUT));
             parts.push(section(
               "Multi-tenancy scoping scan", process.env.BACKEND_SCOPING_OUTCOME, process.env.BACKEND_SCOPING_OUTPUT,
-              "Informational only — findings need manual security triage before this blocks CI."
+              "Blocking. A finding is either a cross-tenant leak or needs a `# household-scope: ok — <reason>` marker."
             ));
             parts.push("");
             parts.push("#### Frontend");
@@ -266,6 +336,10 @@ jobs:
             ));
             parts.push(section("Typecheck", process.env.FRONTEND_TYPECHECK_OUTCOME, process.env.FRONTEND_TYPECHECK_OUTPUT));
             parts.push(section("Build", process.env.FRONTEND_BUILD_OUTCOME, process.env.FRONTEND_BUILD_OUTPUT));
+            parts.push("");
+            parts.push("#### WhatsApp bot");
+            parts.push(section("Syntax check", process.env.WHATSAPP_CHECK_OUTCOME, process.env.WHATSAPP_CHECK_OUTPUT));
+            parts.push(section("Unit tests (node --test)", process.env.WHATSAPP_TEST_OUTCOME, process.env.WHATSAPP_TEST_OUTPUT));
             parts.push("");
             parts.push(
               `_Full logs: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}_`

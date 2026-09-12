@@ -70,7 +70,11 @@ def save_receipt(
     if not whatsapp_message_id:
         whatsapp_message_id = f"web-{uuid.uuid4().hex}"
 
-    # Dedup
+    # Dedup.
+    # household-scope: ok — and it must NOT be scoped, for the same reason as
+    # the webhook path: whatsapp_message_id is UNIQUE table-wide, so a scoped
+    # lookup would miss a duplicate and hit the constraint instead. Existence
+    # only; no row is returned to a caller.
     existing = _db().table("receipts") \
         .select("id") \
         .eq("whatsapp_message_id", whatsapp_message_id) \

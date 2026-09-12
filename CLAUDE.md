@@ -212,6 +212,10 @@ homly/
 │   ├── requirements-dev.txt        # requirements.txt + pinned pytest & ruff; what CI installs
 │   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)
 │       ├── index.js                # Connects, forwards every message to /internal/graph-invoke
+│       ├── lib/
+│       │   ├── parsing.js          # Pure helpers: stripLeadingMentions, wasBotMentioned,
+│       │   │                       #   isReplyToBot, ownPhone, parseRemindDuration
+│       │   └── parsing.test.js     # `node --test` — no dependencies, runs without npm install
 │       ├── package.json
 │       └── .env                    # FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
 └── frontend/
@@ -1088,6 +1092,9 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 - **`currentSock`** — module-level reference to the active Baileys socket, used by QR regeneration poller
 - **`SERVICE_KEY`** — `SUPABASE_KEY` value used as bearer for all backend API calls
 - **Daily renewal cron** — 09:00 SGT cron hits `/internal/insurance/renewals` and sends reminders to household groups
+- **`lib/parsing.js`** — the pure helpers below live here rather than in `index.js`, so they can be
+  unit-tested without a Baileys socket (`npm test`, no dependencies). Anything added here should be
+  pure too; anything needing a socket or the backend stays in `index.js`.
 - **`stripLeadingMentions(text)`** — strips a leading `@<phone>`/`@<name>` mention before any command match or
   `/internal/graph-invoke` call; without it, `@-mentioning` the bot broke every prefix-based match (custom
   commands, `/remind`, and `homly_graph.py`'s `classify_node` all check how the string *starts*)
@@ -1172,6 +1179,10 @@ cd ../frontend && npm install
 npm run lint                        # eslint
 npm run typecheck                   # tsc --noEmit — `next build` does NOT typecheck in Next 16
 npm run build
+
+cd ../backend/whatsapp              # no npm install needed — both are dependency-free
+npm run check                       # node --check over every .js file
+npm test                            # node --test over lib/
 ```
 
 ### What blocks a merge
@@ -1181,10 +1192,12 @@ npm run build
 | `ruff check .` | backend | yes |
 | `python -m compileall .` | backend | yes |
 | `pytest` | backend | yes |
-| `tests/check_household_scoping.py` | backend | **no — informational** (see below) |
+| `tests/check_household_scoping.py` | backend | yes |
 | `tsc --noEmit` | frontend | yes |
 | `next build` | frontend | yes |
 | `eslint` | frontend | **no — informational** (~104 pre-existing findings) |
+| `npm run check` | whatsapp | yes |
+| `npm test` | whatsapp | yes |
 
 Every step runs with `continue-on-error` so its output can be captured for the sticky PR
 summary comment; a final `Fail job if blocking checks failed` step is what actually fails
@@ -1245,9 +1258,23 @@ RLS is disabled on every shared table (see "Multi-tenancy" below), so this invar
 two mechanical guards and both matter:
 
 - **Static** — `tests/check_household_scoping.py` walks the AST for `.table("x")` calls on
-  household-scoped tables with no `household_id` in the enclosing statement. Heuristic: it
-  can't see cross-statement query building, so it currently reports false positives and is
-  informational.
+  household-scoped tables and reports any it cannot show to be scoped. It recognises four
+  safe shapes: `household_id` in the statement; a chain built across statements
+  (`q = q.eq(...)`); a write whose payload dict carries it (including list comprehensions
+  and `rows.append(row)` accumulators); and a query narrowed by a key inside a function that
+  already ran a scoped query (update-by-id after an ownership check, or a child table by
+  foreign key). Anything else needs an explicit marker on the statement or in the comment
+  block above it:
+
+  ```python
+  # household-scope: ok — <why this cannot reach another household>
+  ```
+
+  There are five markers in the tree today (super-admin price intelligence, the two
+  cross-household `/internal/reminders/due` queries, and the two `whatsapp_message_id`
+  dedup lookups, which must *not* be scoped because that column is UNIQUE table-wide).
+  The check is **blocking**, and `tests/test_household_scoping_check.py` proves it still
+  catches a real leak — a linter that only ever passes gets trusted and shouldn't be.
 - **Runtime** — `tests/fakes.py`'s `assert_scoped_to(db, household_id)` fails if any
   recorded call on a shared table neither filtered on nor wrote that `household_id`. Use it
   in any test that drives a router.

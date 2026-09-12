@@ -1186,14 +1186,22 @@ supabase = get_supabase()          # cached; safe at import or inside a function
 ```
 
 There used to be 40 of them, one per module, each with its own httpx connection pool.
-That mattered because Supabase's edge hands back a GOAWAY after serving a couple of
-requests on a pooled HTTP/2 connection, and httpx keeps that connection: the next call
-on it dies with `httpx.RemoteProtocolError` before it ever gets a response. It reached
-users as a dashboard 500 — `GET /household` failing on its *third* Supabase query while
-the two before it succeeded (28 of them in one seven-minute window, see
-`documents/039-supabase-connection-retries/`). `get_supabase()` wraps every httpx
-session the client owns in a transport that re-sends such a request on a fresh
-connection, and that fix only holds while it stays the single constructor.
+That mattered because Supabase's edge hands back a GOAWAY after serving two streams on
+a pooled HTTP/2 connection, and over HTTP/2 httpcore cannot tell: the GOAWAY sits unread
+in the socket buffer, so the next call goes out on a dead connection and comes back as
+`httpx.RemoteProtocolError` with no response at all. It reached users as a dashboard
+500 — `GET /household` failing on its *third* Supabase query while the two before it
+succeeded (28 of them in one seven-minute window, see
+`documents/039-supabase-connection-retries/`).
+
+`get_supabase()` does two things about that, and **both matter**:
+
+1. **Takes the sessions off HTTP/2** (`_disable_http2`). httpcore's HTTP/1.1 pool checks
+   whether an idle socket has gone readable before reusing it, so a server that hung up
+   is spotted *before* a request is put on the connection. Its HTTP/2 pool only checks
+   the keep-alive clock. This is the actual fix.
+2. **Wraps each session's transport in a retry** (`_RetryTransport`) for whatever still
+   slips through. Retrying alone was tried first and was not enough — see the document.
 
 The retry is for connections that died with no answer, not for answers you don't like:
 a 4xx/5xx from PostgREST is passed straight through to the caller. Writes are only

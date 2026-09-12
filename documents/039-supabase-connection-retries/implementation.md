@@ -70,12 +70,15 @@ comment explaining the trailing slash, so this was known and fixed in exactly on
 
 ## Solution
 
-**`backend/services/db.py` — one client, retried.** `get_supabase()` is now the only
-place in the backend that calls `create_client()`. It builds the client once and wraps
-each httpx session the client owns in `_RetryTransport`, which re-sends a request that
-came back with no response at all. Retrying is enough on its own: httpcore will not hand
-out an HTTP/2 connection it has seen a GOAWAY on (`is_available()` is false once
-`_connection_terminated` is set), so the second attempt dials a fresh one.
+**`backend/services/db.py` — one client, off HTTP/2, retried.** `get_supabase()` is now
+the only place in the backend that calls `create_client()`. It builds the client once,
+takes each httpx session it owns down to HTTP/1.1 (`_disable_http2`), and wraps each
+session's transport in `_RetryTransport`, which re-sends a request that came back with
+no response at all.
+
+The first version of this shipped with **only** the retry, and that was not enough — see
+"What the first deploy proved" below. The HTTP/1.1 downgrade is the fix; the retry is the
+net under it.
 
 **`api/middleware/auth.py` — 503, not a silent empty household.** A failed membership
 lookup now returns `503 Could not load your household right now`. A lookup that *failed*
@@ -84,6 +87,41 @@ is not a lookup that came back *empty*.
 **`frontend/lib/apiUrl.ts` — `API_URL`, normalised once.** Exported, trailing slashes
 stripped, used as the axios `baseURL` and imported by the five places that build a URL by
 hand.
+
+### What the first deploy proved (read this before "simplifying" it back)
+
+The retry-only version went to Railway and worked exactly as designed — and the logs
+looked *worse*:
+
+```
+WARNING:services.db:Supabase connection dropped on GET …/reminders?… (attempt 1/3): <ConnectionTerminated …> — retrying
+WARNING:services.db:Supabase connection dropped on GET …/households?… (attempt 1/3): <ConnectionTerminated …> — retrying
+WARNING:services.db:Supabase connection dropped on GET …/household_members?… (attempt 2/3): <ConnectionTerminated …> — retrying
+ERROR:api.main:Unhandled error on GET /households: <ConnectionTerminated …>
+INFO:     "GET /households HTTP/1.1" 500 Internal Server Error
+```
+
+Nearly every request now logged a retry, and one `GET /households` burned all three
+attempts and 500ed anyway. Two things were going on:
+
+- **Consolidating the pools raised the exposure.** 40 half-idle pools meant most requests
+  went out on a *fresh* connection (stream 1) and never reached the third stream. One
+  shared pool means almost every request is on a reused connection, so almost every third
+  one meets the GOAWAY. The consolidation is still right — but it turned a rare failure
+  into a constant one, which the retry was then papering over on every single request.
+- **A retry cannot fix a client that can't see the problem.** This was the wrong
+  assumption in the first version, written into `_RetryTransport`'s docstring as fact:
+  that a fresh connection is all it takes. It is — but the *next* request lands on a
+  connection that is two streams old and about to be refused, and nothing checks for
+  that. httpcore's `HTTP11Connection.has_expired()` asks whether the idle socket has gone
+  readable (a server that hung up is spotted before a request is written to it) and
+  honours `Connection: close`; `HTTP2Connection.has_expired()` only compares the
+  keep-alive clock, because a GOAWAY frame sitting unread in the socket buffer is
+  invisible until something writes a request and then reads.
+
+Hence `_disable_http2()`: flip `_pool._http2` off before the first request, and the pool
+can see the close coming. **Don't put HTTP/2 back to "let the retry handle it".** That is
+what the first version did, and this section is what it cost.
 
 ### What is deliberately narrow
 
@@ -97,9 +135,15 @@ hand.
   a duplicate receipt is worse than the 500 this fixes.
 - **Streaming bodies are never replayed** (`_is_replayable`) — a receipt image on its way
   to Supabase Storage has a one-shot body iterator.
-- **Three attempts, ~50 ms apart.** These requests sit inside a user-facing HTTP request;
-  the failure mode being fixed is cured by the *first* retry, and a longer ladder would
-  just turn a fast 500 into a slow one.
+- **Four attempts, ~50 ms apart.** Three wasn't enough: a real `GET /households`
+  exhausted three in production (07:49) while every connection was still HTTP/2. An
+  attempt costs no round trip — the connection is already dead when we find out — but the
+  ladder stays short, because these requests sit inside a user-facing one and a long
+  ladder just turns a fast 500 into a slow one.
+- **HTTP/2 is disabled on the Supabase sessions only.** Nothing else in the backend is
+  touched: the OpenRouter/LLM clients keep whatever they negotiate. And it is disabled by
+  flipping the pool's flag rather than by replacing the transport, so whatever TLS
+  context, proxy or limits supabase-py configured survive.
 
 ### The approach that looked obvious and was wrong
 
@@ -144,6 +188,11 @@ policy to be true of some queries and not others.
   supabase-py builds lazily — without that it would inspect a client whose sessions don't
   exist yet. If it ever finds nothing, `get_supabase()` logs a warning saying exactly
   that.
+- **`_pool._http2` is a private httpcore attribute** reached through httpx's private
+  `_transport`. It is flipped at hardening time, before the first request, while the pool
+  is still empty — connections already open would keep whatever protocol they negotiated.
+  If either name disappears, `_disable_http2()` returns `"unavailable"`, `get_supabase()`
+  logs a warning naming it, and the retries carry the load alone.
 - **`_transport` / `_mounts` are private httpx attributes.** httpx offers no public hook
   for re-wrapping a client it didn't construct. They have been the storage for a
   `Client`'s transports since httpx 0.20, and this code only reads and wraps what it
@@ -180,7 +229,14 @@ that exercises the control flow in `services/db.py`, not httpx's real behaviour.
 `tests/test_db_retry.py` against the real library on the PR; treat that, not this
 paragraph, as the confirmation.
 
-Nothing here was tested against a live Supabase project. The failure it fixes needs the
+**Verified in production, for the retry half.** The retry-only version was deployed and
+its logs are quoted above: the warnings prove `_iter_httpx_clients` found the sessions,
+that the wrap took, and that retries fire and mostly succeed. That is also what showed
+the retry alone to be insufficient. The HTTP/1.1 downgrade has *not* been through a
+deploy at the time of writing — the startup log line (below, in release.md) is how to
+confirm it took.
+
+Nothing here was tested against a live Supabase project locally. The failure needs the
 server to send a GOAWAY, which isn't reproducible on demand.
 
 ## What was left out

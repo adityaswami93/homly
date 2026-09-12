@@ -2,7 +2,6 @@
 backend/venv
 .vscode
 **/__pycache__/
-package-lock.json
 .claude
 backend/api/dependencies/__pycache__
 backend/api/routers/__pycache__

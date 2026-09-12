@@ -28,17 +28,20 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          # Both files: requirements-dev.txt only says `-r requirements.txt`,
+          # so keying on it alone would keep serving a stale cache after a
+          # runtime dependency bump.
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
+      # requirements-dev.txt pulls in requirements.txt and pins ruff and
+      # pytest. They used to be installed ad hoc right here, which meant the
+      # versions CI enforced existed nowhere a developer would look and
+      # `pip install -r requirements.txt && pytest` didn't work locally.
+      # The rationale for pinning ruff exactly now lives in that file.
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          # Pinned to the exact version this repo's ruff.toml/rule set was
-          # actually verified against — an unpinned `pip install ruff` here
-          # once resolved a newer ruff whose default rule selection flagged
-          # ~400 findings (BLE001, DTZ011, ...) never selected or reviewed
-          # for this codebase.
-          pip install ruff==0.15.8 pytest
+        run: pip install -r requirements-dev.txt
 
       # Each check below runs with continue-on-error so the job can capture
       # its output for the PR summary comment even on failure; the final
@@ -72,7 +75,7 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          pytest tests/ -v 2>&1 | tee /tmp/pytest_output.txt
+          pytest -v 2>&1 | tee /tmp/pytest_output.txt
           code=${PIPESTATUS[0]}
           set -e
           { echo "output<<PYTEST_EOF"; tail -c 4000 /tmp/pytest_output.txt; echo "PYTEST_EOF"; } >> "$GITHUB_OUTPUT"
@@ -110,17 +113,22 @@ jobs:
       - uses: actions/checkout@v4
 
       # No `cache: npm` here: actions/setup-node's cache step hard-fails (not
-      # just skips) when cache-dependency-path doesn't resolve to a real
-      # file, and frontend/package-lock.json doesn't exist yet — see the
-      # TODO below. Re-add `cache: npm` / cache-dependency-path once the
-      # lockfile is committed.
+      # just skips) when cache-dependency-path doesn't resolve to a real file,
+      # and frontend/package-lock.json still doesn't exist. Re-add
+      # `cache: npm` / `cache-dependency-path: frontend/package-lock.json`
+      # in the same change that commits the lockfile.
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      # TODO: switch to `npm ci` (and re-enable npm caching above) once
-      # frontend/package-lock.json is committed — there is currently no
-      # lockfile in the repo, see CLAUDE.md production-readiness notes.
+      # TODO: switch to `npm ci` (and re-enable npm caching above).
+      # The blocker used to be that `.gitignore` ignored package-lock.json
+      # repo-wide, so the lockfile could not be committed even if generated.
+      # That line is now gone, and all that remains is for someone with npm
+      # registry access to run `cd frontend && npm install` and commit the
+      # resulting frontend/package-lock.json. Until then every CI run
+      # re-resolves the `^` ranges in package.json, so a transitive release
+      # can turn this job red without a single commit to this repo.
       - name: Install dependencies
         run: npm install
 
@@ -150,7 +158,7 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          npx tsc --noEmit 2>&1 | tee /tmp/typecheck_output.txt
+          npm run typecheck 2>&1 | tee /tmp/typecheck_output.txt
           code=${PIPESTATUS[0]}
           set -e
           { echo "output<<TYPECHECK_EOF"; tail -c 4000 /tmp/typecheck_output.txt; echo "TYPECHECK_EOF"; } >> "$GITHUB_OUTPUT"

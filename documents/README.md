@@ -37,6 +37,7 @@ documents/005-messages/
 | 037 | conversation-memory | Rolling per-group chat transcript giving the WhatsApp assistant short-term memory (follow-ups, replies to itself) | 🔄 In Review |
 | 038 | landing-page-positioning | Landing page rewritten from "expense tracker" to household manager (home + money), redesigned for hierarchy, plus a 50/50 hero A/B test recorded on `waitlist.variant` | 🔄 In Review |
 | 039 | supabase-connection-retries | Dashboard 500s from Supabase HTTP/2 GOAWAYs: one retrying Supabase client for the backend, 503 instead of a silent "no household", trailing-slash-safe API base URL | 🔄 In Review |
+| 040 | ci-test-pipeline | Test/lint toolchain declared in `requirements-dev.txt` + `pytest.ini`, one shared `FakeSupabase` replacing per-file fakes, runtime multi-tenancy guard, Testing & CI section in `CLAUDE.md` | 🔄 In Review |
 
 > **The 025–036 gap is a warning, not a precedent.** Roughly a dozen features —
 > the pantry confirmation flow, household chores, MCP data queries, the Alembic

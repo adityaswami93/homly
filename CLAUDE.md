@@ -202,8 +202,14 @@ homly/
 │   │   ├── 035_conversation_messages.sql  # per-group chat transcript, see services/conversation.py
 │   │   └── 036_waitlist_variant.sql  # waitlist.variant — which landing-page hero a signup came from,
 │   │                                 #   so the headline A/B test is settled by conversion data
+│   ├── tests/                      # pytest suite — see Testing & CI below
+│   │   ├── conftest.py             # placeholder_env / fake_supabase / api_client fixtures
+│   │   ├── fakes.py                # THE FakeSupabase + assert_scoped_to(); don't hand-roll another
+│   │   └── check_household_scoping.py  # AST scan for unscoped queries (run as a script, not pytest)
 │   ├── alembic.ini
+│   ├── pytest.ini                  # testpaths = tests, pythonpath = .
 │   ├── requirements.txt
+│   ├── requirements-dev.txt        # requirements.txt + pinned pytest & ruff; what CI installs
 │   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)
 │       ├── index.js                # Connects, forwards every message to /internal/graph-invoke
 │       ├── package.json
@@ -1111,7 +1117,7 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 
 ```bash
 cd backend
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # pulls in requirements.txt + pytest + ruff
 # Create backend/.env with SUPABASE_URL, SUPABASE_KEY, INTERNAL_KEY, OPENROUTER_API_KEY,
 # and SUPABASE_DB_URL (direct connection string — needed for `alembic upgrade head`)
 alembic upgrade head    # apply migrations — see backend/migrations/README.md
@@ -1147,6 +1153,108 @@ python server.py
 ```
 
 See `backend/mcp_server/README.md` for registering it with Claude Code (`claude mcp add`) or Claude Desktop.
+
+---
+
+## Testing & CI
+
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`.
+Run the same checks locally before pushing — all of them are fast:
+
+```bash
+cd backend && pip install -r requirements-dev.txt
+ruff check .                        # config in backend/ruff.toml
+python -m compileall .              # syntax check across the whole tree
+pytest                              # config in backend/pytest.ini; testpaths = tests
+python tests/check_household_scoping.py
+
+cd ../frontend && npm install
+npm run lint                        # eslint
+npm run typecheck                   # tsc --noEmit — `next build` does NOT typecheck in Next 16
+npm run build
+```
+
+### What blocks a merge
+
+| Check | Job | Blocking |
+|-------|-----|----------|
+| `ruff check .` | backend | yes |
+| `python -m compileall .` | backend | yes |
+| `pytest` | backend | yes |
+| `tests/check_household_scoping.py` | backend | **no — informational** (see below) |
+| `tsc --noEmit` | frontend | yes |
+| `next build` | frontend | yes |
+| `eslint` | frontend | **no — informational** (~104 pre-existing findings) |
+
+Every step runs with `continue-on-error` so its output can be captured for the sticky PR
+summary comment; a final `Fail job if blocking checks failed` step is what actually fails
+the job. **Adding a check means adding it to that condition too** — otherwise it reports
+and nothing more.
+
+A red check does not by itself prevent a merge: that requires a branch protection rule
+or ruleset on `main` requiring these checks by name.
+
+### Writing backend tests
+
+Tests live in `backend/tests/`, are plain pytest functions (no classes), and follow a few
+conventions that are load-bearing rather than stylistic:
+
+- **The module docstring names the bug or invariant the file pins**, not the functions it
+  calls. A test whose reason for existing isn't written down gets deleted by the next
+  person who finds it inconvenient.
+- **No test may make a network call.** `services/llm_client.py`'s functions are mocked as
+  *module attributes*:
+  ```python
+  import services.llm_client as llm_client
+  monkeypatch.setattr(llm_client, "get_completion", lambda *a, **k: '{"type": "text_query"}')
+  ```
+  This works because every call site does a **function-local** `from services.llm_client
+  import get_completion`. A module-level import of that name in new code would silently
+  break every existing test's mock — keep the local import.
+- **Assert the LLM was *not* called** where a short-circuit is the point. `_fail` helpers
+  that raise on invocation are used for this in `test_classify_text.py`.
+
+### Faking the database
+
+`tests/fakes.py` holds the one `FakeSupabase`. Don't hand-roll another — two fakes that
+disagree about what Supabase does produce two tests that agree with each other and neither
+with production. It applies filters to seeded rows and records every call, so a test can
+assert on the filters applied and not just the rows returned.
+
+`tests/conftest.py` provides:
+
+| Fixture | Gives you |
+|---------|-----------|
+| `placeholder_env` | Dummy `SUPABASE_URL`/`SUPABASE_KEY`/`OPENROUTER_API_KEY`, enough to import anything |
+| `fake_supabase` | A `FakeSupabase` installed as *the* client |
+| `api_client` | `TestClient(app)` with the fake DB, lifespan skipped |
+
+`fake_supabase` works by seeding `services.db._client` before anything builds a real
+client — `get_supabase()` short-circuits on a populated `_client`, so this covers both
+acquisition patterns at once (module-level `supabase = get_supabase()` in ~12 modules, and
+the lazy `_db()` accessor in ~19). Modules already imported are re-pointed explicitly; see
+`_MODULE_LEVEL_CLIENTS`.
+
+`api_client` deliberately does **not** enter `TestClient` as a context manager. Doing so
+runs `api/main.py`'s lifespan, which starts APScheduler and calls `refresh_summaries()`
+against Supabase.
+
+### The multi-tenancy guard
+
+RLS is disabled on every shared table (see "Multi-tenancy" below), so this invariant has
+two mechanical guards and both matter:
+
+- **Static** — `tests/check_household_scoping.py` walks the AST for `.table("x")` calls on
+  household-scoped tables with no `household_id` in the enclosing statement. Heuristic: it
+  can't see cross-statement query building, so it currently reports false positives and is
+  informational.
+- **Runtime** — `tests/fakes.py`'s `assert_scoped_to(db, household_id)` fails if any
+  recorded call on a shared table neither filtered on nor wrote that `household_id`. Use it
+  in any test that drives a router.
+
+`HOUSEHOLD_SCOPED_TABLES` is duplicated between those two files by design (one is imported
+by the scanner run as a bare script, one by pytest); if you add a household-scoped table,
+add it to both.
 
 ---
 

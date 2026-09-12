@@ -98,6 +98,10 @@ async def due_reminders(request: Request):
     require_internal_key(request)
 
     now = datetime.now(timezone.utc).isoformat()
+    # household-scope: ok — cross-household by design, like /internal/settings.
+    # The WhatsApp bot polls this one endpoint for every household it serves and
+    # routes each reminder by its own group_jid; it is guarded by X-Internal-Key,
+    # not by a user session, so there is no single household to scope to.
     res = (
         supabase.table("reminders")
         .select("*")
@@ -109,6 +113,8 @@ async def due_reminders(request: Request):
 
     if due:
         ids = [r["id"] for r in due]
+        # household-scope: ok — marks exactly the rows the cross-household read
+        # above returned, by primary key.
         supabase.table("reminders").update({"sent": True}).in_("id", ids).execute()
 
     return {"reminders": due}

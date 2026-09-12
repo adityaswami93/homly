@@ -161,7 +161,11 @@ async def _handle_image(
     sender_phone: str | None,
     settings: dict,
 ):
-    # Dedup check
+    # Dedup check.
+    # household-scope: ok — and it must NOT be scoped. whatsapp_message_id is
+    # UNIQUE across the whole receipts table, so scoping this lookup by
+    # household would let a second household insert the same id and hit the
+    # constraint instead of being deduped. Only existence is read, never a row.
     existing = _db().table("receipts").select("id").eq("whatsapp_message_id", msg_id).execute()
     if existing.data:
         return

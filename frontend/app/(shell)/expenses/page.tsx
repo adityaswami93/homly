@@ -8,34 +8,10 @@ import { API_URL } from "@/lib/apiUrl";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
 import { isNativeApp } from "@/lib/platform";
+import { getCustomWeekEnd, getCustomWeekStart, toDateStr } from "@/lib/dates";
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 
 const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
-
-function toDateStr(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function getCustomWeekStart(date: Date, summaryDay: number): Date {
-  // summaryDay is the payout/start day; the week runs summaryDay→(summaryDay+6).
-  // Sunday after a Saturday payout is already day-2 of the new cycle.
-  // summaryDay: 0=Mon…6=Sun (backend) → JS day: 1=Mon…0=Sun
-  const jsTarget = (summaryDay + 1) % 7;
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  const diff = (d.getDay() - jsTarget + 7) % 7;
-  d.setDate(d.getDate() - diff);
-  return d;
-}
-
-function getCustomWeekEnd(start: Date): Date {
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-  return end;
-}
 
 function formatCustomWeekRange(start: Date): string {
   const end = getCustomWeekEnd(start);

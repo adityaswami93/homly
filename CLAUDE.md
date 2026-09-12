@@ -210,15 +210,27 @@ homly/
 │   │   └── 037_super_admin_app_metadata.sql  # moves is_super_admin from auth.users.raw_user_meta_data
 │   │                                 #   (user-writable → self-promotion to super admin) to
 │   │                                 #   raw_app_meta_data (service-role only). See Authentication.
+│   ├── tests/                      # pytest suite — see Testing & CI below
+│   │   ├── conftest.py             # placeholder_env / fake_supabase / api_client fixtures
+│   │   ├── fakes.py                # THE FakeSupabase + assert_scoped_to(); don't hand-roll another
+│   │   └── check_household_scoping.py  # AST scan for unscoped queries (run as a script, not pytest)
 │   ├── alembic.ini
+│   ├── pytest.ini                  # testpaths = tests, pythonpath = .
 │   ├── requirements.txt
+│   ├── requirements-dev.txt        # requirements.txt + pinned pytest & ruff; what CI installs
 │   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)
 │       ├── index.js                # Connects, forwards every message to /internal/graph-invoke
+│       ├── lib/
+│       │   ├── parsing.js          # Pure helpers: stripLeadingMentions, wasBotMentioned,
+│       │   │                       #   isReplyToBot, ownPhone, parseRemindDuration
+│       │   └── parsing.test.js     # `node --test` — no dependencies, runs without npm install
 │       ├── package.json
 │       └── .env                    # FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
 └── frontend/
+│   ├── vitest.config.ts            # environment: node; `@/*` alias mirrors tsconfig.json
 │   ├── config/
 │   │   └── apps.ts                 # Central app/nav config (single source of truth for shell nav)
+│   │                               #   apps.test.ts checks every nav href against the routes on disk
 │   ├── app/
 │   │   ├── page.tsx                # Landing page
 │   │   ├── login/page.tsx          # Login
@@ -256,6 +268,9 @@ homly/
 │   │           ├── BottomTabBar.tsx # Fixed bottom nav (mobile only)
 │   │           └── icons.tsx       # SVG icon components (AppIcon, AdminIcon, etc.)
 │   └── lib/
+│       ├── dates.ts                # Shared week/date maths — was duplicated across four pages.
+│       │                           #   Staging post before this moves to the backend, not a home
+│       ├── insurance.ts            # monthlyPremium() — same story
 │       ├── supabase.ts             # Supabase browser client
 │       ├── apiUrl.ts               # API_URL — NEXT_PUBLIC_API_URL with trailing slashes stripped.
 │       │                           #   Anything building a backend URL by hand imports this
@@ -1131,6 +1146,9 @@ process serves every household.
   `/internal/wa-auth/*`. Don't add one back; this process parses untrusted input from the public
   internet, so its blast radius should be the endpoints it can call, not the whole database.
 - **Daily renewal cron** — 09:00 SGT cron hits `/internal/insurance/renewals` and sends reminders to household groups
+- **`lib/parsing.js`** — the pure helpers below live here rather than in `index.js`, so they can be
+  unit-tested without a Baileys socket (`npm test`, no dependencies). Anything added here should be
+  pure too; anything needing a socket or the backend stays in `index.js`.
 - **`stripLeadingMentions(text)`** — strips a leading `@<phone>`/`@<name>` mention before any command match or
   `/internal/graph-invoke` call; without it, `@-mentioning` the bot broke every prefix-based match (custom
   commands, `/remind`, and `homly_graph.py`'s `classify_node` all check how the string *starts*)
@@ -1162,7 +1180,7 @@ process serves every household.
 
 ```bash
 cd backend
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # pulls in requirements.txt + pytest + ruff
 # Create backend/.env with SUPABASE_URL, SUPABASE_KEY, INTERNAL_KEY, OPENROUTER_API_KEY,
 # and SUPABASE_DB_URL (direct connection string — needed for `alembic upgrade head`)
 alembic upgrade head    # apply migrations — see backend/migrations/README.md
@@ -1201,6 +1219,146 @@ See `backend/mcp_server/README.md` for registering it with Claude Code (`claude 
 
 ---
 
+## Testing & CI
+
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`.
+Run the same checks locally before pushing — all of them are fast:
+
+```bash
+cd backend && pip install -r requirements-dev.txt
+ruff check .                        # config in backend/ruff.toml
+python -m compileall .              # syntax check across the whole tree
+pytest                              # config in backend/pytest.ini; testpaths = tests
+python tests/check_household_scoping.py
+
+cd ../frontend && npm install
+npm run lint                        # eslint
+npm run typecheck                   # tsc --noEmit — `next build` does NOT typecheck in Next 16
+npm test                            # vitest
+npm run build
+
+cd ../backend/whatsapp              # no npm install needed — both are dependency-free
+npm run check                       # node --check over every .js file
+npm test                            # node --test over lib/
+```
+
+### What blocks a merge
+
+| Check | Job | Blocking |
+|-------|-----|----------|
+| `ruff check .` | backend | yes |
+| `python -m compileall .` | backend | yes |
+| `pytest` | backend | yes |
+| `tests/check_household_scoping.py` | backend | yes |
+| `tsc --noEmit` | frontend | yes |
+| `next build` | frontend | yes |
+| `vitest run` | frontend | yes |
+| `eslint` (whole tree) | frontend | **no — informational** (~104 pre-existing findings) |
+| `eslint` (changed files only) | frontend | **not yet** — see the step comment; flipping it is one line |
+| `npm run check` | whatsapp | yes |
+| `npm test` | whatsapp | yes |
+
+Every step runs with `continue-on-error` so its output can be captured for the sticky PR
+summary comment; a final `Fail job if blocking checks failed` step is what actually fails
+the job. **Adding a check means adding it to that condition too** — otherwise it reports
+and nothing more.
+
+A red check does not by itself prevent a merge: that requires a branch protection rule
+or ruleset on `main` requiring these checks by name.
+
+### Writing backend tests
+
+Tests live in `backend/tests/`, are plain pytest functions (no classes), and follow a few
+conventions that are load-bearing rather than stylistic:
+
+- **The module docstring names the bug or invariant the file pins**, not the functions it
+  calls. A test whose reason for existing isn't written down gets deleted by the next
+  person who finds it inconvenient.
+- **No test may make a network call.** `services/llm_client.py`'s functions are mocked as
+  *module attributes*:
+  ```python
+  import services.llm_client as llm_client
+  monkeypatch.setattr(llm_client, "get_completion", lambda *a, **k: '{"type": "text_query"}')
+  ```
+  This works because every call site does a **function-local** `from services.llm_client
+  import get_completion`. A module-level import of that name in new code would silently
+  break every existing test's mock — keep the local import.
+- **Assert the LLM was *not* called** where a short-circuit is the point. `_fail` helpers
+  that raise on invocation are used for this in `test_classify_text.py`.
+
+### Faking the database
+
+`tests/fakes.py` holds the one `FakeSupabase`. Don't hand-roll another — two fakes that
+disagree about what Supabase does produce two tests that agree with each other and neither
+with production. It applies filters to seeded rows and records every call, so a test can
+assert on the filters applied and not just the rows returned.
+
+`tests/conftest.py` provides:
+
+| Fixture | Gives you |
+|---------|-----------|
+| `placeholder_env` | Dummy `SUPABASE_URL`/`SUPABASE_KEY`/`OPENROUTER_API_KEY`, enough to import anything |
+| `fake_supabase` | A `FakeSupabase` installed as *the* client |
+| `api_client` | `TestClient(app)` with the fake DB, lifespan skipped |
+
+`fake_supabase` works by seeding `services.db._client` before anything builds a real
+client — `get_supabase()` short-circuits on a populated `_client`, so this covers both
+acquisition patterns at once (module-level `supabase = get_supabase()` in ~12 modules, and
+the lazy `_db()` accessor in ~19). Modules already imported are re-pointed explicitly; see
+`_MODULE_LEVEL_CLIENTS`.
+
+`api_client` deliberately does **not** enter `TestClient` as a context manager. Doing so
+runs `api/main.py`'s lifespan, which starts APScheduler and calls `refresh_summaries()`
+against Supabase.
+
+### Writing frontend tests
+
+Vitest, `environment: "node"` — everything covered today is pure logic in `lib/` and
+`config/`. Switch to `jsdom` and add `@testing-library/react` when the first component test
+lands, not before.
+
+`lib/dates.ts` and `lib/insurance.ts` hold logic that used to be duplicated, unexported,
+inside page components. **They are a staging post, not a home.** "Frontend stays thin"
+below says this maths belongs in the backend; these modules exist so the behaviour is
+pinned by tests before each function moves server-side. Prefer adding a field to an API
+response over adding a function there.
+
+`config/apps.test.ts` checks every `nav[].href` against the routes actually on disk, so a
+nav item pointing at a deleted page fails the suite rather than 404ing for a user.
+
+### The multi-tenancy guard
+
+RLS is disabled on every shared table (see "Multi-tenancy" below), so this invariant has
+two mechanical guards and both matter:
+
+- **Static** — `tests/check_household_scoping.py` walks the AST for `.table("x")` calls on
+  household-scoped tables and reports any it cannot show to be scoped. It recognises four
+  safe shapes: `household_id` in the statement; a chain built across statements
+  (`q = q.eq(...)`); a write whose payload dict carries it (including list comprehensions
+  and `rows.append(row)` accumulators); and a query narrowed by a key inside a function that
+  already ran a scoped query (update-by-id after an ownership check, or a child table by
+  foreign key). Anything else needs an explicit marker on the statement or in the comment
+  block above it:
+
+  ```python
+  # household-scope: ok — <why this cannot reach another household>
+  ```
+
+  There are five markers in the tree today (super-admin price intelligence, the two
+  cross-household `/internal/reminders/due` queries, and the two `whatsapp_message_id`
+  dedup lookups, which must *not* be scoped because that column is UNIQUE table-wide).
+  The check is **blocking**, and `tests/test_household_scoping_check.py` proves it still
+  catches a real leak — a linter that only ever passes gets trusted and shouldn't be.
+- **Runtime** — `tests/fakes.py`'s `assert_scoped_to(db, household_id)` fails if any
+  recorded call on a shared table neither filtered on nor wrote that `household_id`. Use it
+  in any test that drives a router.
+
+`HOUSEHOLD_SCOPED_TABLES` is duplicated between those two files by design (one is imported
+by the scanner run as a bare script, one by pytest); if you add a household-scoped table,
+add it to both.
+
+---
+
 ## Key Patterns & Conventions
 
 ### Frontend stays thin — business logic lives in the backend
@@ -1218,7 +1376,11 @@ The frontend's job is to call an endpoint and render what it returns. If you're 
 
 **What to do instead:** add a field to an existing response, or add a new endpoint, that returns the already-computed value; have the frontend just read and display it. When fixing a bug in a computed value shown in the UI, check whether the computation is happening client-side before patching it there — if it is, move it server-side as part of the fix rather than patching the frontend copy.
 
-This codebase currently has known offenders worth cleaning up opportunistically (custom-week math and receipt re-aggregation in `expenses/page.tsx`, duplicated `getWeekRange`/`daysUntil` helpers across pages, client-side premium normalization in `insurance/page.tsx`, and the parallel net-worth calc in `savings/page.tsx`) — prefer moving one of these to the backend over adding a new client-side computation next to it. (`expenses/reimburse/page.tsx` used to join `/weeks` + `/reimbursements` client-side to compute per-week outstanding — that's now backend-computed on `/weeks` itself via `services/reimbursement.py`'s `compute_reimbursement_totals()`.)
+This codebase still has known offenders worth cleaning up opportunistically — prefer moving one of these to the backend over adding a new client-side computation next to it:
+
+- **Receipt re-aggregation** in `expenses/page.tsx`'s `handleDelete`/`handleToggleReimbursable`. The worst one left: it re-implements `services/reimbursement.py`'s `compute_reimbursement_totals()` client-side after an optimistic update, and the two copies **have already drifted** — one rounds as `round(Math.max(0, x - totalPaid))`, the other as `Math.max(0, round(x - totalPaid))`. It lives inside `useState` updater closures, so extracting it is a real refactor; the right fix is to have the backend return the recomputed week.
+- **Parallel net-worth calc** in `savings/page.tsx`.
+- **Week maths and premium normalization** — no longer duplicated: `getCustomWeekStart`, `getWeekRange`, `daysUntil` and `monthlyPremium` now live once in `lib/dates.ts` / `lib/insurance.ts` with tests. Still client-side, still owed a move to the backend; the tests exist so that move is verifiable rather than a leap. (`expenses/reimburse/page.tsx` used to join `/weeks` + `/reimbursements` client-side to compute per-week outstanding — that's now backend-computed on `/weeks` itself via `services/reimbursement.py`'s `compute_reimbursement_totals()`.)
 
 ### Backend stays DRY — no copy-pasted business-logic helpers across routers
 

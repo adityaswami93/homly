@@ -7,6 +7,7 @@ longer misattribute a payment. These pin down that a receipt's
 `reimbursement_id` is the only thing that decides "already paid".
 """
 from services.reimbursement import compute_reimbursement_totals, mark_receipts_reimbursed
+from tests.fakes import FakeSupabase
 
 
 def _receipt(total, reimbursable=True, reimbursement_id=None, date="2026-01-05"):
@@ -47,43 +48,8 @@ def test_totals_are_unaffected_by_which_iso_week_receipts_fall_in():
     assert result["outstanding_reimbursable_total"] == 15.0
 
 
-class _FakeQuery:
-    def __init__(self, table):
-        self.table = table
-
-    def insert(self, row):
-        self.table.inserted.append(row)
-        return self
-
-    def update(self, row):
-        self.table.updated.append(row)
-        return self
-
-    def in_(self, col, ids):
-        self._updated_ids = ids
-        return self
-
-    def eq(self, *_args):
-        return self
-
-    def execute(self):
-        if self.table.inserted:
-            row = {**self.table.inserted[-1], "id": "reimbursement-1"}
-            return type("Res", (), {"data": [row]})()
-        return type("Res", (), {"data": []})()
-
-
-class _FakeTable:
-    def __init__(self):
-        self.inserted = []
-        self.updated = []
-
-    def table(self, _name):
-        return _FakeQuery(self)
-
-
 def test_mark_receipts_reimbursed_pays_off_only_unpaid_reimbursable_receipts():
-    db = _FakeTable()
+    db = FakeSupabase()
     receipts = [
         {"id": "r1", "total": 10.0, "reimbursable": True, "reimbursement_id": None, "date": "2026-01-04"},
         {"id": "r2", "total": 5.0, "reimbursable": True, "reimbursement_id": "already-paid", "date": "2026-01-05"},
@@ -92,14 +58,36 @@ def test_mark_receipts_reimbursed_pays_off_only_unpaid_reimbursable_receipts():
     result = mark_receipts_reimbursed(db, "household-1", receipts, note="test payout")
     assert result["amount"] == 10.0
     assert result["receipt_ids"] == ["r1"]
-    assert db.inserted[0]["household_id"] == "household-1"
-    assert db.inserted[0]["amount"] == 10.0
+
+    posted = db.calls_for("reimbursements")[0].payload
+    assert posted["household_id"] == "household-1"
+    assert posted["amount"] == 10.0
+    # The date range is derived from the receipts actually paid off, not from
+    # r2/r3 — a payment must never claim to cover more than it did.
+    assert (posted["start_date"], posted["end_date"]) == ("2026-01-04", "2026-01-04")
+
+
+def test_mark_receipts_reimbursed_stamps_the_new_id_onto_exactly_those_receipts():
+    db = FakeSupabase()
+    receipts = [
+        {"id": "r1", "total": 10.0, "reimbursable": True, "reimbursement_id": None, "date": "2026-01-04"},
+        {"id": "r2", "total": 5.0, "reimbursable": True, "reimbursement_id": "already-paid", "date": "2026-01-05"},
+    ]
+    result = mark_receipts_reimbursed(db, "household-1", receipts, note=None)
+
+    update = db.calls_for("receipts")[0]
+    assert update.op == "update"
+    assert update.payload == {"reimbursement_id": result["reimbursement"]["id"]}
+    # r2 was already paid: re-stamping it would silently reassign someone
+    # else's payment to this one.
+    assert ("in_", "id", ["r1"]) in update.filters
 
 
 def test_mark_receipts_reimbursed_returns_none_when_nothing_outstanding():
-    db = _FakeTable()
+    db = FakeSupabase()
     receipts = [
         {"id": "r1", "total": 10.0, "reimbursable": True, "reimbursement_id": "already-paid", "date": "2026-01-04"},
     ]
     assert mark_receipts_reimbursed(db, "household-1", receipts, note=None) is None
-    assert db.inserted == []
+    # Nothing outstanding must not post a zero-amount reimbursement row.
+    assert db.calls == []

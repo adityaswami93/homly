@@ -38,6 +38,7 @@ documents/005-messages/
 | 038 | landing-page-positioning | Landing page rewritten from "expense tracker" to household manager (home + money), redesigned for hierarchy, plus a 50/50 hero A/B test recorded on `waitlist.variant` | 🔄 In Review |
 | 039 | supabase-connection-retries | Dashboard 500s from Supabase HTTP/2 GOAWAYs: one retrying Supabase client for the backend, 503 instead of a silent "no household", trailing-slash-safe API base URL | 🔄 In Review |
 | 040 | service-role-key-audit | Security audit of every `SUPABASE_KEY` use: super-admin flag moved off the user-writable `user_metadata` claim, `/setup/reset-qr` and `/webhook/whatsapp` auth holes closed, `INTERNAL_KEY` default removed, service role key removed from the WhatsApp bot | 🔄 In Review |
+| 041 | ci-test-pipeline | Test/lint toolchain declared in `requirements-dev.txt` + `pytest.ini`, one shared `FakeSupabase` replacing per-file fakes, the multi-tenancy scan fixed and made blocking, first CI job for the WhatsApp bot, frontend date maths deduped into `lib/` with Vitest | 🔄 In Review |
 
 > **The 025–036 gap is a warning, not a precedent.** Roughly a dozen features —
 > the pantry confirmation flow, household chores, MCP data queries, the Alembic

@@ -14,6 +14,9 @@ supabase_client = get_supabase()
 def price_intelligence(request: Request):
     require_super_admin(request)
 
+    # household-scope: ok — cross-household by design. Price intelligence
+    # compares what different households paid for the same item; the endpoint
+    # is gated by require_super_admin() above and returns aggregates, not rows.
     result = supabase_client.table("price_history").select("*").execute()
     records = result.data or []
 

@@ -15,6 +15,15 @@ import FormData from "form-data";
 import pino from "pino";
 import QRCode from "qrcode";
 import { useSupabaseAuthState } from "./db-auth-state.js";
+// Pure parsing helpers live in their own module so they can be unit-tested
+// without a Baileys socket — see lib/parsing.test.js.
+import {
+  REMIND_RE,
+  isReplyToBot,
+  parseRemindDuration,
+  stripLeadingMentions,
+  wasBotMentioned,
+} from "./lib/parsing.js";
 
 const FASTAPI_URL   = process.env.FASTAPI_URL   || "http://localhost:8000";
 const INTERNAL_KEY  = process.env.INTERNAL_KEY;
@@ -162,70 +171,7 @@ async function handleHelpCommand(text, remoteJid, sock) {
   return true;
 }
 
-// A household member @-mentioning the bot leaves a literal "@<phone> " (or
-// "@<name> ") prefix in the message text, which broke every prefix-based
-// match below (custom commands, /remind, and classify_node's text_query
-// detection in homly_graph.py all check how the string *starts*). Strip any
-// leading mention tokens before those checks run.
-function stripLeadingMentions(text) {
-  return text.replace(/^(@\S+\s*)+/, "").trim();
-}
-
-// Stripping the mention above throws away a fact the backend can't recover:
-// that this message was aimed at the bot. The household's engagement mode
-// (settings.bot_engagement_mode) decides whether an un-addressed message gets
-// a reply at all, so both signals below are forwarded to /internal/graph-invoke
-// alongside the cleaned text. Detecting the bot's *name* is left to the backend
-// — the name is per-household and lives in the settings row.
-function ownPhone(sock) {
-  const id = sock?.user?.id;
-  if (!id) return null;
-  // Baileys hands back "<phone>:<device>@s.whatsapp.net"
-  return id.split("@")[0].split(":")[0] || null;
-}
-
-function wasBotMentioned(msg, sock) {
-  const phone = ownPhone(sock);
-  if (!phone) return false;
-  const ctx =
-    msg.message?.extendedTextMessage?.contextInfo ||
-    msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo;
-  const mentioned = ctx?.mentionedJid || [];
-  return mentioned.some((jid) => jid.split("@")[0].split(":")[0] === phone);
-}
-
-function isReplyToBot(msg, sock) {
-  const phone = ownPhone(sock);
-  if (!phone) return false;
-  const ctx =
-    msg.message?.extendedTextMessage?.contextInfo ||
-    msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo;
-  if (!ctx?.quotedMessage || !ctx.participant) return false;
-  // participant is the author of the message being replied to.
-  return ctx.participant.split("@")[0].split(":")[0] === phone;
-}
-
 // ── Reminder helpers ─────────────────────────────────────────
-const REMIND_RE = /^\/remind\s+(.+)/i;
-
-function parseRemindDuration(raw) {
-  const text = raw.trim();
-  // Match leading duration tokens like 30m, 2h, 1d, 1h30m
-  const durationRe = /^(?:(\d+)d\s*)?(?:(\d+)h\s*)?(?:(\d+)m\s*)?/i;
-  const m = text.match(durationRe);
-  if (!m || (!m[1] && !m[2] && !m[3])) return null;
-
-  const days    = parseInt(m[1] || 0, 10);
-  const hours   = parseInt(m[2] || 0, 10);
-  const minutes = parseInt(m[3] || 0, 10);
-
-  if (days === 0 && hours === 0 && minutes === 0) return null;
-
-  const totalMs = ((days * 24 + hours) * 60 + minutes) * 60 * 1000;
-  const reminderText = text.slice(m[0].length).trim();
-  return { ms: totalMs, message: reminderText || "(no message)" };
-}
-
 async function handleReminderCommand(text, remoteJid, senderJid, senderName, sock) {
   const m = text.match(REMIND_RE);
   if (!m) return false;

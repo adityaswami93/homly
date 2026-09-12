@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
+import { daysUntil } from "@/lib/dates";
+import { monthlyPremium } from "@/lib/insurance";
 
 interface CoverageDetails {
   covered: string[];
@@ -69,14 +71,6 @@ const TYPE_COLOR: Record<string, string> = {
 const TYPE_EMOJI: Record<string, string> = {
   health: "🏥", life: "💙", home: "🏠", car: "🚗", travel: "✈️", other: "📋",
 };
-
-function daysUntil(dateStr: string | null): number | null {
-  if (!dateStr) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(dateStr);
-  return Math.ceil((d.getTime() - today.getTime()) / 86400000);
-}
 
 function RenewalBadge({ days }: { days: number | null }) {
   if (days == null) return <span className="text-stone-500 text-xs">—</span>;
@@ -606,14 +600,6 @@ function PolicyModal({
       </div>
     </div>
   );
-}
-
-function monthlyPremium(amount: number | null, freq: string | null): number {
-  if (!amount || !freq) return 0;
-  if (freq === "monthly") return amount;
-  if (freq === "quarterly") return amount / 3;
-  if (freq === "annually") return amount / 12;
-  return 0;
 }
 
 export default function InsurancePoliciesPage() {

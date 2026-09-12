@@ -1,0 +1,23 @@
+# Test/lint toolchain. Kept separate from requirements.txt so the Railway
+# image doesn't ship pytest, but installed by CI and by anyone who wants to
+# run locally what CI runs:
+#
+#     cd backend && pip install -r requirements-dev.txt && pytest
+#
+# These used to be a bare `pip install ruff==0.15.8 pytest` inside
+# .github/workflows/ci.yml, which meant the versions CI enforced were
+# invisible from the repo and undeclared anywhere a developer would look.
+-r requirements.txt
+
+# Pinned for the same reason everything in requirements.txt is: an unpinned
+# floor lets every fresh install resolve a different, untested version.
+# ruff especially — see ci.yml's note about an unpinned `pip install ruff`
+# resolving a newer default rule set and surfacing ~400 findings that were
+# never selected or reviewed for this codebase. Keep this in lockstep with
+# the version named there.
+ruff==0.15.8
+
+# 9.0.2 is what CI's previously-unpinned `pip install pytest` resolves to
+# today, so this pins current behaviour rather than changing it. `pythonpath`
+# in pytest.ini needs >= 7.0.
+pytest==9.0.2

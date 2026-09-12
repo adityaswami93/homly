@@ -1,11 +1,10 @@
-import os
 from fastapi import APIRouter
 from pydantic import BaseModel
-from supabase import create_client
+from services.supabase_client import get_supabase
 
 router = APIRouter()
 
-_supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+_supabase = get_supabase()
 
 
 # Landing-page hero variants the frontend may report (see frontend/app/page.tsx).

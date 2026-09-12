@@ -2,11 +2,10 @@
 Shared receipt persistence logic used by both the /process-receipt API endpoint
 and the LangGraph receipt_node.
 """
-import os
 import uuid
 import logging
 from datetime import date
-from supabase import create_client
+from services.supabase_client import get_supabase
 
 from agents.receipt_agent import analyse_receipt
 from services.reimbursement import get_reimbursable
@@ -19,7 +18,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

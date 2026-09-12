@@ -4,7 +4,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
 from typing import Optional
-from supabase import create_client
+from services.supabase_client import get_supabase
 import logging
 
 from agents.recipe_agent import analyse_dish_with_pantry
@@ -23,7 +23,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

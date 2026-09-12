@@ -531,8 +531,16 @@ export default function ExpensesOverview() {
         const myMember = res.data.members?.find((m: any) => m.user_id === session.user.id);
         const isSuperAdmin = session.user.user_metadata?.is_super_admin === true;
         setIsAdmin(myMember?.role === "admin" || isSuperAdmin);
-      } catch {
-        router.push("/onboarding");
+      } catch (e: any) {
+        // Only a definite answer routes to onboarding. A 5xx or a dead
+        // connection means we don't know whether this user has a household,
+        // and sending them to "create your household" on a backend blip
+        // invites a duplicate household — see documents/039.
+        if (e?.response?.status === 404) {
+          router.push("/onboarding");
+        } else {
+          toast.error("Couldn't load your household — please try again.");
+        }
         return;
       }
       let day = 0;

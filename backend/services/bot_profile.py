@@ -16,11 +16,10 @@ The columns live on `settings` (migration 034_bot_personality.sql) and are
 edited from the dashboard's Settings → Assistant tab.
 """
 import logging
-import os
 import re
 from dataclasses import dataclass
 
-from supabase import create_client
+from services.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +68,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

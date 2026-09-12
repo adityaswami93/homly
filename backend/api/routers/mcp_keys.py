@@ -4,12 +4,11 @@ admins generate/revoke the per-household API key their MCP server config
 uses to call /mcp/data/* (see api/routers/mcp_data.py). Surfaced in the
 frontend at Settings > MCP.
 """
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
-from supabase import create_client
+from services.supabase_client import get_supabase
 from dotenv import load_dotenv
 
 from api.routers.households import require_admin
@@ -18,7 +17,7 @@ from services.mcp_auth import generate_key, SCOPE
 load_dotenv()
 
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 
 class KeyIn(BaseModel):

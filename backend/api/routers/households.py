@@ -1,12 +1,11 @@
-import os
 from fastapi import APIRouter, Request, HTTPException
-from supabase import create_client
+from services.supabase_client import get_supabase
 from dotenv import load_dotenv
 
 load_dotenv()
 
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 
 def require_super_admin(request: Request):
@@ -113,6 +112,11 @@ def get_my_household(request: Request):
         .select("*")\
         .eq("id", household_id)\
         .execute()
+    if not household.data:
+        # The membership row points at a household that no longer exists.
+        # Answer the same way as "no membership" rather than raising an
+        # IndexError the caller sees as a 500 with a raw traceback.
+        return {"household": None}
     members = supabase.table("household_members")\
         .select("user_id, role, joined_at")\
         .eq("household_id", household_id)\

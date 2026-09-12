@@ -17,6 +17,13 @@ function CallbackHandler() {
               `${process.env.NEXT_PUBLIC_API_URL}/household`,
               { headers: { Authorization: `Bearer ${session.access_token}` } }
             );
+            // A non-OK response says nothing about whether this user has a
+            // household — its body is `{"detail": ...}`, which has no `id`
+            // and would otherwise read as "not onboarded yet".
+            if (!res.ok) {
+              router.push("/expenses");
+              return;
+            }
             const data = await res.json();
             router.push(data?.id ? "/expenses" : "/onboarding");
           } catch {

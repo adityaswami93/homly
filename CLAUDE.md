@@ -140,6 +140,12 @@ homly/
 │   │                               #   preferences_agent.py remembers/lists/forgets standing
 │   │                               #   household- or person-scoped preferences (services/preferences.py)
 │   ├── services/
+│   │   ├── supabase_client.py      # get_supabase() — THE Supabase client. Every module imports this
+│   │   │                           #   instead of calling create_client() itself, so one httpx client
+│   │   │                           #   (one connection pool) serves the whole process and its
+│   │   │                           #   RetryTransport replays requests lost to Supabase's HTTP/2
+│   │   │                           #   GOAWAY / "Server disconnected" race. Reads over any method,
+│   │   │                           #   writes only on connect-level faults — see the module docstring
 │   │   ├── llm_client.py           # Facade: get_completion(), get_vision_completion()
 │   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook;
 │   │   │                          #   compute_reimbursement_totals()/mark_receipts_reimbursed() — single
@@ -1046,6 +1052,7 @@ One row per household, captured at `/chores/setup` onboarding. Drives the daily-
 2. `lib/axios.ts` interceptor attaches `Authorization: Bearer <token>` to every request
 3. `AuthMiddleware` (JWKS-based) verifies the JWT, fetches the user's `household_id` from `household_members`, and sets `request.state.user`
 4. On 401, the frontend interceptor signs out and redirects to `/login`
+5. If that `household_members` lookup *fails* (database unreachable after the retries in `services/supabase_client.py`), the middleware answers **503** rather than continuing with `household_id = None` — see "Every Supabase call goes through…" above for why that distinction matters. A user with no memberships is not an error: `household_id` stays `None` and the request proceeds.
 
 ### Service Key Auth (WhatsApp bot)
 
@@ -1167,6 +1174,12 @@ This codebase currently has known offenders worth cleaning up opportunistically 
 The same rule applies within the backend: if a helper needs to be called from more than one router, it belongs in `backend/services/` (or another shared module), imported by both — not reimplemented in each file. Copy-pasted logic drifts the same way duplicated frontend math does, except here it can mean the WhatsApp bot path and the web upload path silently disagree on a business rule.
 
 `get_reimbursable()` (eligibility) and `compute_reimbursement_totals()`/`mark_receipts_reimbursed()` (totals and paid-state) already live in `services/reimbursement.py` for exactly this reason — every router that touches reimbursement (`expenses.py`, `messages.py`, `reimbursements.py`, `webhook.py`, `homly_graph.py`) calls into it rather than reimplementing the rule. Keep it that way: a future change to reimbursement rules is one edit away from applying inconsistently across the dashboard, WhatsApp bot, and weekly summary paths otherwise.
+
+### Every Supabase call goes through `services/supabase_client.py`'s `get_supabase()`
+
+Never call `create_client()` in a new module. Every router, agent and service shares the one client `get_supabase()` returns, because that client is where transient-fault handling lives: Supabase closes connections on its own schedule, and a graceful HTTP/2 shutdown mid-request surfaces as `httpx.RemoteProtocolError(<ConnectionTerminated error_code:0 …>)` or `Server disconnected without sending a response`. Its `RetryTransport` replays those — reads on any transient fault, writes only on connect-level faults where the request provably never left the process (replaying a POST could mean two receipts). A module that builds its own client silently opts out of all of that. See `documents/039-supabase-connection-resilience/`.
+
+The corollary, in any `except` around a Supabase call: **a query that failed is not an answer about the data.** `api/middleware/auth.py` used to catch a failed membership lookup and continue with `household_id = None`, so `GET /household` answered `200 {"household": null}` — which the dashboard reads as "not onboarded yet" and acts on, sending an existing member to `/onboarding` where the next click creates a *second* household. It now returns 503. Degrade to an empty result only where an empty result is honest (an optional list, a cache lookup); otherwise let the caller see the failure.
 
 ### Multi-tenancy: every query on a shared table must filter by `household_id`
 

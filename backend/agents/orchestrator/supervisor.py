@@ -1,10 +1,9 @@
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from supabase import create_client
+from services.supabase_client import get_supabase
 
 from agents.base_agent import AgentResult
 from agents.orchestrator.react_loop import build_react_graph, make_agent_node
@@ -67,7 +66,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

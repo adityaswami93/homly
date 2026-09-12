@@ -4,14 +4,14 @@ import jwt
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from supabase import create_client
+from services.supabase_client import get_supabase
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 _jwks_client = jwt.PyJWKClient(
     f"{os.getenv('SUPABASE_URL')}/auth/v1/.well-known/jwks.json",
@@ -140,7 +140,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 household_id = active["household_id"]
                 role = active["role"]
         except Exception as e:
-            logger.error(f"Failed to fetch household for user {user_id}: {e}")
+            # A failed lookup is NOT "this user has no household". Falling
+            # through with household_id=None made GET /household answer
+            # `200 {"household": null}`, which the dashboard reads as "not
+            # onboarded yet" and acts on: login and /expenses both send the
+            # member to /onboarding, where the obvious next click creates a
+            # *second* household. So the request fails loudly instead.
+            # Transient Supabase connection faults (the GOAWAY/"Server
+            # disconnected" race) are already retried a layer down — see
+            # services/supabase_client.py — so reaching here means the
+            # database stayed unreachable across retries.
+            logger.error(f"Failed to fetch household for user {user_id}: {type(e).__name__}: {e}")
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Could not reach the database. Please try again."},
+            )
 
         request.state.user = {
             "sub": user_id,

@@ -6,7 +6,7 @@ import logging
 from datetime import date
 
 from fastapi import APIRouter, Request
-from supabase import create_client
+from services.supabase_client import get_supabase
 
 from agents.receipt_agent import analyse_receipt
 from services.whatsapp_client import send_text, download_file
@@ -23,7 +23,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

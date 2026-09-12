@@ -13,12 +13,13 @@ import types
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# bot_profile imports supabase at module scope for get_profile(); nothing below
-# calls it, so a stub keeps this runnable without the backend deps installed.
-if "supabase" not in sys.modules:
-    stub = types.ModuleType("supabase")
-    stub.create_client = lambda *a, **k: None
-    sys.modules["supabase"] = stub
+# bot_profile reaches the database through services/supabase_client.py, whose
+# own imports (supabase, httpx) aren't installed in every environment; nothing
+# below calls it, so a stub keeps this runnable.
+if "services.supabase_client" not in sys.modules:
+    stub = types.ModuleType("services.supabase_client")
+    stub.get_supabase = lambda: None
+    sys.modules["services.supabase_client"] = stub
 
 from services.bot_profile import (  # noqa: E402
     BotProfile, DEFAULT_PROFILE, _coerce, mentions_name, should_engage,

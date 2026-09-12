@@ -4,13 +4,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel, field_validator
-from supabase import create_client
+from services.supabase_client import get_supabase
 from dotenv import load_dotenv
 
 load_dotenv()
 
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 TRIGGER_RE = re.compile(r"^[a-z0-9_-]{1,30}$")
 

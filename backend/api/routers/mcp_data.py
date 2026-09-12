@@ -18,11 +18,10 @@ handlers just authenticate and call it. That's what lets the remote MCP
 server (mcp_server/remote.py, mounted into this same app) call the same
 logic in-process instead of looping back over HTTP to itself.
 """
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException, Query
-from supabase import create_client
+from services.supabase_client import get_supabase
 
 import services.mcp_queries as queries
 from services.mcp_auth import hash_key, SCOPE
@@ -35,7 +34,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

@@ -19,6 +19,12 @@ function MagicLinkHandler() {
             `${process.env.NEXT_PUBLIC_API_URL}/household`,
             { headers: { Authorization: `Bearer ${session.access_token}` } }
           );
+          // Same as the OAuth callback: a non-OK response is not an answer
+          // about whether this user has a household.
+          if (!res.ok) {
+            router.push("/dashboard");
+            return;
+          }
           const data = await res.json();
           if (data?.id) {
             router.push("/dashboard");

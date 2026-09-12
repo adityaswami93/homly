@@ -40,8 +40,14 @@ export default function MembersPage() {
         const myMember = res.data.members?.find((m: any) => m.user_id === session.user.id);
         const isSuperAdmin = session.user.user_metadata?.is_super_admin === true;
         setIsAdmin(myMember?.role === "admin" || isSuperAdmin);
-      } catch {
-        router.push("/onboarding");
+      } catch (e: any) {
+        // Same rule as /expenses: a failed lookup isn't "no household", so
+        // don't send an existing member to create a second one.
+        if (e?.response?.status === 404) {
+          router.push("/onboarding");
+        } else {
+          toast.error("Couldn't load your household — please try again.");
+        }
       } finally {
         setLoading(false);
       }

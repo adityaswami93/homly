@@ -1,6 +1,5 @@
-import os
 
-from supabase import create_client
+from services.supabase_client import get_supabase
 
 from agents.base_agent import AgentManifest, AgentResult, BaseQueryAgent
 
@@ -41,9 +40,7 @@ class SavingsQueryAgent(BaseQueryAgent):
 
     def _db(self):
         if self._supabase is None:
-            self._supabase = create_client(
-                os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY")
-            )
+            self._supabase = get_supabase()
         return self._supabase
 
     def handle(self, intent: str, params: dict, household_id: str,

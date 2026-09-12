@@ -1,11 +1,10 @@
 import json
 import logging
-import os
 from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from supabase import create_client
+from services.supabase_client import get_supabase
 
 from api.routers.households import require_admin
 from services.chores import chore_due_today
@@ -20,7 +19,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

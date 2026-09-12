@@ -1,6 +1,5 @@
-import os
 from fastapi import APIRouter, Request, HTTPException
-from supabase import create_client
+from services.supabase_client import get_supabase
 from dotenv import load_dotenv
 
 from services import bot_profile
@@ -8,7 +7,7 @@ from services import bot_profile
 load_dotenv()
 
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 DEFAULTS = {
     "summary_day":        6,

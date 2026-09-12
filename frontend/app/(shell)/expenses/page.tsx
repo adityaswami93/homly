@@ -529,7 +529,7 @@ export default function ExpensesOverview() {
           return;
         }
         const myMember = res.data.members?.find((m: any) => m.user_id === session.user.id);
-        const isSuperAdmin = session.user.user_metadata?.is_super_admin === true;
+        const isSuperAdmin = session.user.app_metadata?.is_super_admin === true;
         setIsAdmin(myMember?.role === "admin" || isSuperAdmin);
       } catch {
         router.push("/onboarding");

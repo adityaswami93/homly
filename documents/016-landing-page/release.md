@@ -25,6 +25,15 @@ RLS: disabled (server-only inserts via service role key)
 
 ## Environment variables
 
+> **⚠️ SUPERSEDED — do not follow the `SUPABASE_SERVICE_ROLE_KEY` steps below.**
+> The waitlist moved server-side to `backend/api/routers/waitlist.py`; there is no
+> Next.js route handler using that key any more, and `frontend/.env.example` does
+> not list it. Adding a service role key to a Vercel frontend environment puts an
+> RLS-bypassing, every-table credential one `NEXT_PUBLIC_` typo away from the
+> browser. If it was ever set there, remove it from the Vercel project and rotate
+> the key. Left in place below as the historical record. See
+> `documents/039-service-role-key-audit/`.
+
 Frontend (`frontend/.env.local`):
 
 | Variable | Required | Notes |

@@ -11,6 +11,7 @@ from supabase import create_client
 from agents.receipt_agent import analyse_receipt
 from services.whatsapp_client import send_text, download_file
 from services.reimbursement import get_reimbursable
+from services.internal_auth import has_internal_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -59,13 +60,17 @@ async def whatsapp_webhook(request: Request):
     if body.get("typeWebhook") != "incomingMessageReceived":
         return {"status": "ignored"}
 
-    # Auth: internal bot key (Baileys) OR Green API instance ID
-    internal_key = request.headers.get("X-Internal-Key")
-    is_internal = internal_key and internal_key == os.getenv("INTERNAL_KEY", "homly-internal")
-
-    if not is_internal:
-        instance_id = str(body.get("instanceData", {}).get("idInstance", ""))
-        if instance_id != os.getenv("GREEN_API_INSTANCE_ID", ""):
+    # Auth: internal bot key (Baileys) OR Green API instance ID.
+    # This route is in SKIP_AUTH_PATHS, so this check is the only thing in
+    # front of it — and it writes receipts against a household_id resolved
+    # from the payload's own chat id.
+    if not has_internal_key(request):
+        # `expected` must be non-empty before comparing: with
+        # GREEN_API_INSTANCE_ID unset this read `"" != ""` → False, so a
+        # payload carrying no instanceData at all authenticated successfully.
+        expected_instance = (os.getenv("GREEN_API_INSTANCE_ID") or "").strip()
+        instance_id = str(body.get("instanceData", {}).get("idInstance", "")).strip()
+        if not expected_instance or not instance_id or instance_id != expected_instance:
             return {"status": "ignored"}
 
     sender_data = body.get("senderData", {})

@@ -29,12 +29,24 @@ SKIP_AUTH_PATHS = [
     "/internal/connected",
     "/internal/qr-status",
     "/internal/messages",
-    "/setup/reset-qr",
+    # "/setup/reset-qr" was here. It takes no credential of its own, so being
+    # exempt made it callable by anyone on the internet — and it drops the
+    # shared WhatsApp session for every household at once. It is a normal
+    # JWT-authenticated, admin-only endpoint now (api/routers/setup.py).
     "/internal/shopping-list",
     "/internal/pantry",
     "/internal/graph-invoke",
     "/internal/commands",
     "/internal/reminders/due",
+    "/internal/reminders",
+    "/internal/settings",
+    # The bot's Baileys session store (api/routers/wa_auth.py). Static paths
+    # with tenant_id in the query/body rather than the path, so they match
+    # here by equality like the rest instead of needing a prefix rule.
+    "/internal/wa-auth",
+    "/internal/wa-auth/upsert",
+    "/internal/wa-auth/delete",
+    "/internal/wa-auth/clear",
     "/waitlist",
 ]
 
@@ -77,18 +89,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         token = auth_header.split(" ", 1)[1]
 
-        # Allow service role key (used by WhatsApp bot)
-        # household_id is NOT resolved here — the endpoint reads it from the request body/params
-        service_key = os.getenv("SUPABASE_KEY", "")
-        if token == service_key:
-            request.state.user = {
-                "sub": None,
-                "household_id": None,
-                "role": "service",
-                "is_service_key": True,
-                "is_super_admin": False,
-            }
-            return await call_next(request)
+        # NOTE: there used to be a bypass here accepting the Supabase service
+        # role key as a bearer token, which granted `is_service_key` — access
+        # to every JWT-protected endpoint with household_id taken from the
+        # caller's own form/query params. Nothing sends it any more: the
+        # WhatsApp bot authenticates to /internal/* with X-Internal-Key, and
+        # MCP clients use their own per-household keys. Presenting a
+        # database-admin credential as an API token also meant the key
+        # travelled on ordinary request paths where it could be logged by any
+        # proxy in front of this app. Don't reintroduce it — add an
+        # /internal/* endpoint behind require_internal_key() instead.
 
         # Verify JWT via JWKS (handles ES256 and HS256 automatically)
         try:
@@ -107,8 +117,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=401, content={"detail": "Invalid token"})
 
         user_id = payload.get("sub")
-        user_meta = payload.get("user_metadata", {})
-        is_super_admin = user_meta.get("is_super_admin", False)
+
+        # `app_metadata`, NOT `user_metadata`. user_metadata is writable by the
+        # user it describes (supabase.auth.updateUser({ data: ... }), anon key
+        # is enough), so reading the flag from there let anyone with an account
+        # promote themselves to super admin and read every household through
+        # /admin/*. app_metadata is service-role-write-only. See
+        # migrations/037_super_admin_app_metadata.sql. Never add a
+        # user_metadata fallback here — that restores the vulnerability.
+        app_meta = payload.get("app_metadata") or {}
+        is_super_admin = app_meta.get("is_super_admin") is True
 
         # Get all household memberships for this user (a user may belong to
         # several households — e.g. their own household plus their parents')

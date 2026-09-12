@@ -44,7 +44,11 @@ export default function AdminPage() {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.push("/login"); return; }
-      const meta = session.user.user_metadata;
+      // app_metadata, not user_metadata — see backend/api/middleware/auth.py.
+      // user_metadata is writable by the user it describes, so it can never
+      // gate anything. This redirect is cosmetic either way; the backend is
+      // the real gate.
+      const meta = session.user.app_metadata;
       if (!meta?.is_super_admin) { router.push("/expenses"); return; }
       setUser(session.user);
     });

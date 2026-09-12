@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import logging
 
 from services.shopping_list import add_auto_item
+from services.internal_auth import require_internal_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -141,9 +142,7 @@ def internal_pantry(
     request: Request,
     household_id: str = Query(...),
 ):
-    internal_key = os.getenv("INTERNAL_KEY", "homly-internal")
-    if request.headers.get("X-Internal-Key") != internal_key:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    require_internal_key(request)
 
     res = (
         _db()

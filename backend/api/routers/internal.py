@@ -2,9 +2,12 @@ import asyncio
 import base64
 from typing import Optional
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
-import os
+
+# The X-Internal-Key check lives in exactly one place — see that module for why
+# it has no default. Aliased to _check to keep these handlers reading as before.
+from services.internal_auth import require_internal_key as _check
 
 router = APIRouter()
 
@@ -15,13 +18,6 @@ whatsapp_state: dict = {
     "groups": [],
     "qr_requested": False,
 }
-
-INTERNAL_KEY = os.getenv("INTERNAL_KEY", "homly-internal")
-
-
-def _check(request: Request):
-    if request.headers.get("X-Internal-Key") != INTERNAL_KEY:
-        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 @router.post("/internal/qr")

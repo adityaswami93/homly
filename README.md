@@ -174,7 +174,9 @@ SUPABASE_URL=https://yourproject.supabase.co
 SUPABASE_KEY=your_service_role_key
 SUPABASE_JWT_SECRET=your_jwt_secret
 OPENROUTER_API_KEY=your_openrouter_key
-INTERNAL_KEY=homly-internal
+# Required, no default — every /internal/* endpoint returns 503 without it.
+# Use a random secret, not a guessable one: it grants access to all households.
+INTERNAL_KEY=choose-a-random-secret
 
 uvicorn api.main:app --reload --port 8000
 ```
@@ -186,10 +188,10 @@ cd backend/whatsapp
 npm install
 
 # Create backend/whatsapp/.env
+# No Supabase credentials here — the bot reaches the database only through the
+# backend's /internal/* endpoints. See "Authentication" below.
 FASTAPI_URL=http://localhost:8000
-SUPABASE_URL=https://yourproject.supabase.co
-SUPABASE_KEY=your_service_role_key
-INTERNAL_KEY=homly-internal
+INTERNAL_KEY=choose-a-random-secret   # must match backend/.env
 
 npm start
 # Scan the QR code in your terminal with WhatsApp → Linked Devices → Link a Device
@@ -244,9 +246,18 @@ npm run dev
 
 ## Authentication
 
-- **Users** — Supabase JWT; the frontend attaches it as `Authorization: Bearer` on every request
-- **WhatsApp bot** — uses the Supabase service role key (never expires); endpoints read `household_id` from the request body/query param
-- **Internal endpoints** (`/internal/*`, `/setup/*`) — validated via `X-Internal-Key` header, not JWT
+- **Users** — Supabase JWT; the frontend attaches it as `Authorization: Bearer` on every request.
+  Super-admin status is read from the token's `app_metadata` claim, never `user_metadata`
+  (which the user can write to themselves — see `backend/migrations/037_super_admin_app_metadata.sql`)
+- **WhatsApp bot** — `X-Internal-Key` only. It holds **no** Supabase credential: the service
+  role key bypasses RLS on every table, and that process parses untrusted input from the
+  public internet, so its three database operations go through `/internal/settings`,
+  `/internal/reminders` and `/internal/wa-auth/*` instead
+- **Internal endpoints** (`/internal/*`) — validated via `X-Internal-Key`, not JWT.
+  `INTERNAL_KEY` is required and has no default; unset means every internal request is
+  refused. `/setup/*` is **not** in this group — those are ordinary JWT endpoints,
+  and `/setup/reset-qr` additionally requires household admin
+- **MCP clients** — per-household bearer keys from `POST /mcp/keys`, independently revocable
 
 ---
 

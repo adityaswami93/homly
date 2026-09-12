@@ -16,13 +16,13 @@ const NAV_ITEMS = [
 ];
 
 interface NavbarProps {
-  user: { email?: string; user_metadata?: any } | null;
+  user: { email?: string; app_metadata?: any } | null;
 }
 
 export default function Navbar({ user }: NavbarProps) {
   const pathname     = usePathname();
   const router       = useRouter();
-  const isSuperAdmin = user?.user_metadata?.is_super_admin === true;
+  const isSuperAdmin = user?.app_metadata?.is_super_admin === true;
   const [menuOpen,   setMenuOpen] = useState(false);
 
   const handleSignOut = async () => {

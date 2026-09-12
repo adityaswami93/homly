@@ -8,11 +8,10 @@ LangGraph's interrupt()/resume, which needs a checkpointer that
 actually resumed, because ``invoke(state, config)`` with a fresh input dict
 starts a new run rather than resuming a suspended one.
 """
-import os
 import logging
 from datetime import datetime, timedelta, timezone as tz
 
-from supabase import create_client
+from services.db import get_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +25,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

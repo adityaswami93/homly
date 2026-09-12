@@ -140,6 +140,11 @@ homly/
 │   │                               #   preferences_agent.py remembers/lists/forgets standing
 │   │                               #   household- or person-scoped preferences (services/preferences.py)
 │   ├── services/
+│   │   ├── db.py                   # get_supabase() — THE Supabase client. Every router, service
+│   │   │                           #   and agent uses it; nothing else calls create_client().
+│   │   │                           #   Wraps httpx with a retry transport, because Supabase's edge
+│   │   │                           #   closes a pooled HTTP/2 connection after a couple of requests
+│   │   │                           #   and the next call on it used to surface as a dashboard 500
 │   │   ├── llm_client.py           # Facade: get_completion(), get_vision_completion()
 │   │   ├── reimbursement.py        # get_reimbursable() — shared by /process-receipt and the WA webhook;
 │   │   │                          #   compute_reimbursement_totals()/mark_receipts_reimbursed() — single
@@ -244,7 +249,9 @@ homly/
 │   │           └── icons.tsx       # SVG icon components (AppIcon, AdminIcon, etc.)
 │   └── lib/
 │       ├── supabase.ts             # Supabase browser client
-│       ├── axios.ts                # Shared axios instance with auth interceptor
+│       ├── apiUrl.ts               # API_URL — NEXT_PUBLIC_API_URL with trailing slashes stripped.
+│       │                           #   Anything building a backend URL by hand imports this
+│       ├── axios.ts                # Shared axios instance with auth interceptor (baseURL = API_URL)
 │       └── toast.ts                # useToast hook
 ```
 
@@ -1168,6 +1175,31 @@ The same rule applies within the backend: if a helper needs to be called from mo
 
 `get_reimbursable()` (eligibility) and `compute_reimbursement_totals()`/`mark_receipts_reimbursed()` (totals and paid-state) already live in `services/reimbursement.py` for exactly this reason — every router that touches reimbursement (`expenses.py`, `messages.py`, `reimbursements.py`, `webhook.py`, `homly_graph.py`) calls into it rather than reimplementing the rule. Keep it that way: a future change to reimbursement rules is one edit away from applying inconsistently across the dashboard, WhatsApp bot, and weekly summary paths otherwise.
 
+### One Supabase client — `services/db.py`'s `get_supabase()`
+
+**Never call `create_client()` directly.** Every router, service and agent gets its
+client from `services/db.py`:
+
+```python
+from services.db import get_supabase
+supabase = get_supabase()          # cached; safe at import or inside a function
+```
+
+There used to be 40 of them, one per module, each with its own httpx connection pool.
+That mattered because Supabase's edge hands back a GOAWAY after serving a couple of
+requests on a pooled HTTP/2 connection, and httpx keeps that connection: the next call
+on it dies with `httpx.RemoteProtocolError` before it ever gets a response. It reached
+users as a dashboard 500 — `GET /household` failing on its *third* Supabase query while
+the two before it succeeded (28 of them in one seven-minute window, see
+`documents/039-supabase-connection-retries/`). `get_supabase()` wraps every httpx
+session the client owns in a transport that re-sends such a request on a fresh
+connection, and that fix only holds while it stays the single constructor.
+
+The retry is for connections that died with no answer, not for answers you don't like:
+a 4xx/5xx from PostgREST is passed straight through to the caller. Writes are only
+re-sent when the failure itself proves the server never processed them (see
+`_server_never_processed_it`), so a retry can't duplicate an insert.
+
 ### Multi-tenancy: every query on a shared table must filter by `household_id`
 
 Most tables (`receipts`, `items`, `households`, `reimbursements`, `pantry_items`, `price_history`, etc.) have `ROW LEVEL SECURITY` explicitly **disabled** (see the migration files) — household isolation is enforced entirely by application code remembering to scope every query. There is no database-level backstop.
@@ -1184,6 +1216,19 @@ if not resolved and request.state.user.get("is_service_key"):
 if not resolved:
     raise HTTPException(403, "No household found")
 ```
+
+### Frontend: never read `NEXT_PUBLIC_API_URL` directly — import `API_URL`
+
+`lib/apiUrl.ts` exports the backend base URL with trailing slashes stripped, and
+`lib/axios.ts` uses it as the axios `baseURL`. Anything that builds a URL by hand (a raw
+`fetch` on the auth pages, the receipt upload, the MCP setup snippets) imports `API_URL`
+from `@/lib/apiUrl` rather than reading the env var.
+
+The env var is configured with a trailing slash in at least one deploy, and every caller
+concatenates a leading `/` onto it — which produced `GET //household`, a FastAPI 404, and
+a returning member bounced to `/onboarding` because the 404 body has no `id`. It lives in
+its own module rather than in `lib/axios.ts` so the landing page can import it without
+pulling in the Supabase browser client.
 
 ### Dark theme
 

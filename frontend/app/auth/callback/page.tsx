@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
+import { API_URL } from "@/lib/apiUrl";
 import { useRouter } from "next/navigation";
 
 function CallbackHandler() {
@@ -14,7 +15,7 @@ function CallbackHandler() {
         if (event === "SIGNED_IN" && session) {
           try {
             const res = await fetch(
-              `${process.env.NEXT_PUBLIC_API_URL}/household`,
+              `${API_URL}/household`,
               { headers: { Authorization: `Bearer ${session.access_token}` } }
             );
             const data = await res.json();

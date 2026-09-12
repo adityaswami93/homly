@@ -1,11 +1,10 @@
 import asyncio
-import os
 import logging
 from datetime import date, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from supabase import create_client
+from services.db import get_supabase
 
 from services.chores import chore_due_today
 from services.llm_client import get_completion
@@ -19,7 +18,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

@@ -6,11 +6,10 @@ api/routers/mcp_data.py, by the standalone local stdio server
 (mcp_server/server.py). Keeping this logic in one place means the two
 transports can never quietly disagree on what a tool returns.
 """
-import os
 from datetime import date, timedelta
 from typing import Optional
 
-from supabase import create_client
+from services.db import get_supabase
 
 from services.receipts import compute_category_totals
 from services.price_history import compute_price_insights
@@ -21,7 +20,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

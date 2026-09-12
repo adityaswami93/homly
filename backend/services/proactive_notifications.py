@@ -5,11 +5,10 @@ conditions (budget status, pantry levels, ...) every run. Without this, a
 finding that's still true tomorrow would get re-sent to the group every run
 until the underlying condition changes.
 """
-import os
 import logging
 from datetime import datetime, timedelta, timezone as tz
 
-from supabase import create_client
+from services.db import get_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

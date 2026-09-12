@@ -18,12 +18,11 @@ Properly fixing that means one bot process per tenant — `BOT_TENANT_ID` and
 the `whatsapp_auth.tenant_id` column are already keyed for it — with this
 state moved out of a module global and into a per-tenant row. That is a
 deliberate follow-up, not part of this change; see
-documents/039-service-role-key-audit/implementation.md.
+documents/040-service-role-key-audit/implementation.md.
 """
-import os
 import logging
 from fastapi import APIRouter, Request, HTTPException
-from supabase import create_client
+from services.db import get_supabase
 
 from api.routers.internal import whatsapp_state
 from api.routers.households import require_admin
@@ -37,7 +36,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

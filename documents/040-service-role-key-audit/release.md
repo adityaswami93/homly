@@ -1,6 +1,7 @@
-# 039 — Service role key audit · Release notes
+# 040 — Service role key audit · Release notes
 
 **Type:** security fix (one critical, three high, two medium)
+**Depends on:** 039 (`services/db.py`) — merged, no action needed
 **Breaking:** yes — see *Deploy order* and *Breaking changes* below. Read both before deploying.
 
 ---
@@ -114,7 +115,7 @@ anything — that is the point.
 **Backend**
 - `api/middleware/auth.py` — `is_super_admin` from `app_metadata`; service-key bearer branch removed; `/setup/reset-qr` out of `SKIP_AUTH_PATHS`; new internal paths added
 - `services/internal_auth.py` — **new.** `require_internal_key()` / `has_internal_key()`; no default, constant-time compare
-- `api/routers/wa_auth.py` — **new.** `/internal/wa-auth`, `/upsert`, `/delete`, `/clear`
+- `api/routers/wa_auth.py` — **new.** `/internal/wa-auth`, `/upsert`, `/delete`, `/clear` (uses `services/db.get_supabase()`, per 039)
 - `api/routers/setup.py` — admin-gated reset and QR/group visibility; `can_manage` in the response
 - `api/routers/settings.py` — new `GET /internal/settings`
 - `api/routers/reminders.py` — new `POST /internal/reminders`
@@ -179,8 +180,9 @@ anything — that is the point.
   moment the backend deploys.
 - **Eight routers still contain unreachable `is_service_key` blocks.** Dead
   after this change; scheduled for a follow-up sweep.
-- **`tests/check_household_scoping.py` still reports ~28 unreviewed queries**,
-  unchanged by this work.
+- **`tests/check_household_scoping.py` still reports 51 unreviewed queries**,
+  unchanged by this work (verified by diffing the guard's findings against
+  `origin/main`).
 
 ---
 

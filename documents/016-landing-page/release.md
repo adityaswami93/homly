@@ -32,7 +32,7 @@ RLS: disabled (server-only inserts via service role key)
 > RLS-bypassing, every-table credential one `NEXT_PUBLIC_` typo away from the
 > browser. If it was ever set there, remove it from the Vercel project and rotate
 > the key. Left in place below as the historical record. See
-> `documents/039-service-role-key-audit/`.
+> `documents/040-service-role-key-audit/`.
 
 Frontend (`frontend/.env.local`):
 

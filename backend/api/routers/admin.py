@@ -1,14 +1,13 @@
-import os
 from collections import defaultdict
 from fastapi import APIRouter, Request
-from supabase import create_client
+from services.db import get_supabase
 from dotenv import load_dotenv
 from api.routers.households import require_super_admin
 
 load_dotenv()
 
 router = APIRouter()
-supabase_client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase_client = get_supabase()
 
 
 @router.get("/admin/price-intelligence")

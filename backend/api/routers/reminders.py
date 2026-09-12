@@ -4,14 +4,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
-from supabase import create_client
+from services.db import get_supabase
 from dotenv import load_dotenv
 from services.internal_auth import require_internal_key
 
 load_dotenv()
 
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 
 class ReminderIn(BaseModel):

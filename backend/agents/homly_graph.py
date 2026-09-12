@@ -460,8 +460,8 @@ def receipt_node(state: HomlyState) -> dict:
 def recipe_node(state: HomlyState) -> dict:
     from agents.recipe_agent import analyse_dish_with_pantry
     from services.shopping_list import add_auto_item
-    from supabase import create_client
-    db = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    from services.db import get_supabase
+    db = get_supabase()
     household_id = state["household_id"]
     result = analyse_dish_with_pantry(
         state["image_bytes"],
@@ -673,8 +673,8 @@ def resume_from_confirmation_node(state: HomlyState) -> dict:
 
 
 def update_pantry_node(state: HomlyState) -> dict:
-    from supabase import create_client
-    db = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    from services.db import get_supabase
+    db = get_supabase()
 
     confirmed = state.get("confirmed_items") or []
     if not confirmed:
@@ -764,12 +764,11 @@ def route_after_fridge_scan(state: HomlyState) -> str:
 
 def payment_confirm_node(state: HomlyState) -> dict:
     """Mark the most recently completed expense cycle as reimbursed."""
-    import os
     from datetime import date, timedelta
-    from supabase import create_client as _create
+    from services.db import get_supabase
     from services.reimbursement import mark_receipts_reimbursed
 
-    db = _create(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    db = get_supabase()
     household_id = state["household_id"]
 
     # Get summary_day so we know when each cycle starts (0=Mon…6=Sun, Python weekday)

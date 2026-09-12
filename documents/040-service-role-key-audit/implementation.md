@@ -1,4 +1,4 @@
-# 039 — Service role key audit: privilege escalation, unauthenticated endpoints, credential blast radius
+# 040 — Service role key audit: privilege escalation, unauthenticated endpoints, credential blast radius
 
 ## What prompted this
 
@@ -165,14 +165,35 @@ still accepts its most dangerous credential on every public route.
   `expenses.py`, `insurance.py`, `pantry.py`, `tasks.py`, `query.py` and
   `recipe.py` — business-logic churn that does not belong in a security change.
   They should be swept in a follow-up.
-- **`tests/check_household_scoping.py` still reports ~28 unreviewed queries.**
-  Pre-existing; this change neither added to nor fixed that list (verified by
-  running the guard before and after — only line numbers moved). Worth working
+- **`tests/check_household_scoping.py` still reports 51 unreviewed queries.**
+  Pre-existing; this change neither added to nor fixed that list — verified by
+  running the guard against `origin/main` in a detached worktree and against
+  this branch, and diffing the normalised finding sets: identical. Worth working
   through separately.
 - **`ws` remains in the bot's `package.json`.** It was only there as the
   Supabase realtime transport and is now unused, but `node_modules` could not be
   installed in this environment to confirm Baileys pulls its own copy, so it was
   left rather than risk a runtime failure on an unverifiable assumption.
+
+## Merged with `main`'s `services/db.py`
+
+While this was in review, `main` landed `039-supabase-connection-retries`, which
+introduced `services/db.py` and replaced ~40 per-module
+`create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))` calls with
+a single `get_supabase()`. Two consequences for this change:
+
+- **`api/routers/wa_auth.py` uses `get_supabase()`**, not `create_client` —
+  `main`'s rule is that `get_supabase()` is the only constructor in the backend.
+- **It does not alter this audit's conclusions.** `get_supabase()` is still a
+  *service-key* client: it bypasses RLS exactly as before, and household
+  isolation is still enforced only by application-level `household_id` filters.
+  Consolidating the client changes connection handling, not authority. The
+  reason the WhatsApp bot must not hold that key is unchanged.
+
+The two changes are complementary and merged without semantic conflict: `main`
+also made `AuthMiddleware` return 503 when the household lookup *fails* (rather
+than silently reading as "no household"), which sits directly above this
+change's `app_metadata` read in the same function.
 
 ## Verification — what actually ran
 

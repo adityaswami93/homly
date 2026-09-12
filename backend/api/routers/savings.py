@@ -1,15 +1,14 @@
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
-from supabase import create_client
+from services.db import get_supabase
 from dotenv import load_dotenv
 
 load_dotenv()
 
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 VALID_ACCOUNT_TYPES = {
     "bank_savings", "fixed_deposit", "retirement_fund",

@@ -10,7 +10,7 @@ household's data through /admin/*. It now lives in raw_app_meta_data
 Deploy order matters: run this BEFORE the backend that reads `app_metadata`,
 or during the gap super admins simply lose admin access — both old and new
 code fail closed, so there is no window where the old claim still grants
-anything. See documents/039-service-role-key-audit/release.md.
+anything. See documents/040-service-role-key-audit/release.md.
 
 Revision ID: 037_super_admin_app_metadata
 Revises: 036_waitlist_variant

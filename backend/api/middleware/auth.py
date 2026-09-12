@@ -4,14 +4,14 @@ import jwt
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from supabase import create_client
+from services.db import get_supabase
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 _jwks_client = jwt.PyJWKClient(
     f"{os.getenv('SUPABASE_URL')}/auth/v1/.well-known/jwks.json",
@@ -158,7 +158,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 household_id = active["household_id"]
                 role = active["role"]
         except Exception as e:
+            # Don't fall through as "this user has no household": every
+            # downstream endpoint would then either 403 or hand back an empty
+            # dashboard, and GET /household would answer {"household": null} —
+            # which the frontend reads as "not onboarded yet" and bounces a
+            # fully set-up member to /onboarding. A lookup that *failed* is not
+            # a lookup that came back empty; say so and let the caller retry.
             logger.error(f"Failed to fetch household for user {user_id}: {e}")
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Could not load your household right now — please try again"},
+            )
 
         request.state.user = {
             "sub": user_id,

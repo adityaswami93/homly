@@ -4,6 +4,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
+import { API_URL } from "@/lib/apiUrl";
 import Link from "next/link";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
@@ -203,11 +204,10 @@ export default function SettingsPage() {
     { key: "mcp", label: "MCP" },
   ];
 
-  // Strip any trailing slash(es) — NEXT_PUBLIC_API_URL is sometimes configured
-  // with one, and every MCP setup snippet below concatenates a leading "/"
-  // onto this, so an un-stripped trailing slash produces a "//" that breaks
-  // the connector URL's routing.
-  const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "https://your-backend-url").replace(/\/+$/, "");
+  // Already trailing-slash-stripped in lib/axios.ts: every MCP setup snippet
+  // below concatenates a leading "/" onto this, and a "//" breaks the
+  // connector URL's routing.
+  const apiUrl = API_URL || "https://your-backend-url";
 
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">

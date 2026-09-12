@@ -1,7 +1,7 @@
 import os
 from datetime import date, timedelta
 from fastapi import APIRouter, Request, HTTPException
-from supabase import create_client
+from services.db import get_supabase
 from dotenv import load_dotenv
 
 from services.reimbursement import compute_reimbursement_totals
@@ -10,7 +10,7 @@ from services.internal_auth import require_internal_key
 load_dotenv()
 
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 CATEGORY_EMOJI = {
     "groceries": "🛒", "household": "🏠", "personal care": "🧴",

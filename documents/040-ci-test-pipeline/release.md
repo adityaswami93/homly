@@ -33,11 +33,16 @@ What changes for anyone working in this repo:
 - `backend/tests/test_chores.py`, `test_mcp_auth.py`, `test_bot_profile.py`,
   `test_household_scoping_check.py`
 - `backend/whatsapp/lib/parsing.js`, `backend/whatsapp/lib/parsing.test.js`
-- `documents/040-ci-test-pipeline/{implementation,implementation-part2,release}.md`
+- `frontend/vitest.config.ts`
+- `frontend/lib/dates.ts`, `frontend/lib/insurance.ts` (+ their `.test.ts`)
+- `frontend/lib/apiUrl.test.ts`, `frontend/config/apps.test.ts`
+- `documents/040-ci-test-pipeline/{implementation,implementation-part2,implementation-part3,release}.md`
 
 **Deleted**
 - `backend/scratch/test_bot_profile.py` — promoted into `backend/tests/test_bot_profile.py`
   as real pytest; keeping both would let them drift.
+- `frontend/lib/weekUtils.ts` — exported `isoWeek`/`isoWeekYear`, imported nowhere, while
+  two pages hand-rolled their own ISO-week maths.
 
 **Modified**
 - `backend/tests/conftest.py` — added `placeholder_env`, `fake_supabase`, `api_client`
@@ -54,7 +59,11 @@ What changes for anyone working in this repo:
   pip cache key follows both requirements files; scoping scan made blocking; new `whatsapp` job
   wired into the sticky PR comment; updated the lockfile TODO
 - `.gitignore` — removed the repo-wide `package-lock.json` ignore
-- `frontend/package.json` — added the `typecheck` script
+- `frontend/package.json` — added `typecheck` and `test` scripts, and `vitest` as a devDependency
+- `frontend/app/(shell)/expenses/{page,history/page,reimburse/page}.tsx`,
+  `frontend/app/(shell)/insurance/{page,renewals/page}.tsx` — import the shared helpers
+  instead of each defining their own copy. **No behaviour change**; the differing
+  date-formatting wrappers were deliberately left in place.
 - `CLAUDE.md` — new Testing & CI section; Project Structure tree; Local Development;
   WhatsApp Bot key patterns
 
@@ -99,16 +108,18 @@ runner.
   failed; preventing a merge requires a branch protection rule or ruleset on `main` that
   requires these checks by name (Settings → Rules). Worth adding
   `Backend (lint + test + import check)` and `Frontend (lint + typecheck + build)` now.
-- **eslint is still informational** — ~104 pre-existing findings. The planned fix is a
-  changed-files ratchet (block on files this PR touches, let the backlog burn down
-  separately) and it ships with the frontend test work.
+- **The eslint changed-files ratchet ships but is not blocking yet.** It reports into the
+  PR comment; flipping it is one line, documented on the step. It was left off because this
+  same change edits five existing page components that may carry pre-existing findings, and
+  eslint could not be run here to check — see `implementation-part3.md`.
 - **No FastAPI route-level tests yet** — the app smoke test, auth-middleware coverage, and
   per-router tenancy tests. The `api_client` fixture for them exists; the tests do not,
   because they cannot be run in the environment this was authored in and a security test
   suite nobody has watched fail is not worth the confidence it implies. See
   `implementation-part2.md`.
-- **No frontend tests yet** — adding Vitest requires installing it, and npm is unreachable
-  here.
+- **Receipt re-aggregation in `expenses/page.tsx` is still client-side and still drifted**
+  between its two copies. It is now flagged as the top remaining offender in `CLAUDE.md`;
+  the fix is a backend field, not a frontend test.
 - `backend/tests/test_conversation_context.py` still carries its own local Supabase fake —
   see `implementation.md` for why it was not migrated.
 - `backend/whatsapp/` has no linter (only syntax checking). ESLint there would be a
@@ -130,6 +141,14 @@ wrong-household filter, a half-scoped accumulator and an unfiltered query; and
 `npm run check` was confirmed to exit non-zero with a deliberately broken file in the tree
 (its first implementation did not — see `implementation-part2.md`).
 
+**The frontend helpers were verified without Vitest**, by compiling them with the system
+`tsc --strict` and running the same cases under `node --test` against the compiled output —
+13 cases, all passing, including that `getWeekRange(2026, 1)` starts on 2025-12-29 and that
+`config/apps.test.ts`'s filesystem check rejects a bogus route as well as accepting the real
+ones. The assertions are verified; only the Vitest harness wiring is not.
+
 **Did not run here:** `pip install -r requirements-dev.txt` itself, the six test modules
-requiring `fastapi` / `supabase` / `langchain_core`, and anything npm (`npm run typecheck`,
-`npm run build`). The first CI run on this PR is the real verification for those.
+requiring `fastapi` / `supabase` / `langchain_core`, and anything npm — Vitest,
+`npm run typecheck` over the whole app, `next build`, eslint. The first CI run on this PR is
+the real verification for those, and the frontend page edits (delete a local function, add
+an import) have been grep-checked but not typechecked in situ.

@@ -219,8 +219,10 @@ homly/
 │       ├── package.json
 │       └── .env                    # FASTAPI_URL, SUPABASE_KEY, INTERNAL_KEY
 └── frontend/
+│   ├── vitest.config.ts            # environment: node; `@/*` alias mirrors tsconfig.json
 │   ├── config/
 │   │   └── apps.ts                 # Central app/nav config (single source of truth for shell nav)
+│   │                               #   apps.test.ts checks every nav href against the routes on disk
 │   ├── app/
 │   │   ├── page.tsx                # Landing page
 │   │   ├── login/page.tsx          # Login
@@ -258,6 +260,9 @@ homly/
 │   │           ├── BottomTabBar.tsx # Fixed bottom nav (mobile only)
 │   │           └── icons.tsx       # SVG icon components (AppIcon, AdminIcon, etc.)
 │   └── lib/
+│       ├── dates.ts                # Shared week/date maths — was duplicated across four pages.
+│       │                           #   Staging post before this moves to the backend, not a home
+│       ├── insurance.ts            # monthlyPremium() — same story
 │       ├── supabase.ts             # Supabase browser client
 │       ├── apiUrl.ts               # API_URL — NEXT_PUBLIC_API_URL with trailing slashes stripped.
 │       │                           #   Anything building a backend URL by hand imports this
@@ -1178,6 +1183,7 @@ python tests/check_household_scoping.py
 cd ../frontend && npm install
 npm run lint                        # eslint
 npm run typecheck                   # tsc --noEmit — `next build` does NOT typecheck in Next 16
+npm test                            # vitest
 npm run build
 
 cd ../backend/whatsapp              # no npm install needed — both are dependency-free
@@ -1195,7 +1201,9 @@ npm test                            # node --test over lib/
 | `tests/check_household_scoping.py` | backend | yes |
 | `tsc --noEmit` | frontend | yes |
 | `next build` | frontend | yes |
-| `eslint` | frontend | **no — informational** (~104 pre-existing findings) |
+| `vitest run` | frontend | yes |
+| `eslint` (whole tree) | frontend | **no — informational** (~104 pre-existing findings) |
+| `eslint` (changed files only) | frontend | **not yet** — see the step comment; flipping it is one line |
 | `npm run check` | whatsapp | yes |
 | `npm test` | whatsapp | yes |
 
@@ -1252,6 +1260,21 @@ the lazy `_db()` accessor in ~19). Modules already imported are re-pointed expli
 runs `api/main.py`'s lifespan, which starts APScheduler and calls `refresh_summaries()`
 against Supabase.
 
+### Writing frontend tests
+
+Vitest, `environment: "node"` — everything covered today is pure logic in `lib/` and
+`config/`. Switch to `jsdom` and add `@testing-library/react` when the first component test
+lands, not before.
+
+`lib/dates.ts` and `lib/insurance.ts` hold logic that used to be duplicated, unexported,
+inside page components. **They are a staging post, not a home.** "Frontend stays thin"
+below says this maths belongs in the backend; these modules exist so the behaviour is
+pinned by tests before each function moves server-side. Prefer adding a field to an API
+response over adding a function there.
+
+`config/apps.test.ts` checks every `nav[].href` against the routes actually on disk, so a
+nav item pointing at a deleted page fails the suite rather than 404ing for a user.
+
 ### The multi-tenancy guard
 
 RLS is disabled on every shared table (see "Multi-tenancy" below), so this invariant has
@@ -1302,7 +1325,11 @@ The frontend's job is to call an endpoint and render what it returns. If you're 
 
 **What to do instead:** add a field to an existing response, or add a new endpoint, that returns the already-computed value; have the frontend just read and display it. When fixing a bug in a computed value shown in the UI, check whether the computation is happening client-side before patching it there — if it is, move it server-side as part of the fix rather than patching the frontend copy.
 
-This codebase currently has known offenders worth cleaning up opportunistically (custom-week math and receipt re-aggregation in `expenses/page.tsx`, duplicated `getWeekRange`/`daysUntil` helpers across pages, client-side premium normalization in `insurance/page.tsx`, and the parallel net-worth calc in `savings/page.tsx`) — prefer moving one of these to the backend over adding a new client-side computation next to it. (`expenses/reimburse/page.tsx` used to join `/weeks` + `/reimbursements` client-side to compute per-week outstanding — that's now backend-computed on `/weeks` itself via `services/reimbursement.py`'s `compute_reimbursement_totals()`.)
+This codebase still has known offenders worth cleaning up opportunistically — prefer moving one of these to the backend over adding a new client-side computation next to it:
+
+- **Receipt re-aggregation** in `expenses/page.tsx`'s `handleDelete`/`handleToggleReimbursable`. The worst one left: it re-implements `services/reimbursement.py`'s `compute_reimbursement_totals()` client-side after an optimistic update, and the two copies **have already drifted** — one rounds as `round(Math.max(0, x - totalPaid))`, the other as `Math.max(0, round(x - totalPaid))`. It lives inside `useState` updater closures, so extracting it is a real refactor; the right fix is to have the backend return the recomputed week.
+- **Parallel net-worth calc** in `savings/page.tsx`.
+- **Week maths and premium normalization** — no longer duplicated: `getCustomWeekStart`, `getWeekRange`, `daysUntil` and `monthlyPremium` now live once in `lib/dates.ts` / `lib/insurance.ts` with tests. Still client-side, still owed a move to the backend; the tests exist so that move is verifiable rather than a leap. (`expenses/reimburse/page.tsx` used to join `/weeks` + `/reimbursements` client-side to compute per-week outstanding — that's now backend-computed on `/weeks` itself via `services/reimbursement.py`'s `compute_reimbursement_totals()`.)
 
 ### Backend stays DRY — no copy-pasted business-logic helpers across routers
 

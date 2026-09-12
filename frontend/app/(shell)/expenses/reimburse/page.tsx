@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
+import { getWeekRange } from "@/lib/dates";
 
 interface Reimbursement {
   id: string;
@@ -23,17 +24,6 @@ interface WeekSummary {
   paid: number;
   outstanding: number;
   reimbursements: Reimbursement[] | null;
-}
-
-function getWeekRange(year: number, week: number): { start: Date; end: Date } {
-  const jan4 = new Date(year, 0, 4);
-  const startOfWeek1 = new Date(jan4);
-  startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-  const start = new Date(startOfWeek1);
-  start.setDate(startOfWeek1.getDate() + (week - 1) * 7);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  return { start, end };
 }
 
 function formatWeekRange(year: number, week: number): string {

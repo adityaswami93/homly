@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
+import { getWeekRange } from "@/lib/dates";
 
 const CATEGORY_EMOJI: Record<string, string> = {
   groceries: "🛒", household: "🏠", "personal care": "🧴",
@@ -13,17 +14,6 @@ const CATEGORY_EMOJI: Record<string, string> = {
 function fmt(amount: number | null) {
   if (amount == null) return "—";
   return `SGD ${Number(amount).toFixed(2)}`;
-}
-
-function getWeekRange(year: number, week: number) {
-  const jan4 = new Date(year, 0, 4);
-  const startOfWeek1 = new Date(jan4);
-  startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-  const start = new Date(startOfWeek1);
-  start.setDate(startOfWeek1.getDate() + (week - 1) * 7);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  return { start, end };
 }
 
 function fmtDateRange(year: number, week: number) {

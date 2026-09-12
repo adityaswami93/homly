@@ -115,12 +115,20 @@ jobs:
     outputs:
       eslint_outcome: ${{ steps.eslint.outcome }}
       eslint_output: ${{ steps.eslint.outputs.output }}
+      eslint_changed_outcome: ${{ steps.eslint_changed.outcome }}
+      eslint_changed_output: ${{ steps.eslint_changed.outputs.output }}
+      unit_outcome: ${{ steps.unit.outcome }}
+      unit_output: ${{ steps.unit.outputs.output }}
       typecheck_outcome: ${{ steps.typecheck.outcome }}
       typecheck_output: ${{ steps.typecheck.outputs.output }}
       build_outcome: ${{ steps.build.outcome }}
       build_output: ${{ steps.build.outputs.output }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the changed-files lint below can diff against the
+          # base branch.
+          fetch-depth: 0
 
       # No `cache: npm` here: actions/setup-node's cache step hard-fails (not
       # just skips) when cache-dependency-path doesn't resolve to a real file,
@@ -163,6 +171,62 @@ jobs:
           { echo "output<<ESLINT_EOF"; tail -c 4000 /tmp/eslint_output.txt; echo "ESLINT_EOF"; } >> "$GITHUB_OUTPUT"
           exit $code
 
+      # The ratchet: lint only the files this PR touches, so new code can be
+      # held clean while the ~104 pre-existing findings burn down separately.
+      # A big-bang cleanup would have to restructure useEffect bodies that
+      # can't be verified without a browser.
+      #
+      # NOT YET BLOCKING, deliberately, and this is a one-line change to flip
+      # (add `steps.eslint_changed.outcome == 'failure'` to the condition at
+      # the end of this job). The change that added this step also edits five
+      # existing page components, and those may carry pre-existing findings of
+      # their own — making it blocking immediately could red-flag its own PR,
+      # and it could not be run locally to check (no npm registry access).
+      # This step's output in the PR comment is exactly the data needed:
+      # if it reports clean on a normal PR, flip it.
+      - name: Lint changed files (eslint)
+        id: eslint_changed
+        continue-on-error: true
+        run: |
+          set +e
+          # On a push to main there is no base_ref; compare against the parent
+          # commit so the step still lints what that push changed.
+          if [ -n "${{ github.base_ref }}" ]; then
+            base="origin/${{ github.base_ref }}"
+            git fetch --no-tags origin "${{ github.base_ref }}" >/dev/null 2>&1
+          else
+            base="HEAD^"
+          fi
+          # Paths come back relative to the repo root even though this job runs
+          # in frontend/, so scope with :(top) and strip the prefix for eslint.
+          files=$(git diff --name-only --diff-filter=ACMR "$base"...HEAD \
+                    -- ':(top)frontend/*.ts' ':(top)frontend/*.tsx' \
+                  | sed -n 's|^frontend/||p')
+          if [ -z "$files" ]; then
+            echo "No frontend TS/TSX files changed." | tee /tmp/eslint_changed_output.txt
+            code=0
+          else
+            echo "Linting changed files:" | tee /tmp/eslint_changed_output.txt
+            echo "$files" | tee -a /tmp/eslint_changed_output.txt
+            # shellcheck disable=SC2086
+            npx eslint $files 2>&1 | tee -a /tmp/eslint_changed_output.txt
+            code=${PIPESTATUS[0]}
+          fi
+          set -e
+          { echo "output<<ESLINTC_EOF"; tail -c 4000 /tmp/eslint_changed_output.txt; echo "ESLINTC_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Unit tests (vitest)
+        id: unit
+        continue-on-error: true
+        run: |
+          set +e
+          npm test 2>&1 | tee /tmp/vitest_output.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo "output<<VITEST_EOF"; tail -c 4000 /tmp/vitest_output.txt; echo "VITEST_EOF"; } >> "$GITHUB_OUTPUT"
+          exit $code
+
       - name: Typecheck
         id: typecheck
         continue-on-error: true
@@ -191,7 +255,10 @@ jobs:
           exit $code
 
       - name: Fail job if blocking checks failed
-        if: steps.typecheck.outcome == 'failure' || steps.build.outcome == 'failure'
+        if: >-
+          steps.typecheck.outcome == 'failure' ||
+          steps.build.outcome == 'failure' ||
+          steps.unit.outcome == 'failure'
         run: exit 1
 
   whatsapp:
@@ -271,6 +338,10 @@ jobs:
           BACKEND_SCOPING_OUTPUT: ${{ needs.backend.outputs.scoping_output }}
           FRONTEND_ESLINT_OUTCOME: ${{ needs.frontend.outputs.eslint_outcome }}
           FRONTEND_ESLINT_OUTPUT: ${{ needs.frontend.outputs.eslint_output }}
+          FRONTEND_ESLINTC_OUTCOME: ${{ needs.frontend.outputs.eslint_changed_outcome }}
+          FRONTEND_ESLINTC_OUTPUT: ${{ needs.frontend.outputs.eslint_changed_output }}
+          FRONTEND_UNIT_OUTCOME: ${{ needs.frontend.outputs.unit_outcome }}
+          FRONTEND_UNIT_OUTPUT: ${{ needs.frontend.outputs.unit_output }}
           FRONTEND_TYPECHECK_OUTCOME: ${{ needs.frontend.outputs.typecheck_outcome }}
           FRONTEND_TYPECHECK_OUTPUT: ${{ needs.frontend.outputs.typecheck_output }}
           FRONTEND_BUILD_OUTCOME: ${{ needs.frontend.outputs.build_outcome }}
@@ -331,9 +402,14 @@ jobs:
             parts.push("");
             parts.push("#### Frontend");
             parts.push(section(
-              "Lint (eslint)", process.env.FRONTEND_ESLINT_OUTCOME, process.env.FRONTEND_ESLINT_OUTPUT,
-              "Informational only — pre-existing findings pending a dedicated cleanup pass."
+              "Lint — whole tree (eslint)", process.env.FRONTEND_ESLINT_OUTCOME, process.env.FRONTEND_ESLINT_OUTPUT,
+              "Informational only — ~104 pre-existing findings, burning down separately."
             ));
+            parts.push(section(
+              "Lint — changed files (eslint)", process.env.FRONTEND_ESLINTC_OUTCOME, process.env.FRONTEND_ESLINTC_OUTPUT,
+              "Not blocking yet — flip it once this reports clean on a normal PR. See the comment on the step."
+            ));
+            parts.push(section("Unit tests (vitest)", process.env.FRONTEND_UNIT_OUTCOME, process.env.FRONTEND_UNIT_OUTPUT));
             parts.push(section("Typecheck", process.env.FRONTEND_TYPECHECK_OUTCOME, process.env.FRONTEND_TYPECHECK_OUTPUT));
             parts.push(section("Build", process.env.FRONTEND_BUILD_OUTCOME, process.env.FRONTEND_BUILD_OUTPUT));
             parts.push("");

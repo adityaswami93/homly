@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
+import { daysUntil } from "@/lib/dates";
 
 interface Policy {
   id: string;
@@ -28,14 +29,6 @@ const TYPE_COLOR: Record<string, string> = {
 const TYPE_EMOJI: Record<string, string> = {
   health: "🏥", life: "💙", home: "🏠", car: "🚗", travel: "✈️", other: "📋",
 };
-
-function daysUntil(dateStr: string | null): number | null {
-  if (!dateStr) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(dateStr);
-  return Math.ceil((d.getTime() - today.getTime()) / 86400000);
-}
 
 function fmtDate(iso: string | null) {
   if (!iso) return "—";

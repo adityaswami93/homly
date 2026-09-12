@@ -1,10 +1,9 @@
-import os
 import csv
 import io
 from fastapi import APIRouter, Request, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional
-from supabase import create_client
+from services.db import get_supabase
 from datetime import date, timedelta
 from collections import defaultdict
 
@@ -15,7 +14,7 @@ _supabase = None
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

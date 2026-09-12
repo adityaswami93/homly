@@ -1,8 +1,9 @@
 import axios from "axios"
 import { supabase } from "./supabase"
+import { API_URL } from "./apiUrl"
 
 const api = axios.create({
-    baseURL: process.env.NEXT_PUBLIC_API_URL
+    baseURL: API_URL
 })
 
 // Attach token + active household to every request automatically

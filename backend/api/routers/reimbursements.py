@@ -1,6 +1,5 @@
-import os
 from fastapi import APIRouter, Request, HTTPException
-from supabase import create_client
+from services.db import get_supabase
 from dotenv import load_dotenv
 
 from services.reimbursement import mark_receipts_reimbursed
@@ -8,7 +7,7 @@ from services.reimbursement import mark_receipts_reimbursed
 load_dotenv()
 
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 
 @router.get("/reimbursements")

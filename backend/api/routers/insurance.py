@@ -1,4 +1,3 @@
-import os
 import uuid
 import json
 from typing import Optional
@@ -7,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from supabase import create_client
+from services.db import get_supabase
 from dotenv import load_dotenv
 
 from agents.insurance_agent import analyse_insurance_document
@@ -17,7 +16,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = get_supabase()
 
 VALID_COVERAGE_TYPES = {"health", "life", "home", "car", "travel", "other"}
 VALID_FREQS = {"monthly", "quarterly", "annually"}

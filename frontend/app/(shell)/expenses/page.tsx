@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import api from "@/lib/axios";
+import { API_URL } from "@/lib/apiUrl";
 import { useToast } from "@/lib/toast";
 import { ToastContainer } from "@/app/components/Toast";
 import { isNativeApp } from "@/lib/platform";
@@ -473,7 +474,7 @@ export default function ExpensesOverview() {
     try {
       setUploading(true);
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/process-receipt`,
+        `${API_URL}/process-receipt`,
         {
           method: "POST",
           body: formData,

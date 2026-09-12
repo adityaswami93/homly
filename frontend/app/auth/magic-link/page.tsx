@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
+import { API_URL } from "@/lib/apiUrl";
 import { useRouter } from "next/navigation";
 
 function MagicLinkHandler() {
@@ -16,7 +17,7 @@ function MagicLinkHandler() {
         // Check household
         try {
           const res = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL}/household`,
+            `${API_URL}/household`,
             { headers: { Authorization: `Bearer ${session.access_token}` } }
           );
           const data = await res.json();

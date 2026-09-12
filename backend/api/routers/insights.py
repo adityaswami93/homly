@@ -1,6 +1,6 @@
 import os
 from fastapi import APIRouter, Request, HTTPException
-from supabase import create_client
+from services.db import get_supabase
 from datetime import date, timedelta
 from collections import defaultdict
 from dotenv import load_dotenv
@@ -10,7 +10,7 @@ from services.price_history import compute_price_insights
 load_dotenv()
 
 router    = APIRouter()
-supabase  = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase  = get_supabase()
 
 
 # ── Household price intelligence ─────────────────────────────

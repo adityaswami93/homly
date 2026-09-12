@@ -23,10 +23,9 @@ stop a household's message from being answered. Every failure degrades to
 "no memory", which is the behaviour that existed before this module.
 """
 import logging
-import os
 from datetime import datetime, timedelta, timezone as tz
 
-from supabase import create_client
+from services.db import get_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +59,7 @@ _household_by_jid: dict[str, str] = {}
 def _db():
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+        _supabase = get_supabase()
     return _supabase
 
 

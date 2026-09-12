@@ -1,8 +1,7 @@
 import json
-import os
 from datetime import date, timedelta
 
-from supabase import create_client
+from services.db import get_supabase
 
 from agents.base_agent import AgentManifest, AgentResult, BaseQueryAgent
 from services.llm_client import get_completion
@@ -60,9 +59,7 @@ class InsuranceQueryAgent(BaseQueryAgent):
 
     def _db(self):
         if self._supabase is None:
-            self._supabase = create_client(
-                os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY")
-            )
+            self._supabase = get_supabase()
         return self._supabase
 
     def handle(self, intent: str, params: dict, household_id: str,

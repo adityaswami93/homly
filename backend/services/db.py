@@ -22,6 +22,21 @@ single place to fix it. `get_supabase()` is now the only constructor in the
 backend (CLAUDE.md: "Backend stays DRY"), so the retry policy is defined once.
 New code calls `get_supabase()`; it must not call `create_client` directly.
 
+**Why the retry alone was not enough.** Shipping just the retry made the
+symptom rarer and the *rate* far higher: consolidating 40 half-idle pools into
+one means nearly every request now goes out on a reused connection, so nearly
+every third one met a GOAWAY (Railway logs, 2026-09-12 07:49 — a warning on
+most requests, and one `GET /households` that burned all three attempts and
+500ed anyway). Retrying treats the symptom; the cause is that httpx cannot
+*tell* a poisoned HTTP/2 connection from a healthy one. httpcore's HTTP/1.1
+connections answer `has_expired()` by checking whether the idle socket has gone
+readable — a server that hung up is spotted before a request is put on it — and
+they honour `Connection: close` deterministically. Its HTTP/2 connections only
+check the keep-alive clock: a GOAWAY sitting unread in the socket buffer is
+invisible until a request has already been written onto the dead stream. So
+`_disable_http2()` takes the sessions down to HTTP/1.1, where the pool can see
+the close coming, and `_RetryTransport` stays as the net for what slips past.
+
 What this module deliberately does *not* do: retry on HTTP status codes. A 4xx
 or 5xx from PostgREST is an answer — the caller's own error handling owns it.
 The only thing retried here is a connection that died with no answer at all.
@@ -41,7 +56,11 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-_MAX_ATTEMPTS = 3
+# Four, not three: a real GET /households exhausted three attempts in production
+# (2026-09-12 07:49) back when every connection was HTTP/2 and roughly one
+# request in three met a GOAWAY. Attempts are cheap — a failed one costs no
+# round trip, since the connection is already dead when we learn about it.
+_MAX_ATTEMPTS = 4
 _BACKOFF_SECONDS = 0.05
 
 # Transport-level failures: httpx raises these from `handle_request()`, i.e.
@@ -144,6 +163,36 @@ def _install_retries(session: httpx.Client) -> None:
             session._mounts[pattern] = _RetryTransport(mounted)
 
 
+def _disable_http2(session: httpx.Client) -> str:
+    """Stop this client opening new HTTP/2 connections. Returns what happened.
+
+    Supabase's edge GOAWAYs a connection after serving two streams on it
+    (`last_stream_id:3`, in all 114 occurrences of the frame in the logs that
+    prompted this). Over HTTP/2 httpcore has no way to notice before it has
+    already written the next request onto that connection — see the module
+    docstring — so the third request of a handler died. Over HTTP/1.1 the same
+    server close is visible to the pool *before* the connection is handed out
+    again, and the request goes on a new one instead.
+
+    `_pool` is httpx's private handle on the httpcore pool and `_http2` is the
+    flag it copies into every connection it opens. Flipping it here (before the
+    first request, while the pool is still empty) is narrower than replacing the
+    whole transport, which would silently drop whatever TLS context, proxy or
+    limits supabase-py configured. If either private name ever disappears this
+    returns "unavailable", `get_supabase()` says so, and the retries carry the
+    load on their own.
+    """
+    transport = session._transport
+    inner = transport._inner if isinstance(transport, _RetryTransport) else transport
+    pool = getattr(inner, "_pool", None)
+    if pool is None or not hasattr(pool, "_http2"):
+        return "unavailable"
+    if not pool._http2:
+        return "already off"
+    pool._http2 = False
+    return "disabled"
+
+
 _SCAN_DEPTH = 4
 
 
@@ -185,7 +234,8 @@ def _iter_httpx_clients(root: object) -> Iterator[httpx.Client]:
 _SUBCLIENTS = ("auth", "postgrest", "storage", "functions")
 
 
-def _harden(client: object) -> int:
+def _harden(client: object) -> tuple[int, int]:
+    """Returns (sessions wrapped in retries, sessions taken off HTTP/2)."""
     for attr in _SUBCLIENTS:
         try:
             getattr(client, attr)
@@ -193,11 +243,14 @@ def _harden(client: object) -> int:
             # A sub-client this backend never uses failing to build is not
             # fatal — storage, say, on a deploy with no storage configured.
             logger.debug("Supabase sub-client %s unavailable: %s", attr, e)
-    count = 0
+    wrapped = 0
+    http1_only = 0
     for session in _iter_httpx_clients(client):
         _install_retries(session)
-        count += 1
-    return count
+        wrapped += 1
+        if _disable_http2(session) in ("disabled", "already off"):
+            http1_only += 1
+    return wrapped, http1_only
 
 
 _client = None
@@ -212,9 +265,20 @@ def get_supabase():
     with _client_lock:
         if _client is None:
             client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-            hardened = _harden(client)
+            hardened, http1_only = _harden(client)
             if hardened:
-                logger.info("Supabase client ready — retry transport on %d httpx session(s)", hardened)
+                logger.info(
+                    "Supabase client ready — retry transport on %d httpx session(s), "
+                    "HTTP/1.1 enforced on %d of them",
+                    hardened, http1_only,
+                )
+                if http1_only < hardened:
+                    logger.warning(
+                        "Could not turn HTTP/2 off for %d Supabase session(s): dropped "
+                        "connections will keep costing a retry each. httpx/httpcore "
+                        "internals have moved — see _disable_http2 in services/db.py",
+                        hardened - http1_only,
+                    )
             else:
                 logger.warning(
                     "Supabase client ready but no httpx session was found to wrap: dropped "

@@ -5,6 +5,8 @@ raises exactly what httpx raised on Railway (`RemoteProtocolError` carrying h2's
 `ConnectionTerminated`), and asserts the request is re-sent instead of reaching
 the caller as a 500.
 """
+import importlib.util
+
 import pytest
 
 pytest.importorskip("httpx")
@@ -17,6 +19,12 @@ from services import db  # noqa: E402
 # The exact string httpx produced in the Railway logs — services/db.py matches
 # on it to tell a graceful GOAWAY (nothing was processed) from any other
 # protocol error, so a change to it is a behaviour change, not a cosmetic one.
+# Constructing a client with http2=True is only meaningful where the extra is
+# installed; supabase pulls in httpx[http2], so this never skips in CI.
+needs_h2 = pytest.mark.skipif(
+    importlib.util.find_spec("h2") is None, reason="httpx[http2] not installed"
+)
+
 GOAWAY = httpx.RemoteProtocolError(
     "<ConnectionTerminated error_code:0, last_stream_id:3, additional_data:None>"
 )
@@ -53,6 +61,32 @@ def test_get_retried_after_goaway():
     response = _send(inner)
     assert response.status_code == 200
     assert inner.calls == 2
+
+
+@needs_h2
+def test_http2_is_turned_off_on_the_pool():
+    # Supabase's edge GOAWAYs an HTTP/2 connection after two streams and httpcore
+    # can't see that coming; over HTTP/1.1 the pool spots the close before reuse.
+    client = httpx.Client(http2=True)
+    assert client._transport._pool._http2 is True
+    assert db._disable_http2(client) == "disabled"
+    assert client._transport._pool._http2 is False
+    assert db._disable_http2(client) == "already off"
+
+
+@needs_h2
+def test_http2_is_turned_off_through_the_retry_wrapper():
+    client = httpx.Client(http2=True)
+    db._install_retries(client)
+    assert db._disable_http2(client) == "disabled"
+    assert client._transport._inner._pool._http2 is False
+
+
+def test_http2_reports_unavailable_when_there_is_no_pool():
+    # A transport httpx didn't build (a mock, a mount) has no connection pool.
+    client = httpx.Client()
+    client._transport = httpx.MockTransport(lambda request: httpx.Response(200))
+    assert db._disable_http2(client) == "unavailable"
 
 
 def test_gives_up_after_max_attempts():
@@ -135,3 +169,21 @@ def test_iter_httpx_clients_finds_nested_sessions():
     root = _Root()
     found = list(db._iter_httpx_clients(root))
     assert {id(c) for c in found} == {id(root.postgrest.session), id(root.auth.session)}
+
+
+@needs_h2
+def test_harden_wraps_and_downgrades_every_session():
+    class _Sub:
+        def __init__(self):
+            self.session = httpx.Client(http2=True)
+
+    class _Root:
+        def __init__(self):
+            self.postgrest = _Sub()
+            self.auth = _Sub()
+
+    root = _Root()
+    assert db._harden(root) == (2, 2)
+    for sub in (root.postgrest, root.auth):
+        assert isinstance(sub.session._transport, db._RetryTransport)
+        assert sub.session._transport._inner._pool._http2 is False

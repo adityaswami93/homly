@@ -188,9 +188,11 @@ anything — that is the point.
 
 ## Verification honesty
 
-**The pytest suite was not run and the frontend was not typechecked.** Backend
-dependencies are not installed in the authoring environment and no package index
-was reachable; `frontend/node_modules` is absent. What *was* run: `compileall`
+**The pytest suite was not run and the frontend was not typechecked.** Both
+package registries answer 403 by egress policy in the authoring environment
+(`pypi.org/simple` and `registry.npmjs.org`), so backend dependencies and
+`frontend/node_modules` cannot be installed at all. `ruff check .` **did** run
+(0.15.8, CI's pinned version) and passes. What *was* run: `compileall`
 on all touched Python, `node --check` on both bot files, the household-scoping
 guard before and after (identical findings), the `internal_auth` logic against a
 stubbed `fastapi` (all assertions pass), and an old-vs-new truth table for the

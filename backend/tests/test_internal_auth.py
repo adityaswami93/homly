@@ -12,7 +12,6 @@ routers as
 which meant an unset INTERNAL_KEY in production left every internal endpoint
 guarded by a string published in this repository.
 """
-import os
 
 import pytest
 from fastapi import HTTPException

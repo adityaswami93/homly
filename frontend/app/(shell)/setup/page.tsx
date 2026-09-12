@@ -120,7 +120,10 @@ export default function SetupPage() {
               </div>
             )}
 
-            {!state?.connected && !state?.can_manage && (
+            {/* `state &&` matters: a failed /setup/state fetch leaves state null,
+                and without it that would render as "ask an admin" — a
+                permissions explanation for what is actually a network error. */}
+            {state && !state.connected && !state.can_manage && (
               <div className="text-center py-6">
                 <p className="text-sm text-stone-400">
                   WhatsApp isn&apos;t connected yet. Ask a household admin to set it up.
@@ -128,7 +131,7 @@ export default function SetupPage() {
               </div>
             )}
 
-            {!state?.connected && state?.can_manage && (
+            {state && !state.connected && state.can_manage && (
               <>
                 {state?.qr ? (
                   <div className="text-center mb-4">

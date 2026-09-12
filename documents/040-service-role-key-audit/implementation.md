@@ -203,6 +203,13 @@ distribution found"). **The pytest suite was not run, and `tsc --noEmit` could
 not resolve `react`/`next` because `frontend/node_modules` is absent.** What was
 actually executed:
 
+- `ruff check .` (0.15.8, the exact version CI pins) — **All checks passed.** This
+  is CI's blocking backend lint. It initially reported 4 `F401` unused-`import os`
+  errors, all introduced here: replacing `os.getenv("INTERNAL_KEY", …)` with
+  `require_internal_key(request)` removed the last `os.` use in `commands.py`,
+  `messages.py` and `reminders.py`, and `tests/test_internal_auth.py` only
+  mentions `os.getenv` inside its docstring. `origin/main` lints clean, so all
+  four were ours. Removed.
 - `python3 -m compileall` over every touched Python file — clean.
 - `node --check` on `whatsapp/index.js` and `whatsapp/db-auth-state.js` — clean.
 - `tests/check_household_scoping.py` (pure stdlib, no deps) before and after the
@@ -215,5 +222,13 @@ actually executed:
   old form accepts a fully anonymous request when `GREEN_API_INSTANCE_ID` is
   unset; the new one rejects it while both legitimate paths still pass.
 
-`tests/test_internal_auth.py` was added and compiles, but **has not been
+`tests/test_internal_auth.py` was added, lints and compiles, but **has not been
 executed under pytest** — it needs to run in CI before this is trusted.
+
+Both package registries are blocked by egress policy in this environment
+(`pypi.org/simple` and `registry.npmjs.org` both answer 403), so `pip install
+pytest` and `npm install` cannot succeed regardless of index. `ruff` was
+usable only because it happened to be pre-installed. The frontend changes were
+therefore reviewed by hand rather than typechecked: both `<Navbar user={…} />`
+call sites hold `useState<any>`, so the prop-type edit is inert, and
+`session.user.app_metadata` is a standard field on supabase-js's `User`.

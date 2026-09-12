@@ -1,4 +1,3 @@
-import os
 from datetime import date, timedelta
 from fastapi import APIRouter, Request, HTTPException
 from services.db import get_supabase

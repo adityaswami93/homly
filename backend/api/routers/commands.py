@@ -1,4 +1,3 @@
-import os
 import re
 from typing import Optional
 
@@ -6,6 +5,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel, field_validator
 from services.db import get_supabase
 from dotenv import load_dotenv
+from services.internal_auth import require_internal_key
 
 load_dotenv()
 
@@ -140,9 +140,7 @@ async def delete_command(command_id: str, request: Request):
 @router.get("/internal/commands")
 async def internal_commands(request: Request):
     """Bot fetches all enabled custom commands keyed by household_id."""
-    internal_key = os.getenv("INTERNAL_KEY", "homly-internal")
-    if request.headers.get("X-Internal-Key") != internal_key:
-        raise HTTPException(403, "Forbidden")
+    require_internal_key(request)
 
     res = (
         supabase.table("custom_commands")

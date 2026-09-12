@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -6,6 +5,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from services.db import get_supabase
 from dotenv import load_dotenv
+from services.internal_auth import require_internal_key
 
 load_dotenv()
 
@@ -95,9 +95,7 @@ async def delete_reminder(reminder_id: str, request: Request):
 @router.get("/internal/reminders/due")
 async def due_reminders(request: Request):
     """Called by the WhatsApp bot to fetch and mark reminders that are due."""
-    internal_key = os.getenv("INTERNAL_KEY", "homly-internal")
-    if request.headers.get("X-Internal-Key") != internal_key:
-        raise HTTPException(403, "Forbidden")
+    require_internal_key(request)
 
     now = datetime.now(timezone.utc).isoformat()
     res = (
@@ -114,3 +112,51 @@ async def due_reminders(request: Request):
         supabase.table("reminders").update({"sent": True}).in_("id", ids).execute()
 
     return {"reminders": due}
+
+
+class InternalReminderIn(BaseModel):
+    group_jid: str
+    sender_jid: str
+    message: str
+    remind_at: datetime
+    sender_name: Optional[str] = None
+
+
+@router.post("/internal/reminders", status_code=201)
+async def internal_create_reminder(body: InternalReminderIn, request: Request):
+    """Create a reminder on behalf of a WhatsApp `/remind` command.
+
+    Replaces the bot's direct `supabase.from("reminders").insert(...)`, which
+    was one of the two things keeping a service role key in that process.
+
+    `household_id` is resolved here from `group_jid` rather than taken from the
+    request. The bot keeps its own group→household map and could have sent it,
+    but that map is refreshed on a timer and this endpoint already owns the
+    authoritative mapping — a stale entry would otherwise file a reminder
+    against the wrong household.
+    """
+    require_internal_key(request)
+
+    res = (
+        supabase.table("settings")
+        .select("household_id")
+        .eq("group_jid", body.group_jid)
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(404, "No household for that group")
+    household_id = res.data[0]["household_id"]
+
+    inserted = supabase.table("reminders").insert({
+        "household_id": household_id,
+        "group_jid":    body.group_jid,
+        "sender_jid":   body.sender_jid,
+        "sender_name":  body.sender_name,
+        "message":      body.message,
+        "remind_at":    body.remind_at.isoformat(),
+        "sent":         False,
+    }).execute()
+
+    if not inserted.data:
+        raise HTTPException(500, "Failed to create reminder")
+    return {"status": "ok", "id": inserted.data[0]["id"]}

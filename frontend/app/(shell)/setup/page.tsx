@@ -13,6 +13,10 @@ interface SetupState {
   groups: { id: string; name: string }[];
   group_jid: string | null;
   group_name: string | null;
+  // False for non-admins. Pairing the bot affects every household sharing it,
+  // so the backend withholds the QR and the group list from members and says
+  // so here rather than returning a 403 and blanking the page.
+  can_manage: boolean;
 }
 
 export default function SetupPage() {
@@ -116,7 +120,18 @@ export default function SetupPage() {
               </div>
             )}
 
-            {!state?.connected && (
+            {/* `state &&` matters: a failed /setup/state fetch leaves state null,
+                and without it that would render as "ask an admin" — a
+                permissions explanation for what is actually a network error. */}
+            {state && !state.connected && !state.can_manage && (
+              <div className="text-center py-6">
+                <p className="text-sm text-stone-400">
+                  WhatsApp isn&apos;t connected yet. Ask a household admin to set it up.
+                </p>
+              </div>
+            )}
+
+            {state && !state.connected && state.can_manage && (
               <>
                 {state?.qr ? (
                   <div className="text-center mb-4">

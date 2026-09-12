@@ -81,7 +81,7 @@ jobs:
           { echo "output<<PYTEST_EOF"; tail -c 4000 /tmp/pytest_output.txt; echo "PYTEST_EOF"; } >> "$GITHUB_OUTPUT"
           exit $code
 
-      # Blocking as of task 040. It was informational because it reported 51
+      # Blocking as of task 041. It was informational because it reported 51
       # findings, almost all false positives of safe patterns it couldn't see —
       # and because it never called sys.exit, so this step went green anyway.
       # It now understands those patterns (51 -> 0), exits non-zero, and has its

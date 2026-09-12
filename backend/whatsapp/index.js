@@ -14,8 +14,6 @@ import axios from "axios";
 import FormData from "form-data";
 import pino from "pino";
 import QRCode from "qrcode";
-import { createClient } from "@supabase/supabase-js";
-import ws from "ws";
 import { useSupabaseAuthState } from "./db-auth-state.js";
 // Pure parsing helpers live in their own module so they can be unit-tested
 // without a Baileys socket — see lib/parsing.test.js.
@@ -28,23 +26,27 @@ import {
 } from "./lib/parsing.js";
 
 const FASTAPI_URL   = process.env.FASTAPI_URL   || "http://localhost:8000";
-const INTERNAL_KEY  = process.env.INTERNAL_KEY  || "homly-internal";
-const SERVICE_KEY   = process.env.SUPABASE_KEY;
-const SUPABASE_URL  = process.env.SUPABASE_URL;
+const INTERNAL_KEY  = process.env.INTERNAL_KEY;
 const BOT_TENANT_ID = process.env.BOT_TENANT_ID || "default";
 
-if (!SERVICE_KEY) {
-  console.error("[bot] FATAL: SUPABASE_KEY not set");
+// This process no longer holds SUPABASE_KEY. It used to create a service-role
+// Supabase client for exactly three things — reading every household's
+// `settings` row, inserting a `reminders` row, and persisting its Baileys
+// session — and that key bypasses RLS on every table in the project. All
+// three now go through /internal/* on the backend, authenticated with
+// INTERNAL_KEY. Don't reintroduce a database client here: add an /internal/*
+// endpoint instead, so the blast radius of this process staying compromised
+// is the endpoints it can call rather than the whole database.
+if (!INTERNAL_KEY) {
+  console.error("[bot] FATAL: INTERNAL_KEY not set");
   process.exit(1);
 }
-if (!SUPABASE_URL) {
-  console.error("[bot] FATAL: SUPABASE_URL not set");
-  process.exit(1);
-}
-
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { realtime: { transport: ws } });
 
 const iHeaders = { "X-Internal-Key": INTERNAL_KEY };
+
+// Shared client for backend calls, so the internal key is attached in one
+// place rather than passed to each call site (and to db-auth-state.js).
+const api = axios.create({ baseURL: FASTAPI_URL, headers: iHeaders, timeout: 15000 });
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic",
 ]);
@@ -62,9 +64,7 @@ const groupMap = new Map();
 
 async function refreshGroupMap() {
   try {
-    const { data } = await supabase
-      .from("settings")
-      .select("group_jid, household_id");
+    const { data } = await api.get("/internal/settings");
     groupMap.clear();
     for (const row of data || []) {
       if (row.group_jid) groupMap.set(row.group_jid, row.household_id);
@@ -189,14 +189,14 @@ async function handleReminderCommand(text, remoteJid, senderJid, senderName, soc
   const remindAt = new Date(Date.now() + parsed.ms);
 
   try {
-    await supabase.from("reminders").insert({
-      household_id: groupMap.get(remoteJid),
+    // household_id is resolved server-side from group_jid — see
+    // api/routers/reminders.py's internal_create_reminder.
+    await api.post("/internal/reminders", {
       group_jid: remoteJid,
       sender_jid: senderJid,
       sender_name: senderName,
       message: parsed.message,
       remind_at: remindAt.toISOString(),
-      sent: false,
     });
 
     const when = remindAt.toLocaleString("en-SG", { timeZone: "Asia/Singapore", hour12: true });
@@ -342,35 +342,12 @@ async function handleMessage(msg, sock) {
   }
 }
 
-// LANGGRAPH MIGRATION - kept for rollback
-// async function handleHouseholdQuery(text, groupJid, sock) {
-//   try {
-//     await sock.sendPresenceUpdate("composing", groupJid);
-//     const res = await axios.post(
-//       `${FASTAPI_URL}/query`,
-//       { query: text, group_jid: groupJid },
-//       { headers: { Authorization: `Bearer ${SERVICE_KEY}` }, timeout: 30000 },
-//     );
-//     await sock.sendPresenceUpdate("paused", groupJid);
-//     if (res.data?.handled) {
-//       await sock.sendMessage(groupJid, { text: res.data.response });
-//       return true;
-//     }
-//     return false;
-//   } catch (e) {
-//     console.error("[bot] query failed:", e.message);
-//     await sock.sendPresenceUpdate("paused", groupJid);
-//     return false;
-//   }
-// }
-
-// LANGGRAPH MIGRATION - kept for rollback
-// function isHouseholdQuery(text) {
-//   const t = (text || "").trim();
-//   if (!t || t.length < 5 || t.length > 400) return false;
-//   if (t.endsWith("?")) return true;
-//   return /^(what|how|when|where|who|which|show|tell|list|find|give|total|summarize|summarise|compare|any|are|is|do|did|have|has)\b/i.test(t);
-// }
+// NOTE: a commented-out handleHouseholdQuery() used to sit here, kept for
+// rollback after the LangGraph migration. It authenticated to /query with
+// `Authorization: Bearer ${SERVICE_KEY}` — the Supabase service role key used
+// as an API token. That bypass no longer exists in the backend middleware and
+// this process no longer has the key, so the snippet was removed rather than
+// left as a template. Its replacement is the /internal/graph-invoke call above.
 
 async function forwardText(msg, text) {
   const remoteJid = msg.key.remoteJid;
@@ -418,7 +395,7 @@ async function forwardText(msg, text) {
 
 // ── Main socket ──────────────────────────────────────────────
 async function startSock() {
-  const { state, saveCreds, deleteSession, flush } = await useSupabaseAuthState(BOT_TENANT_ID, supabase);
+  const { state, saveCreds, deleteSession, flush } = await useSupabaseAuthState(BOT_TENANT_ID, api);
   latestFlush = flush;
   const { version } = await fetchLatestBaileysVersion();
   console.log(`[bot] WA version: ${version.join(".")} | tenant: ${BOT_TENANT_ID}`);

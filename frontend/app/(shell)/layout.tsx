@@ -30,7 +30,7 @@ export default function ShellLayout({ children }: { children: React.ReactNode })
         return;
       }
       setUser(session.user);
-      setIsSuperAdmin(session.user.user_metadata?.is_super_admin === true);
+      setIsSuperAdmin(session.user.app_metadata?.is_super_admin === true);
     });
   }, [router]);
 

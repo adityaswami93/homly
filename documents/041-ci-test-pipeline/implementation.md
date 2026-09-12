@@ -1,4 +1,4 @@
-# 040 — CI test pipeline: foundations
+# 041 — CI test pipeline: foundations
 
 ## Problem
 

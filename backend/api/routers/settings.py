@@ -3,6 +3,7 @@ from services.db import get_supabase
 from dotenv import load_dotenv
 
 from services import bot_profile
+from services.internal_auth import require_internal_key
 
 load_dotenv()
 
@@ -97,3 +98,23 @@ def update_settings(request: Request, body: dict):
     return get_or_create_settings(household_id)
 
 
+
+
+@router.get("/internal/settings")
+def internal_settings(request: Request):
+    """Group routing table for the WhatsApp bot's `groupMap`.
+
+    The bot used to read the `settings` table directly with the Supabase
+    service role key. That key bypasses RLS on every table in the project, and
+    the bot process parses untrusted input from the public internet — so it
+    held a database-admin credential to do one cross-household SELECT. This
+    endpoint is that SELECT, behind INTERNAL_KEY, and is the reason the bot no
+    longer needs SUPABASE_KEY at all.
+
+    Deliberately narrow: only the columns the bot routes on. Widening it means
+    handing the bot more than it needs again — add a purpose-specific endpoint
+    instead.
+    """
+    require_internal_key(request)
+    res = supabase.table("settings").select("household_id, group_jid, group_name").execute()
+    return [r for r in (res.data or []) if r.get("group_jid")]

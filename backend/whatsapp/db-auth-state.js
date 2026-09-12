@@ -3,7 +3,6 @@ const require = createRequire(import.meta.url);
 const WA = require("baileys");
 const { initAuthCreds, BufferJSON } = WA;
 
-const TABLE = "whatsapp_auth";
 const BATCH = 50;
 
 // Serialize/deserialize with Baileys' Buffer-aware JSON codec
@@ -12,33 +11,53 @@ const dec = (s) => {
   try { return JSON.parse(s, BufferJSON.reviver); } catch { return null; }
 };
 
-export async function useSupabaseAuthState(tenantId, supabase) {
+/**
+ * Baileys auth state persisted through the backend's /internal/wa-auth/*
+ * endpoints (api/routers/wa_auth.py).
+ *
+ * This used to take a service-role Supabase client and talk to the
+ * `whatsapp_auth` table directly. That meant this process — which parses
+ * untrusted input from the public internet via Baileys — held a credential
+ * that bypasses RLS on every table in the project, to read and write one
+ * table. It goes through the backend now, authenticated with INTERNAL_KEY,
+ * which is scoped to /internal/* and revocable without rotating the database.
+ *
+ * `api` is an axios instance already carrying the X-Internal-Key header.
+ */
+export async function useSupabaseAuthState(tenantId, api) {
   // ── Load all rows into an in-memory cache ──────────────────
   const cache = {};
   try {
-    const { data, error } = await supabase
-      .from(TABLE).select("key, value").eq("tenant_id", tenantId);
-    if (error) throw error;
-    for (const row of data || []) cache[row.key] = row.value;
+    const { data } = await api.get("/internal/wa-auth", { params: { tenant_id: tenantId } });
+    for (const row of data?.rows || []) cache[row.key] = row.value;
   } catch (e) {
+    // Same posture as before: a failed load means "no session", so the bot
+    // falls through to a fresh QR pairing rather than crashing on boot.
     console.error("[auth] Failed to load auth state:", e.message);
   }
 
   // ── Helpers ────────────────────────────────────────────────
   async function upsertRows(rows) {
     for (let i = 0; i < rows.length; i += BATCH) {
-      const { error } = await supabase
-        .from(TABLE)
-        .upsert(rows.slice(i, i + BATCH), { onConflict: "tenant_id,key" });
-      if (error) console.error("[auth] upsert error:", error.message);
+      try {
+        await api.post("/internal/wa-auth/upsert", {
+          tenant_id: tenantId,
+          rows: rows.slice(i, i + BATCH),
+        });
+      } catch (e) {
+        console.error("[auth] upsert error:", e.message);
+      }
     }
   }
 
-  async function deleteKey(key) {
-    const { error } = await supabase
-      .from(TABLE).delete().eq("tenant_id", tenantId).eq("key", key);
-    if (error) console.error("[auth] delete error:", error.message);
-    delete cache[key];
+  async function deleteKeys(keys) {
+    if (!keys.length) return;
+    try {
+      await api.post("/internal/wa-auth/delete", { tenant_id: tenantId, keys });
+    } catch (e) {
+      console.error("[auth] delete error:", e.message);
+    }
+    for (const k of keys) delete cache[k];
   }
 
   // ── Credentials ────────────────────────────────────────────
@@ -48,7 +67,7 @@ export async function useSupabaseAuthState(tenantId, supabase) {
     // Persist fresh creds immediately so the next boot loads them
     const encoded = enc(creds);
     cache["creds"] = encoded;
-    await upsertRows([{ tenant_id: tenantId, key: "creds", value: encoded }]);
+    await upsertRows([{ key: "creds", value: encoded }]);
   }
 
   // ── State object ───────────────────────────────────────────
@@ -76,7 +95,7 @@ export async function useSupabaseAuthState(tenantId, supabase) {
             if (value) {
               const encoded = enc(value);
               cache[k] = encoded;
-              writes.push({ tenant_id: tenantId, key: k, value: encoded });
+              writes.push({ key: k, value: encoded });
             } else {
               delete cache[k];
               deletes.push(k);
@@ -84,17 +103,16 @@ export async function useSupabaseAuthState(tenantId, supabase) {
           }
         }
         if (writes.length) await upsertRows(writes);
-        for (const k of deletes) {
-          await supabase.from(TABLE).delete()
-            .eq("tenant_id", tenantId).eq("key", k);
-        }
+        // Batched into one call — this used to issue one DELETE per key.
+        await deleteKeys(deletes);
       },
 
       clear: async () => {
-        const { error } = await supabase
-          .from(TABLE).delete()
-          .eq("tenant_id", tenantId).neq("key", "creds");
-        if (error) console.error("[auth] clear error:", error.message);
+        try {
+          await api.post("/internal/wa-auth/clear", { tenant_id: tenantId, keep_creds: true });
+        } catch (e) {
+          console.error("[auth] clear error:", e.message);
+        }
         for (const k of Object.keys(cache)) {
           if (k !== "creds") delete cache[k];
         }
@@ -106,13 +124,15 @@ export async function useSupabaseAuthState(tenantId, supabase) {
   async function saveCreds() {
     const encoded = enc(state.creds);
     cache["creds"] = encoded;
-    await upsertRows([{ tenant_id: tenantId, key: "creds", value: encoded }]);
+    await upsertRows([{ key: "creds", value: encoded }]);
   }
 
   async function deleteSession() {
-    const { error } = await supabase
-      .from(TABLE).delete().eq("tenant_id", tenantId);
-    if (error) console.error("[auth] deleteSession error:", error.message);
+    try {
+      await api.post("/internal/wa-auth/clear", { tenant_id: tenantId, keep_creds: false });
+    } catch (e) {
+      console.error("[auth] deleteSession error:", e.message);
+    }
     Object.keys(cache).forEach((k) => delete cache[k]);
   }
 

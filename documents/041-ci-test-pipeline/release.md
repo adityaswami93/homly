@@ -1,4 +1,10 @@
-# 040 — CI test pipeline: foundations (release)
+# 041 — CI test pipeline (release)
+
+> **Renumbered from 040.** This work was authored as `040` before
+> `040-service-role-key-audit` merged to `main` and took that number. The folder, the
+> index row and the CI comment reference are now `041`; the three commits predating the
+> merge still carry a `[040]` prefix in their subject lines, which is cosmetic and was not
+> worth rewriting pushed history to fix.
 
 ## What changed for the user
 
@@ -36,7 +42,7 @@ What changes for anyone working in this repo:
 - `frontend/vitest.config.ts`
 - `frontend/lib/dates.ts`, `frontend/lib/insurance.ts` (+ their `.test.ts`)
 - `frontend/lib/apiUrl.test.ts`, `frontend/config/apps.test.ts`
-- `documents/040-ci-test-pipeline/{implementation,implementation-part2,implementation-part3,release}.md`
+- `documents/041-ci-test-pipeline/{implementation,implementation-part2,implementation-part3,release}.md`
 
 **Deleted**
 - `backend/scratch/test_bot_profile.py` — promoted into `backend/tests/test_bot_profile.py`
@@ -82,6 +88,25 @@ and still does.
 No deploy required — nothing here ships to Railway or Vercel. `requirements-dev.txt` is
 deliberately separate from `requirements.txt` so the production image does not grow a test
 runner.
+
+## Interaction with 040 (service-role-key audit)
+
+`main` merged the service-role-key audit while this was in progress. The two overlap in
+several files and the merge came out clean, but three things were checked rather than
+assumed:
+
+- **`conftest.py`'s `_MODULE_LEVEL_CLIENTS`** still matches the tree exactly — 040 refactored
+  several routers but left all twelve module-scope `get_supabase()` bindings in place,
+  `api/middleware/auth.py` included. Re-derived by grep after merging, not trusted.
+- **The scoping scan is still clean against 040's new code**, including
+  `/internal/reminders`, which resolves `household_id` from `group_jid` server-side and
+  carries it in the insert payload — matched by the payload pattern, correctly.
+- **The five `# household-scope: ok` markers survived intact** and are still attached to the
+  statements they describe (040 edited `reminders.py` and `webhook.py`, both of which carry
+  markers).
+
+040 also added `backend/tests/test_internal_auth.py`, which needs `fastapi` and so runs in
+CI rather than locally.
 
 ## How to verify it worked
 

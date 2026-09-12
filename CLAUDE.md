@@ -114,7 +114,9 @@ homly/
 │   │       ├── tasks.py             # GET/POST/PATCH/DELETE /tasks (chores), /tasks/leave-requests,
 │   │       │                        #   /tasks/helper-profile, /tasks/onboarding/suggest+confirm
 │   │       ├── mcp_data.py          # GET /mcp/data/* — per-household-key-authenticated data-query endpoints
-│   │       └── mcp_keys.py          # GET/POST/DELETE /mcp/keys — JWT-authenticated, generate/revoke MCP keys
+│   │       ├── mcp_keys.py          # GET/POST/DELETE /mcp/keys — JWT-authenticated, generate/revoke MCP keys
+│   │       └── wa_auth.py           # /internal/wa-auth/* — the bot's Baileys session store. Exists so the
+│   │                                #   bot doesn't need a Supabase service-role client; see Authentication
 │   │       # NOTE: analytics.py, admin.py, budgets.py, insights.py, recipe.py, pantry.py, waitlist.py,
 │   │       # reminders.py, commands.py, savings.py, reimbursements.py also exist — see `ls backend/api/routers`
 │   ├── mcp_server/                 # MCP server, two transports over the same tools/data:
@@ -167,6 +169,9 @@ homly/
 │   │   ├── bot_profile.py          # per-household assistant config: persona (name/tone/casual chat)
 │   │   │                           #   folded into both agent system prompts, and should_engage() —
 │   │   │                           #   the single rule for whether a group message gets a reply at all
+│   │   ├── internal_auth.py        # require_internal_key()/has_internal_key() — the ONLY X-Internal-Key
+│   │   │                           #   check. No default (an unset INTERNAL_KEY fails closed), constant-time
+│   │   │                           #   compare. Was copy-pasted into six routers; see Authentication
 │   │   ├── mcp_auth.py             # generate_key()/hash_key()/SCOPE — shared by mcp_keys.py and mcp_data.py
 │   │   ├── mcp_queries.py          # the actual data fetching behind every MCP tool — shared by mcp_data.py
 │   │   │                           # (HTTP, for the local stdio server) and mcp_server/remote.py (in-process)
@@ -200,8 +205,11 @@ homly/
 │   │   │                                    #   match against `reimbursements` — see services/reimbursement.py
 │   │   ├── 034_bot_personality.sql   # bot_name/tone/engagement_mode/casual_chat/proactive on settings
 │   │   ├── 035_conversation_messages.sql  # per-group chat transcript, see services/conversation.py
-│   │   └── 036_waitlist_variant.sql  # waitlist.variant — which landing-page hero a signup came from,
-│   │                                 #   so the headline A/B test is settled by conversion data
+│   │   ├── 036_waitlist_variant.sql  # waitlist.variant — which landing-page hero a signup came from,
+│   │   │                             #   so the headline A/B test is settled by conversion data
+│   │   └── 037_super_admin_app_metadata.sql  # moves is_super_admin from auth.users.raw_user_meta_data
+│   │                                 #   (user-writable → self-promotion to super admin) to
+│   │                                 #   raw_app_meta_data (service-role only). See Authentication.
 │   ├── tests/                      # pytest suite — see Testing & CI below
 │   │   ├── conftest.py             # placeholder_env / fake_supabase / api_client fixtures
 │   │   ├── fakes.py                # THE FakeSupabase + assert_scoped_to(); don't hand-roll another
@@ -1001,7 +1009,7 @@ One row per household, captured at `/chores/setup` onboarding. Drives the daily-
 
 | Method | Path | Caller | Description |
 |--------|------|--------|-------------|
-| GET | `/internal/settings` | Bot | All households' settings array |
+| GET | `/internal/settings` | Bot | Group routing table (`household_id`, `group_jid`, `group_name`) for the bot's `groupMap`. Deliberately only those columns — widening it hands the bot back the broad read access 040 removed |
 | POST | `/internal/qr` | Bot | Push QR data URL to backend state |
 | POST | `/internal/connected` | Bot | Signal connected + push group list |
 | GET | `/internal/qr-status` | Bot | Check/clear QR regeneration flag |
@@ -1010,6 +1018,11 @@ One row per household, captured at `/chores/setup` onboarding. Drives the daily-
 | GET | `/internal/help` | Bot | Capabilities summary (`registry.build_help_text()`) for `/help` |
 | POST | `/internal/graph-invoke` | Bot | Invoke `agents/homly_graph.py` for a WhatsApp message (text or image). Text calls also carry `sender_name`/`sender_phone`, `whatsapp_message_id`, and the `was_mentioned`/`is_reply_to_bot` addressing flags. Also loads and records the group's conversation transcript around the run — see Conversation Memory Flow |
 | GET | `/internal/reminders/due` | Bot | Poll for due `/remind` reminders |
+| POST | `/internal/reminders` | Bot | Create a reminder from a `/remind` command. `household_id` is resolved server-side from `group_jid` — the bot's `groupMap` is timer-refreshed and a stale entry would file against the wrong household |
+| GET | `/internal/wa-auth` | Bot | Load this `tenant_id`'s Baileys session rows (`api/routers/wa_auth.py`) |
+| POST | `/internal/wa-auth/upsert` | Bot | Write session rows (batched, max 200) |
+| POST | `/internal/wa-auth/delete` | Bot | Delete named session keys |
+| POST | `/internal/wa-auth/clear` | Bot | Drop the session — `keep_creds` distinguishes Baileys' `keys.clear()` from a full `deleteSession()` |
 | GET | `/internal/commands` | Bot | Fetch custom command triggers, cached in the bot |
 
 ### MCP data query (per-household API key, not JWT or `X-Internal-Key`)
@@ -1044,12 +1057,12 @@ One row per household, captured at `/chores/setup` onboarding. Drives the daily-
 > has nowhere else to go. Same tools, same underlying data (`services/mcp_queries.py`) as the local
 > stdio server; see the MCP Data-Query Flow diagram above.
 
-### Setup (no auth)
+### Setup (JWT required)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/setup/state` | Current WhatsApp connection state |
-| POST | `/setup/reset-qr` | Request QR regeneration |
+| GET | `/setup/state` | WhatsApp connection state. `qr` and `groups` are returned only to household admins (both are platform-wide, not household-scoped); `can_manage` tells the page which it got |
+| POST | `/setup/reset-qr` | Drop the bot's WhatsApp session and request a new pairing QR. **Household admin only** — it was unauthenticated until 040, and it disconnects *every* household, not just the caller's |
 | GET | `/setup/qr-stream` | SSE stream for QR / connected events |
 
 ### Auth
@@ -1069,22 +1082,53 @@ One row per household, captured at `/chores/setup` onboarding. Drives the daily-
 3. `AuthMiddleware` (JWKS-based) verifies the JWT, fetches the user's `household_id` from `household_members`, and sets `request.state.user`
 4. On 401, the frontend interceptor signs out and redirects to `/login`
 
-### Service Key Auth (WhatsApp bot)
+**`is_super_admin` comes from the JWT's `app_metadata` claim, never `user_metadata`.**
+`user_metadata` is writable by the user it describes — `supabase.auth.updateUser({ data: … })`
+with the anon key is enough — so reading the flag there let any registered user promote
+themselves and read every household through `/admin/*`. `app_metadata` is
+service-role-write-only. Granting it is an operator action (see
+`migrations/037_super_admin_app_metadata.sql`). **Never add a `user_metadata`
+fallback**, in the middleware or the frontend; that restores the vulnerability.
 
-The bot uses `SUPABASE_KEY` (service role key) as its bearer token. The middleware detects this and sets:
-```python
-request.state.user = {
-    "sub": None,
-    "household_id": None,   # endpoint reads from form/query
-    "role": "service",
-    "is_service_key": True,
-}
-```
-Endpoints that accept service key calls read `household_id` from the form field (`process-receipt`) or query param (`/summary/last7days`, `/this-week`, `/insurance`).
+### Service Key Auth — removed
+
+The middleware used to accept `SUPABASE_KEY` (the service role key) as a bearer
+token, setting `is_service_key: True` — unrestricted access to every
+JWT-protected endpoint, with `household_id` read from the caller's own
+form/query params. **That branch is gone.** Nothing sends it; the bot
+authenticates to `/internal/*` with `X-Internal-Key`, and MCP clients use their
+own per-household keys. Don't reintroduce it — presenting a database-admin
+credential as an API token puts it on request paths any proxy may log. Add an
+`/internal/*` endpoint behind `require_internal_key()` instead.
+
+The `is_service_key` blocks still sitting in `expenses.py`, `insurance.py`,
+`pantry.py`, `tasks.py`, `query.py` and `recipe.py` are unreachable leftovers
+awaiting a cleanup sweep — don't build on them.
 
 ### Internal Key Auth (bot ↔ backend internal endpoints)
 
-Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT needed). They validate the `X-Internal-Key` header against the `INTERNAL_KEY` env var instead.
+Endpoints under `/internal/*` are in `SKIP_AUTH_PATHS` (no JWT needed) and
+validate the `X-Internal-Key` header instead. That check lives in exactly one
+place — **`services/internal_auth.py`'s `require_internal_key()`** (and
+`has_internal_key()`, the non-raising variant `/webhook/whatsapp` needs because
+it accepts either that key or a Green API instance id). Don't re-implement it in
+a router: it used to be copy-pasted into six of them, each defaulting to
+`os.getenv("INTERNAL_KEY", "homly-internal")`, so an unset key in production
+left every internal endpoint — `/internal/graph-invoke` included, which takes an
+arbitrary `household_id` — guarded by a string published in this repo. There is
+no default now; unset fails every internal request closed with 503, and the
+comparison is `hmac.compare_digest`.
+
+`INTERNAL_KEY` is a first-party, all-household secret. Anything user-facing
+belongs behind the JWT middleware or a per-household MCP key instead.
+
+**`/setup/*` is NOT internal-key auth** — those are normal JWT endpoints.
+`/setup/reset-qr` in particular used to be in `SKIP_AUTH_PATHS` with no
+credential check of any kind, callable by anyone on the internet to drop the
+shared WhatsApp session. It now requires a household admin. See the module
+docstring in `api/routers/setup.py` for why the QR and group list are
+admin-gated, and for the cross-tenant exposure that remains while one bot
+process serves every household.
 
 ---
 
@@ -1095,7 +1139,12 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 - **`groupMap`** — `Map<groupJid, {household_id, settings}>` — built on connect, refreshed every 5 min
 - **`cronJobs`** — `Map<household_id, CronJob>` — one cron per household, rescheduled when settings change
 - **`currentSock`** — module-level reference to the active Baileys socket, used by QR regeneration poller
-- **`SERVICE_KEY`** — `SUPABASE_KEY` value used as bearer for all backend API calls
+- **`api`** — shared axios instance carrying `X-Internal-Key` on every backend call. The bot holds
+  **no** database credential: it used to build a service-role Supabase client for three things —
+  reading every household's `settings`, inserting a `reminders` row, and persisting its Baileys
+  session — all of which now go through `/internal/settings`, `/internal/reminders` and
+  `/internal/wa-auth/*`. Don't add one back; this process parses untrusted input from the public
+  internet, so its blast radius should be the endpoints it can call, not the whole database.
 - **Daily renewal cron** — 09:00 SGT cron hits `/internal/insurance/renewals` and sends reminders to household groups
 - **`lib/parsing.js`** — the pure helpers below live here rather than in `index.js`, so they can be
   unit-tested without a Baileys socket (`npm test`, no dependencies). Anything added here should be
@@ -1118,8 +1167,10 @@ Endpoints under `/internal/*` and `/setup/*` are in `SKIP_AUTH_PATHS` (no JWT ne
 | Variable | Description |
 |----------|-------------|
 | `FASTAPI_URL` | Backend URL (e.g. `http://localhost:8000`) |
-| `SUPABASE_KEY` | Supabase service role key (never expires — no refresh needed) |
-| `INTERNAL_KEY` | Shared secret for `/internal/*` endpoints (default: `homly-internal`) |
+| `INTERNAL_KEY` | Shared secret for `/internal/*` endpoints. **Required — no default**; the bot exits at startup without it. Must match the backend's. |
+| `BOT_TENANT_ID` | Identifies this process's Baileys session rows in `whatsapp_auth` (default `default`) |
+
+`SUPABASE_KEY`/`SUPABASE_URL` are deliberately absent — see `api`/blast-radius note above.
 
 ---
 

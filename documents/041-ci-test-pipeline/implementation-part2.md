@@ -1,4 +1,4 @@
-# 040 (part 2) — Coverage, a blocking tenancy guard, and CI for the bot
+# 041 (part 2) — Coverage, a blocking tenancy guard, and CI for the bot
 
 Part 1 (`implementation.md`) made the toolchain reproducible. This part makes the
 pipeline actually catch things.

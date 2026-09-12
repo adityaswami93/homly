@@ -1,10 +1,10 @@
-import os
 from datetime import date, timedelta
 from fastapi import APIRouter, Request, HTTPException
 from services.db import get_supabase
 from dotenv import load_dotenv
 
 from services.reimbursement import compute_reimbursement_totals
+from services.internal_auth import require_internal_key
 
 load_dotenv()
 
@@ -60,9 +60,7 @@ async def send_message(request: Request, body: dict):
 @router.get("/internal/messages")
 def pop_messages(request: Request):
     """Bot polls this to get pending outgoing messages."""
-    key = request.headers.get("X-Internal-Key")
-    if key != os.getenv("INTERNAL_KEY", "homly-internal"):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    require_internal_key(request)
     from services.whatsapp_client import pop_outgoing
     return {"messages": pop_outgoing()}
 

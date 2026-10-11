@@ -27,13 +27,19 @@ const dec = (s) => {
 export async function useSupabaseAuthState(tenantId, api) {
   // ── Load all rows into an in-memory cache ──────────────────
   const cache = {};
+  // A failed load THROWS — it must never be read as "no session". This used to
+  // log and carry on with an empty cache, which minted fresh creds below and
+  // upserted them over the real ones: one reconnect that landed while the
+  // backend was redeploying (or returned 503/401) silently unpaired the bot,
+  // and it sat posting QR codes until someone re-scanned. startSockWithRetry()
+  // retries a throw in 5s, which is what a backend blip actually needs.
   try {
     const { data } = await api.get("/internal/wa-auth", { params: { tenant_id: tenantId } });
-    for (const row of data?.rows || []) cache[row.key] = row.value;
+    if (!Array.isArray(data?.rows)) throw new Error("malformed /internal/wa-auth response");
+    for (const row of data.rows) cache[row.key] = row.value;
   } catch (e) {
-    // Same posture as before: a failed load means "no session", so the bot
-    // falls through to a fresh QR pairing rather than crashing on boot.
     console.error("[auth] Failed to load auth state:", e.message);
+    throw new Error(`auth state unavailable: ${e.message}`);
   }
 
   // ── Helpers ────────────────────────────────────────────────
@@ -61,9 +67,14 @@ export async function useSupabaseAuthState(tenantId, api) {
   }
 
   // ── Credentials ────────────────────────────────────────────
+  // Only a successful load with no `creds` row means "never paired" — that's
+  // the one case allowed to mint fresh creds. A row that won't decode is
+  // corrupt, not absent: refuse rather than overwrite it.
   const rawCreds = cache["creds"];
   const creds = rawCreds ? dec(rawCreds) : initAuthCreds();
+  if (rawCreds && !creds) throw new Error("stored creds failed to decode — refusing to overwrite");
   if (!rawCreds) {
+    console.warn(`[auth] No stored session for tenant ${tenantId} — starting a fresh pairing`);
     // Persist fresh creds immediately so the next boot loads them
     const encoded = enc(creds);
     cache["creds"] = encoded;

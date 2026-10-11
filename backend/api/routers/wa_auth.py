@@ -31,6 +31,12 @@ TABLE = "whatsapp_auth"
 # Supabase rejects very large payloads; the bot already batches at 50 and the
 # cap is here too so a malformed client can't push an unbounded write.
 MAX_ROWS_PER_WRITE = 200
+# PostgREST caps every SELECT at the project's max-rows (1000 by default) and
+# says nothing when it truncates. A paired bot in a few busy groups easily holds
+# more signal-key rows than that, so the load has to page, or `creds` can be
+# silently missing from the result — which the bot used to treat as "never
+# paired" and overwrite with fresh credentials. See documents/041-*.
+LOAD_PAGE_SIZE = 1000
 
 _supabase = None
 
@@ -71,8 +77,20 @@ def load_auth_state(request: Request, tenant_id: Optional[str] = None):
     if not tenant_id:
         raise HTTPException(400, "tenant_id required")
 
-    res = _db().table(TABLE).select("key, value").eq("tenant_id", tenant_id).execute()
-    return {"rows": res.data or []}
+    rows: list = []
+    start = 0
+    while True:
+        res = _db().table(TABLE).select("key, value")\
+            .eq("tenant_id", tenant_id)\
+            .order("key")\
+            .range(start, start + LOAD_PAGE_SIZE - 1)\
+            .execute()
+        page = res.data or []
+        rows.extend(page)
+        if len(page) < LOAD_PAGE_SIZE:
+            break
+        start += LOAD_PAGE_SIZE
+    return {"rows": rows}
 
 
 @router.post("/internal/wa-auth/upsert")

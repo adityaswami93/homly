@@ -1,0 +1,70 @@
+# 041 — WhatsApp session overwritten on a failed load · Release notes
+
+**Type:** bug fix · **Breaking:** no
+
+## What changed for the user
+
+Nothing visible. The bot no longer unpairs itself when it reconnects while the
+backend is briefly unavailable. Instead it logs
+`[auth] Failed to load auth state: …` / `startSock failed … retrying in 5s` and
+resumes once the backend answers.
+
+**This does not reconnect a bot that is already unpaired.** A household admin
+must re-scan once: dashboard → `/setup` → Generate QR → scan from the WhatsApp
+account the bot runs on (Linked devices → Link a device).
+
+## Files
+
+- `backend/whatsapp/db-auth-state.js` — throw on a failed or malformed load instead of minting fresh creds
+- `backend/api/routers/wa_auth.py` — page the session load past PostgREST's 1000-row cap
+- `backend/tests/test_wa_auth_load.py` — pagination tests
+- `frontend/package.json` — `engines.node: "24.x"`. Vercel stopped building on
+  Node 20 ("Node.js Version \"20.x\" is discontinued"), which failed this
+  branch's preview deploy. Vercel uses `engines.node` over the Project Settings
+  value, so this fixes it from the repo without anyone changing the dashboard.
+  Updating Project Settings → Node.js Version to 24.x as well is harmless and
+  removes Vercel's override warning.
+- `.github/workflows/ci.yml` — the frontend job builds on Node 24 to match
+- `frontend/package.json` — `next` 16.1.6 → 16.4.0 and `eslint-config-next` →
+  `^16.4.0`. `npm audit` reported 7 high + 1 critical, mostly `sharp`'s bundled
+  libvips/libheif/librsvg CVEs, pulled in through `next`. **Don't use
+  `npm audit fix --force` here**: it "fixes" the glob advisory by downgrading
+  `eslint-config-next` to 14.2.35, which targets Next 14 / ESLint 8 and conflicts
+  with this repo's Next 16 / ESLint 10. If your local `package.json` has 14.2.35
+  from running it, discard that change (`git checkout frontend/package.json`) and
+  re-run `npm install`.
+
+## Migrations / env vars
+
+None. Check that `INTERNAL_KEY` is set and identical on the backend and bot
+services. If it isn't, the bot now retries every 5s with a 401/503 in its log
+instead of showing a QR.
+
+## Deploy order
+
+Backend first, then the bot. Either order is safe.
+
+## Verify
+
+1. After deploy, re-scan the QR once. The backend log should show
+   `GET /internal/messages` polling and the bot log `[bot] Connected!`.
+2. Restart the backend service while the bot is running. The bot may log load
+   failures, but must come back **without** a new `POST /internal/qr`.
+
+## How this was tested
+
+The backend deps couldn't be installed here (no package index reachable), so
+`pytest` didn't run. Instead:
+
+- The pagination tests in `test_wa_auth_load.py` were run with `fastapi`,
+  `pydantic` and `services.*` stubbed out. All 3 pass.
+- `db-auth-state.js` was exercised with a stubbed `baileys` and a fake `api`
+  client covering four cases: backend error → throws, zero writes; paired creds →
+  loaded, zero writes; empty tenant → fresh creds written once; corrupt creds →
+  throws, zero writes.
+
+It wasn't run against a live WhatsApp connection.
+
+## Known issues
+
+`/setup/reset-qr` ends the socket but doesn't clear stored creds. See implementation.md.

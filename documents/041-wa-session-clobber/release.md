@@ -18,6 +18,13 @@ account the bot runs on (Linked devices → Link a device).
 - `backend/whatsapp/db-auth-state.js` — throw on a failed or malformed load instead of minting fresh creds
 - `backend/api/routers/wa_auth.py` — page the session load past PostgREST's 1000-row cap
 - `backend/tests/test_wa_auth_load.py` — pagination tests
+- `frontend/package.json` — `engines.node: "24.x"`. Vercel stopped building on
+  Node 20 ("Node.js Version \"20.x\" is discontinued"), which failed this
+  branch's preview deploy. Vercel uses `engines.node` over the Project Settings
+  value, so this fixes it from the repo without anyone changing the dashboard.
+  Updating Project Settings → Node.js Version to 24.x as well is harmless and
+  removes Vercel's override warning.
+- `.github/workflows/ci.yml` — the frontend job builds on Node 24 to match
 
 ## Migrations / env vars
 

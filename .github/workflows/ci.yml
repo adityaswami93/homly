@@ -114,9 +114,11 @@ jobs:
       # file, and frontend/package-lock.json doesn't exist yet — see the
       # TODO below. Re-add `cache: npm` / cache-dependency-path once the
       # lockfile is committed.
+      # Keep in step with frontend/package.json's `engines.node`, which is
+      # what Vercel builds with — it rejects the discontinued Node 20.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       # TODO: switch to `npm ci` (and re-enable npm caching above) once
       # frontend/package-lock.json is committed — there is currently no

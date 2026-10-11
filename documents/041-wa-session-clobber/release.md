@@ -25,6 +25,14 @@ account the bot runs on (Linked devices → Link a device).
   Updating Project Settings → Node.js Version to 24.x as well is harmless and
   removes Vercel's override warning.
 - `.github/workflows/ci.yml` — the frontend job builds on Node 24 to match
+- `frontend/package.json` — `next` 16.1.6 → 16.4.0 and `eslint-config-next` →
+  `^16.4.0`. `npm audit` reported 7 high + 1 critical, mostly `sharp`'s bundled
+  libvips/libheif/librsvg CVEs, pulled in through `next`. **Don't use
+  `npm audit fix --force` here**: it "fixes" the glob advisory by downgrading
+  `eslint-config-next` to 14.2.35, which targets Next 14 / ESLint 8 and conflicts
+  with this repo's Next 16 / ESLint 10. If your local `package.json` has 14.2.35
+  from running it, discard that change (`git checkout frontend/package.json`) and
+  re-run `npm install`.
 
 ## Migrations / env vars
 

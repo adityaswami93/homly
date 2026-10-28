@@ -63,7 +63,7 @@ class HomlyState(TypedDict):
     addressed: Optional[bool]
 
     # Classification result
-    message_type: Optional[str]  # "receipt"|"recipe"|"text_query"|"pantry_command"|"fridge_scan"|"other_image"|"unknown"
+    message_type: Optional[str]  # "receipt"|"recipe"|"text_query"|"pantry_command"|"fridge_scan"|"voucher"|"other_image"|"unknown"
 
     # Whether the household's engagement mode lets the assistant answer this
     # one at all (services/bot_profile.py's should_engage). Receipts, recipes,
@@ -107,7 +107,15 @@ _CLASSIFY_PROMPT = (
     'Look at this image and reply with ONLY a JSON object, no markdown:\n'
     '{"type": "receipt"} if it is a shopping/grocery/restaurant receipt or invoice,\n'
     '{"type": "food_photo"} if it is a photo of prepared food or a dish,\n'
+    '{"type": "voucher"} if it is mainly a voucher, coupon, promo code or discount offer to redeem later,\n'
     '{"type": "other_image"} for anything else.'
+)
+
+# A caption that says what the photo is wins over the vision classifier, as the
+# fridge keywords do — "save this voucher" on a screenshot of an app is
+# unambiguous even when the image itself looks like any other screenshot.
+_VOUCHER_CAPTION_KEYWORDS = (
+    "voucher", "promo", "coupon", "discount code", "e-voucher", "evoucher",
 )
 
 _PANTRY_PREFIXES = (
@@ -163,14 +171,8 @@ _TEXT_CLASSIFY_TIMEOUT_SECONDS = 6.0
 
 
 def _parse_json_object(raw: str) -> dict:
-    clean = (raw or "").strip()
-    if clean.startswith("```"):
-        parts = clean.split("```")
-        clean = parts[1]
-        if clean.startswith("json"):
-            clean = clean[4:]
-        clean = clean.strip()
-    return json.loads(clean)
+    from services.llm_client import parse_json_object
+    return parse_json_object(raw)
 
 
 def _classify_text_llm(text: str, context: Optional[list] = None) -> Optional[str]:
@@ -346,6 +348,8 @@ def classify_node(state: HomlyState) -> dict:
 
             # Caption-based fridge scan detection takes priority over vision classifier
             caption = raw_caption.lower()
+            if any(kw in caption for kw in _VOUCHER_CAPTION_KEYWORDS):
+                return _classified("voucher")
             if any(kw in caption for kw in _FRIDGE_SCAN_KEYWORDS):
                 return _classified("fridge_scan")
 
@@ -371,10 +375,13 @@ def classify_node(state: HomlyState) -> dict:
             result = json.loads(clean)
             img_type = result.get("type", "other_image")
             # "other_image" is its own message_type (not folded into "unknown") —
-            # it must never reach the chat orchestrator, which has no way to see
-            # the photo itself, only whatever caption text (if any) came with it.
-            # See route_by_type / unsupported_image_node below.
-            mapping = {"receipt": "receipt", "food_photo": "recipe", "other_image": "other_image"}
+            # it must never reach the chat orchestrator directly, which has no
+            # way to see the photo itself, only whatever caption text came with
+            # it. It goes to read_image_node instead, which reads it first.
+            mapping = {
+                "receipt": "receipt", "food_photo": "recipe",
+                "voucher": "voucher", "other_image": "other_image",
+            }
             return _classified(mapping.get(img_type, "other_image"))
 
         if state.get("query"):
@@ -426,18 +433,160 @@ def classify_node(state: HomlyState) -> dict:
 
 
 def unsupported_image_node(state: HomlyState) -> dict:
-    """A photo the vision classifier couldn't place as a receipt, dish, or
-    fridge/pantry scan, and that the household engaged with anyway (addressed,
-    or `always` mode). Answers honestly instead of handing it to the chat
-    orchestrator — run_query() only ever sees the caption text, never the
-    image itself, so pretending to have looked at the photo would just be a
-    confident-sounding guess about a picture nobody actually read.
+    """The fallback when read_image_node couldn't read a photo (the vision
+    call failed or returned nothing usable). Answers honestly instead of
+    handing it to the chat orchestrator — run_query() only ever sees the
+    caption text, never the image itself, so pretending to have looked at the
+    photo would just be a confident-sounding guess about a picture nobody
+    actually read.
     """
     return {
         "response": (
-            "📷 I can't tell what this photo is for — I can help with receipts, "
-            "fridge/pantry photos, and dishes you want ingredient help with."
+            "📷 I couldn't read this photo — try a sharper, well-lit shot. I can help with "
+            "receipts, letters and bills, vouchers, fridge/pantry photos, and dishes."
         )
+    }
+
+
+def _format_reading(reading: dict, saved: bool) -> str:
+    """The reply to a read photo: what it is, the facts that matter, and the
+    question. It is also what services/conversation.py records as the
+    assistant's turn, so it has to carry enough for the *next* message ("1",
+    "remind me the day before") to be resolved from context alone — and stay
+    under that module's per-turn cap (_MAX_CONTENT_CHARS), hence the trims."""
+    lines = [f"📄 *{reading.get('title') or 'Photo'}*"]
+    if reading.get("summary"):
+        lines.append(reading["summary"][:300])
+    facts = reading.get("key_facts") or []
+    if facts:
+        lines.append("")
+        lines.extend(f"• {f['label']}: {f['value']}"[:120] for f in facts[:5])
+
+    actions = reading.get("suggested_actions") or []
+    if actions:
+        lines.append("")
+        lines.append("What would you like me to do?")
+        for i, a in enumerate(actions, 1):
+            lines.append(f"{i}. {a['label']}")
+        lines.append(f"{len(actions) + 1}. Nothing for now — just keep it")
+        lines.append("_Reply with a number, or tell me what to do._")
+    elif saved:
+        lines.append("")
+        lines.append("_I've kept it — ask me about it any time, or tell me what to do with it._")
+    if not saved:
+        lines.append("_(I couldn't save it for later, though — I'll only remember it for a few hours.)_")
+    return "\n".join(lines)
+
+
+def read_image_node(state: HomlyState) -> dict:
+    """A photo that isn't a receipt, dish, fridge scan or clear-cut voucher,
+    and that the household engaged with (addressed, or `always` mode — an
+    unaddressed photo never gets here, see classify_node). Read it, keep it,
+    and ask what to do.
+
+    The question and the answer are two separate graph runs, and nothing new
+    joins them — on purpose. The reply below is recorded in the group's
+    transcript (services/conversation.py), the answer arrives within the
+    follow-up window or as a WhatsApp reply to it (both are `addressed`
+    signals already), and the chat supervisor resolves "1" or "remind me
+    instead" against that context like any other follow-up. The full reading
+    is in household_documents for anything the reply didn't carry
+    (agents/query/documents_agent.py). A pantry-style pending row isn't
+    needed: that one exists because a bare "yes" has no meaning without it,
+    whereas these options are free-form and the supervisor already handles
+    free-form replies.
+    """
+    from agents.document_reader import read_image
+    from agents.orchestrator.registry import describe_capabilities
+    from services import documents
+    from services.household_time import household_today
+
+    household_id = state["household_id"]
+    wa_id = state.get("whatsapp_message_id")
+    if wa_id and documents.get_by_whatsapp_id(household_id, wa_id):
+        # A Baileys redelivery of a photo already read and answered.
+        return {"response": None}
+
+    img_bytes = state["image_bytes"]
+    img_mime = state.get("image_mime") or "image/jpeg"
+    caption = (state.get("query") or "").strip() or None
+
+    reading = read_image(
+        img_bytes, img_mime, caption=caption,
+        capabilities=describe_capabilities(),
+        today=household_today(household_id),
+    )
+    if reading.get("error"):
+        return unsupported_image_node(state)
+
+    image_path = documents.upload_image(img_bytes, img_mime, household_id)
+    doc = documents.save_document(
+        household_id, reading,
+        group_jid=state.get("group_jid"),
+        source="whatsapp",
+        image_path=image_path,
+        mime_type=img_mime,
+        caption=caption,
+        sender_name=state.get("sender_name"),
+        sender_phone=state.get("sender_phone"),
+        whatsapp_message_id=wa_id,
+    )
+    return {
+        "response": _format_reading(reading, saved=doc is not None),
+        "agent_results": [{"agent": "document", "data": {"document_id": (doc or {}).get("id"), **reading}}],
+    }
+
+
+def voucher_node(state: HomlyState) -> dict:
+    """A photo that is clearly a voucher or promo code — saved straight to the
+    wallet without asking, the way a receipt is. If extraction finds no
+    voucher after all (the classifier or caption was wrong), it is treated as
+    any other photo: read-and-ask if the household engaged, silence if not —
+    "voucher" is in should_engage's always-engage set, "other_image" isn't."""
+    from agents.voucher_agent import extract_from_image
+    from services import documents, vouchers
+    from services.household_time import household_today
+
+    household_id = state["household_id"]
+    img_bytes = state["image_bytes"]
+    img_mime = state.get("image_mime") or "image/jpeg"
+
+    data = extract_from_image(img_bytes, img_mime, today=household_today(household_id))
+    if not data.get("is_voucher") or not data.get("merchant"):
+        profile = bot_profile.get_profile(household_id)
+        if bot_profile.should_engage("other_image", profile, bool(state.get("addressed"))):
+            return read_image_node(state)
+        return {"response": None}
+
+    # The image is kept even when there's a code: a barcode/QR voucher is
+    # *only* the image, and for a code it's the fallback when OCR misread it.
+    image_path = documents.upload_image(img_bytes, img_mime, household_id, bucket=vouchers.BUCKET)
+    row, created, error = vouchers.create_voucher(
+        household_id, data,
+        source="whatsapp",
+        image_path=image_path,
+        confidence=data.get("confidence"),
+        added_by_name=state.get("sender_name"),
+        added_by_phone=state.get("sender_phone"),
+        whatsapp_message_id=state.get("whatsapp_message_id"),
+    )
+    if not created and image_path:
+        vouchers.discard_image(image_path)
+    if error:
+        return {"response": f"🎟️ That looks like a voucher, but I couldn't save it: {error}"}
+    if not created:
+        if row and row.get("whatsapp_message_id") and row.get("whatsapp_message_id") == state.get("whatsapp_message_id"):
+            return {"response": None}  # redelivery — already announced
+        return {"response": f"🎟️ Already in the wallet: {vouchers.describe(row)}"}
+
+    response = f"🎟️ Saved to the voucher wallet: {vouchers.describe(row)}"
+    if row.get("terms"):
+        response += f"\n_{row['terms'][:200]}_"
+    if row.get("code") and row.get("confidence") == "low":
+        response += "\n⚠️ Part of the code was hard to read — please double-check it."
+    return {
+        "response": response,
+        "agent_results": [{"agent": "voucher", "data": row}],
     }
 
 
@@ -958,7 +1107,7 @@ def route_by_type(state: HomlyState) -> str:
     # force_finalize_node guarantees a text answer — so handing it the message
     # is what makes "always responds" true. "other_image" does NOT go here —
     # unlike text, the orchestrator has no way to see the photo itself, so it
-    # gets its own honest fixed reply instead (unsupported_image_node).
+    # is read first (read_image_node) and the reading is what it gets to see.
     if message_type == "unknown" and state.get("engage"):
         return "text_query"
 
@@ -981,7 +1130,8 @@ _builder.add_node("recipe", recipe_node)
 _builder.add_node("query", query_node)
 _builder.add_node("pantry", pantry_node)
 _builder.add_node("payment_confirm", payment_confirm_node)
-_builder.add_node("unsupported_image", unsupported_image_node)
+_builder.add_node("read_image", read_image_node)
+_builder.add_node("voucher", voucher_node)
 _builder.add_node("synthesise", synthesise_node)
 
 # Phase 3 nodes
@@ -1002,7 +1152,8 @@ _builder.add_conditional_edges("classify", route_by_type, {
     "fridge_scan": "fridge_scan",
     "payment_confirmation": "payment_confirm",
     "pantry_confirmation": "resume_from_confirmation",
-    "other_image": "unsupported_image",
+    "voucher": "voucher",
+    "other_image": "read_image",
     "unknown": END,
     "silent": END,
 })
@@ -1035,7 +1186,8 @@ _builder.add_edge("recipe", "synthesise")
 _builder.add_edge("query", "synthesise")
 _builder.add_edge("pantry", "synthesise")
 _builder.add_edge("payment_confirm", END)
-_builder.add_edge("unsupported_image", END)
+_builder.add_edge("read_image", END)
+_builder.add_edge("voucher", END)
 _builder.add_edge("synthesise", END)
 
 # Stateless graph — used for API calls that don't need memory

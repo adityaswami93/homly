@@ -115,8 +115,11 @@ homly/
 │   │       │                        #   /tasks/helper-profile, /tasks/onboarding/suggest+confirm
 │   │       ├── mcp_data.py          # GET /mcp/data/* — per-household-key-authenticated data-query endpoints
 │   │       ├── mcp_keys.py          # GET/POST/DELETE /mcp/keys — JWT-authenticated, generate/revoke MCP keys
-│   │       └── wa_auth.py           # /internal/wa-auth/* — the bot's Baileys session store. Exists so the
-│   │                                #   bot doesn't need a Supabase service-role client; see Authentication
+│   │       ├── wa_auth.py           # /internal/wa-auth/* — the bot's Baileys session store. Exists so the
+│   │       │                        #   bot doesn't need a Supabase service-role client; see Authentication
+│   │       ├── vouchers.py          # GET/POST/PATCH/DELETE /vouchers, POST /vouchers/extract (upload/paste →
+│   │       │                        #   unsaved preview), /vouchers/{id}/use, /vouchers/{id}/image
+│   │       └── documents.py         # GET/DELETE /documents — photos the WhatsApp assistant read and kept
 │   │       # NOTE: analytics.py, admin.py, budgets.py, insights.py, recipe.py, pantry.py, waitlist.py,
 │   │       # reminders.py, commands.py, savings.py, reimbursements.py also exist — see `ls backend/api/routers`
 │   ├── mcp_server/                 # MCP server, two transports over the same tools/data:
@@ -125,6 +128,9 @@ homly/
 │   │                               #   runs in-process against services/mcp_queries.py, no HTTP round-trip
 │   ├── agents/
 │   │   ├── receipt_agent.py        # Vision LLM call → structured JSON receipt data
+│   │   ├── document_reader.py      # Vision LLM call: any other photo → title, summary, full text, key facts,
+│   │   │                           #   and 1–3 suggested actions limited to registry.describe_capabilities()
+│   │   ├── voucher_agent.py        # Voucher/promo code extraction from an image or pasted text
 │   │   ├── homly_graph.py          # LangGraph state machine: classifies + routes every WhatsApp message
 │   │   ├── orchestrator/           # Chat-query supervisor: registry.py's AGENTS list is the
 │   │   │   ├── supervisor.py       #   extensibility point — add an agent there and it's routable
@@ -138,9 +144,11 @@ homly/
 │   │       └── tasks_agent.py      #   grocery, budgets, reminders, tasks, preferences) — tasks_agent.py
 │   │                               #   handles chore assignment, completion, shopping-list adds, and leave
 │   │                               #   requests via chat; budget_agent.py compares spend to monthly budget
-│   │                               #   targets; reminders_agent.py lists upcoming reminders;
+│   │                               #   targets; reminders_agent.py lists and creates reminders;
 │   │                               #   preferences_agent.py remembers/lists/forgets standing
-│   │                               #   household- or person-scoped preferences (services/preferences.py)
+│   │                               #   household- or person-scoped preferences (services/preferences.py);
+│   │                               #   vouchers_agent.py is the voucher wallet in chat; documents_agent.py
+│   │                               #   searches photos the assistant read earlier — see Photo Memory Flow
 │   ├── services/
 │   │   ├── db.py                   # get_supabase() — THE Supabase client. Every router, service
 │   │   │                           #   and agent uses it; nothing else calls create_client().
@@ -175,10 +183,15 @@ homly/
 │   │   ├── mcp_auth.py             # generate_key()/hash_key()/SCOPE — shared by mcp_keys.py and mcp_data.py
 │   │   ├── mcp_queries.py          # the actual data fetching behind every MCP tool — shared by mcp_data.py
 │   │   │                           # (HTTP, for the local stdio server) and mcp_server/remote.py (in-process)
+│   │   ├── documents.py            # household_documents: store/search/purge photos the assistant read;
+│   │   │                           #   RETENTION_DAYS (code-level setting) — see Photo Memory Flow
+│   │   ├── vouchers.py             # the ONLY home of voucher rules: derived "expired", dedup, value labels
+│   │   ├── household_time.py       # household_today()/household_timezone() from settings.summary_timezone
 │   │   ├── chores.py               # chore_due_today() — shared by tasks.py, tasks_agent.py, whatsapp_scheduler.py
 │   │   ├── shopping_list.py        # add_auto_item() — shared by recipe.py, homly_graph.py, pantry_agent.py, tasks_agent.py
 │   │   └── whatsapp_scheduler.py   # APScheduler cron jobs: weekly summaries, insurance renewals,
-│   │                               #   daily tasks, proactive household checks (08:00 SGT)
+│   │                               #   daily tasks, proactive household checks (08:00 SGT),
+│   │                               #   expired-document purge (03:17 SGT)
 │   ├── alembic/                    # Migration runner — see backend/migrations/README.md
 │   │   ├── env.py                  # reads SUPABASE_DB_URL, no ORM target_metadata (pure-SQL migrations)
 │   │   ├── script.py.mako          # template for `alembic revision`; downgrade() raises by default
@@ -207,9 +220,12 @@ homly/
 │   │   ├── 035_conversation_messages.sql  # per-group chat transcript, see services/conversation.py
 │   │   ├── 036_waitlist_variant.sql  # waitlist.variant — which landing-page hero a signup came from,
 │   │   │                             #   so the headline A/B test is settled by conversion data
-│   │   └── 037_super_admin_app_metadata.sql  # moves is_super_admin from auth.users.raw_user_meta_data
-│   │                                 #   (user-writable → self-promotion to super admin) to
-│   │                                 #   raw_app_meta_data (service-role only). See Authentication.
+│   │   ├── 037_super_admin_app_metadata.sql  # moves is_super_admin from auth.users.raw_user_meta_data
+│   │   │                             #   (user-writable → self-promotion to super admin) to
+│   │   │                             #   raw_app_meta_data (service-role only). See Authentication.
+│   │   ├── 038_household_documents.sql       # photos the assistant read (text, facts, image), full-text
+│   │   │                                     #   indexed, per-row expires_at; private household-documents bucket
+│   │   └── 039_vouchers.sql                  # voucher/promo-code wallet; private vouchers bucket
 │   ├── alembic.ini
 │   ├── requirements.txt
 │   └── whatsapp/                   # Standalone Node.js WhatsApp bot (Baileys)
@@ -243,6 +259,11 @@ homly/
 │   │   │   │   ├── setup/page.tsx  # Agent-assisted onboarding wizard (chores + helper off-days)
 │   │   │   │   ├── history/page.tsx   # Completed/skipped chore log, date-range filter
 │   │   │   │   └── leave/page.tsx     # Helper leave requests + admin approve/deny
+│   │   │   ├── vouchers/
+│   │   │   │   ├── page.tsx        # Wallet: expiring-soon section, copy code, add (upload/paste/type) modal
+│   │   │   │   ├── history/page.tsx   # Used & expired vouchers
+│   │   │   │   └── VoucherParts.tsx   # Shared card / add-edit modal / image viewer
+│   │   │   ├── documents/page.tsx  # "Docs": search, view, forget photos the assistant read
 │   │   │   ├── admin/page.tsx      # Super-admin: households, invites, price intelligence
 │   │   │   ├── settings/page.tsx   # Household settings (schedule, reimbursement, WhatsApp)
 │   │   │   └── setup/page.tsx      # WhatsApp QR scan + group selection
@@ -301,6 +322,8 @@ below is illustrative, not exhaustive):
 - `insurance` — color `#3B82F6`, nav: Policies, Renewals, Coverage, Gaps
 - `savings` — color `#10B981`, nav: Overview, History
 - `chores` — color `#10B981`, nav: Today, History, Leave; first visit with no `helper_profile.onboarded_at` redirects to `/chores/setup`
+- `vouchers` — nav: Wallet, Used & Expired
+- `documents` (label "Docs") — nav: Read Photos
 - `admin` — color `#F59E0B`, nav: Overview, Price Intelligence; `superAdminOnly: true`
 
 ### Multi-Tenancy Model
@@ -503,7 +526,7 @@ Its three modes (`settings.bot_engagement_mode`):
 | `smart` (default) | when addressed, **or** when the message classified as `text_query` / `pantry_command` |
 | `always` | every message |
 
-Receipts, recipes, fridge scans, `pantry_confirmation` and `payment_confirmation` bypass
+Receipts, recipes, fridge scans, vouchers, `pantry_confirmation` and `payment_confirmation` bypass
 the gate in every mode (`_ALWAYS_ENGAGE`) — each is a deliberate, unambiguous action, and
 swallowing a pantry confirmation in particular would strand the flow with a prompt nobody
 can close. An **unrecognized photo** (`other_image` — a family photo, a meme, a screenshot)
@@ -511,9 +534,12 @@ is *not* in that set and is gated exactly like unaddressed text chatter: in `men
 mode it's silently ignored unless the caption addresses the bot. This used to be a bug —
 `classify_node`'s image branch hardcoded `engage: True` for every photo regardless of mode,
 so the bot spoke up on any photo shared in the group. When an unrecognized photo *does*
-engage, it gets a fixed honest reply from `unsupported_image_node` rather than being routed
-into the chat orchestrator — `run_query()` has no way to see the photo itself, only whatever
-caption text came with it, so answering as if it had would just be a confident guess.
+engage, it is **read first** (`read_image_node`, see Photo Memory Flow below) rather than
+routed into the chat orchestrator unread — `run_query()` has no way to see the photo itself,
+only whatever caption text came with it, so answering as if it had would just be a confident
+guess. `unsupported_image_node`'s fixed honest reply is now only the fallback for a photo that
+couldn't be read. An unaddressed `other_image` is still never read or stored — don't add it to
+`_ALWAYS_ENGAGE`.
 
 Text classification (`_classify_text` in `homly_graph.py`) is LLM-first: a single cheap
 `get_completion()` call sorts a message into `pantry_command` / `text_query` / `unknown`
@@ -584,6 +610,44 @@ Notes for anyone touching this:
 * `POST /query` (dashboard) supplies its own `context`; nothing in the graph overwrites
   what a caller passed in.
 * Every failure here degrades to "no memory", never to a dropped message.
+
+### Photo Memory & Voucher Flow (read a photo, ask, remember)
+
+```
+photo → classify_node
+   ├─ voucher (vision type, or caption has voucher/promo/coupon…) — always engages
+   │     → voucher_node → agents/voucher_agent.extract_from_image → services/vouchers.create_voucher
+   │       "🎟️ Saved to the voucher wallet: …"   (not a voucher after all → other_image gate)
+   └─ other_image, engaged only
+         → read_image_node → agents/document_reader.read_image (one vision call)
+           → services/documents.save_document (household_documents + image)
+           → "📄 *title* / summary / • facts / What would you like me to do? 1. … N. just keep it"
+
+group answers "1" / "remind me the day before" (a WhatsApp reply, or within the 10-min
+follow-up window — the existing `addressed` signals)
+   → chat supervisor, with that reply in context → query_reminders.create_reminder /
+     query_vouchers.save_from_document / query_tasks / … ; query_documents for the full text
+
+any later conversation: "what did the school letter say?" → query_documents (search)
+```
+
+* **No pending-answer table, on purpose.** The question is recorded as the assistant's turn
+  (`services/conversation.py`) and the answer is resolved from the transcript like any other
+  follow-up. Don't add one, and don't use `interrupt()` (see Pantry Confirmation Flow).
+* **What the reader may suggest** is `registry.describe_capabilities()` — hand-picked write
+  actions per registered tool. Add a line there when a new agent gains a write worth offering.
+* **Retention is a code setting**: `services/documents.RETENTION_DAYS` (365). Each row gets its
+  own `expires_at`; expired rows are hidden from every read at once and deleted with their image
+  by the 03:17 SGT purge in `whatsapp_scheduler.py`.
+* **Voucher rules live only in `services/vouchers.py`**: "expired" is derived from `expires_at`
+  vs. the household's local today (never stored), merchant+code is case-insensitively unique,
+  one-time use (no balances). The dashboard renders `effective_status`/`days_left`/
+  `expiring_soon` from the API — don't recompute them in TS.
+* The proactive monitor gets the read intents of both new agents (expiring vouchers, upcoming
+  deadlines in read letters); `query_reminders` is now restricted to its read intents there
+  because `create_reminder` writes.
+
+See `documents/042-photo-memory-and-vouchers/`.
 
 ### Proactive Household Monitor Flow
 
@@ -858,6 +922,50 @@ a plain `UNIQUE` treats every `NULL` as distinct.
 | value | TEXT | The preference itself |
 | created_at / updated_at | TIMESTAMPTZ | |
 
+### `household_documents`
+Photos the assistant read and kept — see Photo Memory Flow. RLS disabled; every query in
+`services/documents.py` filters by `household_id`, except the retention purge.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| group_jid | TEXT | |
+| source | TEXT | `whatsapp` / `dashboard` |
+| image_path / mime_type | TEXT | `household-documents` Storage bucket (private) |
+| doc_type | TEXT | letter / bill / invitation / notice / appointment / form / schedule / screenshot / voucher / photo / other |
+| title / summary / extracted_text / caption | TEXT | |
+| key_facts | JSONB | `[{label, value}]` — dates, amounts, reference numbers |
+| suggested_actions | JSONB | `[{label}]` — what the group was offered |
+| sender_name / sender_phone / whatsapp_message_id | TEXT | wa id UNIQUE per household (redelivery) |
+| created_at | TIMESTAMPTZ | |
+| expires_at | TIMESTAMPTZ NOT NULL | created_at + `RETENTION_DAYS`; per-row so one can be kept longer |
+| search_tsv | TSVECTOR (generated) | `simple` config over title/summary/caption/text, GIN-indexed |
+
+### `vouchers`
+One-time codes and vouchers (no balances). RLS disabled; `services/vouchers.py` is the only
+writer/reader and filters by `household_id`.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID (PK) | |
+| household_id | UUID (FK → households) | |
+| merchant | TEXT NOT NULL | |
+| title / code / terms | TEXT | `code` NULL = barcode/QR-only (the image is the voucher) |
+| kind | TEXT | `promo_code` / `voucher` / `cashback` / `other` |
+| value_type | TEXT | `amount` / `percent` / `freebie` / `other` |
+| value / min_spend | NUMERIC(10,2) | |
+| currency | TEXT | |
+| expires_at | DATE | Last usable day; NULL = no stated expiry |
+| status | TEXT | `active` / `used` / `archived` — "expired" is derived, never stored |
+| used_at / used_by_name | | |
+| image_path | TEXT | `vouchers` Storage bucket (private) |
+| document_id | UUID (FK → household_documents, SET NULL) | When saved from a read photo |
+| confidence | TEXT | Extraction confidence; `low` → "double-check the code" |
+| source | TEXT | `dashboard` / `whatsapp` / `document` |
+| added_by_name / added_by_phone / created_by / whatsapp_message_id | | |
+| | | UNIQUE(household_id, lower(merchant), lower(code)) where code is not null |
+
 ### `api_keys`
 Generic per-household bearer-key table, not MCP-specific — `scope` distinguishes
 which integration a key is for, so a future integration (a public API, Zapier,
@@ -970,6 +1078,16 @@ One row per household, captured at `/chores/setup` onboarding. Drives the daily-
 | GET | `/tasks/helper-profile` | Fetch the household's helper profile (used to gate the onboarding redirect) |
 | POST | `/tasks/onboarding/suggest` | LLM call: free-text helper description → suggested chores + off-days (unsaved) |
 | POST | `/tasks/onboarding/confirm` | Bulk-create the reviewed chores, upsert `helper_profile` with `onboarded_at` |
+| GET | `/vouchers` | `status=active` (wallet, default) / `history` / `all`; rows carry backend-computed `effective_status`, `days_left`, `expiring_soon`, `value_label` |
+| POST | `/vouchers/extract` | Multipart `file` (image/PDF) or `text` → extracted voucher for review (unsaved); stores the image and returns `image_path` |
+| POST | `/vouchers` | Save a voucher (typed, or reviewed from `/extract`) — `created: false` for a duplicate code |
+| PATCH | `/vouchers/{id}` | Edit, or set `status` (`active` / `used` / `archived`) |
+| POST | `/vouchers/{id}/use` | Mark used |
+| DELETE | `/vouchers/{id}` | Delete (and its image) |
+| GET | `/vouchers/{id}/image` | Signed URL for the voucher image |
+| GET | `/documents` | Photos the assistant read; `q` = full-text search |
+| GET | `/documents/{id}` | One, with full text and a signed image URL |
+| DELETE | `/documents/{id}` | Forget it (and its image) |
 
 ### Super-admin (JWT required, `is_super_admin = true`)
 

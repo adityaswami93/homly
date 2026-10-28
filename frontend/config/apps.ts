@@ -6,7 +6,7 @@ export interface NavItem {
 export interface App {
   id: string;
   label: string;
-  icon: "home" | "credit-card" | "shield" | "settings" | "admin" | "piggy-bank" | "tasks";
+  icon: "home" | "credit-card" | "shield" | "settings" | "admin" | "piggy-bank" | "tasks" | "ticket" | "document";
   color: string;
   accent: string;
   href: string;
@@ -88,6 +88,30 @@ export const apps: App[] = [
     actionLabel: "Add Task",
   },
   {
+    id: "vouchers",
+    label: "Vouchers",
+    icon: "ticket",
+    color: "#10B981",
+    accent: "#064E3B",
+    href: "/vouchers",
+    nav: [
+      { label: "Wallet", href: "/vouchers" },
+      { label: "Used & Expired", href: "/vouchers/history" },
+    ],
+    actionLabel: "Add Voucher",
+  },
+  {
+    id: "documents",
+    label: "Docs",
+    icon: "document",
+    color: "#10B981",
+    accent: "#064E3B",
+    href: "/documents",
+    nav: [
+      { label: "Read Photos", href: "/documents" },
+    ],
+  },
+  {
     id: "admin",
     label: "Admin",
     icon: "admin",
@@ -106,6 +130,8 @@ export function getActiveApp(pathname: string): App | null {
   if (pathname.startsWith("/chores")) return apps.find((a) => a.id === "chores") ?? null;
   if (pathname.startsWith("/insurance")) return apps.find((a) => a.id === "insurance") ?? null;
   if (pathname.startsWith("/savings")) return apps.find((a) => a.id === "savings") ?? null;
+  if (pathname.startsWith("/vouchers")) return apps.find((a) => a.id === "vouchers") ?? null;
+  if (pathname.startsWith("/documents")) return apps.find((a) => a.id === "documents") ?? null;
   if (pathname.startsWith("/expenses")) return apps.find((a) => a.id === "expenses") ?? null;
   if (pathname === "/") return apps.find((a) => a.id === "home") ?? null;
   return null;

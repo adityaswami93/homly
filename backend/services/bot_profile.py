@@ -32,14 +32,14 @@ DEFAULT_TONE = "warm"
 
 # Message types the assistant handles regardless of engagement mode.
 #
-# A photo of a receipt or a fridge is an explicit action — somebody deliberately
+# A photo of a receipt, a fridge or a voucher is an explicit action — somebody deliberately
 # sent it to the group the bot lives in — so it is never "chatter" to stay out
 # of. `pantry_confirmation` and `payment_confirmation` answer a question the bot
 # itself asked, or are exact-match phrases only meaningful to the bot; ignoring
 # those in 'mentioned' mode would strand the pantry confirmation flow with an
 # open prompt nobody can close.
 _ALWAYS_ENGAGE = frozenset({
-    "receipt", "recipe", "fridge_scan", "pantry_confirmation", "payment_confirmation",
+    "receipt", "recipe", "fridge_scan", "voucher", "pantry_confirmation", "payment_confirmation",
 })
 
 # Types the keyword classifier recognised as an actionable request. In 'smart'

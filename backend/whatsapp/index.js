@@ -184,12 +184,25 @@ function ownPhone(sock) {
   return id.split("@")[0].split(":")[0] || null;
 }
 
+// contextInfo carries mentions and the quoted message. A text message keeps
+// it on extendedTextMessage; a photo or PDF keeps it on the media message, so
+// "@Homly what is this?" as a photo caption is only visible from there.
+function messageContextInfo(msg) {
+  const m = msg.message?.ephemeralMessage?.message || msg.message;
+  return (
+    m?.extendedTextMessage?.contextInfo ||
+    m?.imageMessage?.contextInfo ||
+    m?.documentMessage?.contextInfo ||
+    m?.viewOnceMessage?.message?.imageMessage?.contextInfo ||
+    m?.viewOnceMessageV2?.message?.imageMessage?.contextInfo ||
+    null
+  );
+}
+
 function wasBotMentioned(msg, sock) {
   const phone = ownPhone(sock);
   if (!phone) return false;
-  const ctx =
-    msg.message?.extendedTextMessage?.contextInfo ||
-    msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo;
+  const ctx = messageContextInfo(msg);
   const mentioned = ctx?.mentionedJid || [];
   return mentioned.some((jid) => jid.split("@")[0].split(":")[0] === phone);
 }
@@ -197,9 +210,7 @@ function wasBotMentioned(msg, sock) {
 function isReplyToBot(msg, sock) {
   const phone = ownPhone(sock);
   if (!phone) return false;
-  const ctx =
-    msg.message?.extendedTextMessage?.contextInfo ||
-    msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo;
+  const ctx = messageContextInfo(msg);
   if (!ctx?.quotedMessage || !ctx.participant) return false;
   // participant is the author of the message being replied to.
   return ctx.participant.split("@")[0].split(":")[0] === phone;
@@ -332,6 +343,11 @@ async function handleMessage(msg, sock) {
         whatsapp_message_id: msg.key.id,
         sender_name: senderName,
         sender_phone: senderPhone,
+        // A photo the assistant doesn't recognise is only read when it was
+        // addressed (see the Assistant Engagement Flow in CLAUDE.md) — an
+        // @mention in the caption is the most natural way to address it.
+        was_mentioned: wasBotMentioned(msg, sock),
+        is_reply_to_bot: isReplyToBot(msg, sock),
       };
     } catch (e) {
       console.error("[bot] media download failed:", e.message);

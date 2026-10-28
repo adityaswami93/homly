@@ -174,6 +174,25 @@ async def _run_proactive_checks():
             logger.error(f"[scheduler] Proactive check failed for household {household_id}: {e}")
 
 
+async def _purge_expired_documents():
+    """Enforce services/documents.py's RETENTION_DAYS: forget read photos past
+    their expires_at. Batched (500 per pass) so one run never holds a huge
+    delete; a backlog drains over a few passes."""
+    from services.documents import purge_expired
+
+    total = 0
+    try:
+        for _ in range(20):
+            n = await asyncio.to_thread(purge_expired)
+            total += n
+            if n == 0:
+                break
+        if total:
+            logger.info(f"[scheduler] Purged {total} expired household document(s)")
+    except Exception as e:
+        logger.error(f"[scheduler] Document purge failed after {total} deleted: {e}")
+
+
 def refresh_summaries(scheduler: AsyncIOScheduler):
     """Load all household settings and reschedule weekly summary jobs."""
     try:
@@ -234,6 +253,13 @@ def create_scheduler() -> AsyncIOScheduler:
         _run_proactive_checks,
         CronTrigger(hour=8, minute=0, timezone="Asia/Singapore"),
         id="proactive_checks",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        _purge_expired_documents,
+        CronTrigger(hour=3, minute=17, timezone="Asia/Singapore"),
+        id="purge_expired_documents",
         replace_existing=True,
     )
 

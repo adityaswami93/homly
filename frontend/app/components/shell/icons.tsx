@@ -89,11 +89,35 @@ export function TasksIcon({ className = "w-5 h-5" }: { className?: string }) {
   );
 }
 
+export function TicketIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path
+        fillRule="evenodd"
+        d="M2 6a2 2 0 012-2h12a2 2 0 012 2v1.5a1 1 0 01-.8.98 1.5 1.5 0 000 2.94 1 1 0 01.8.98V14a2 2 0 01-2 2H4a2 2 0 01-2-2v-1.6a1 1 0 01.8-.98 1.5 1.5 0 000-2.94A1 1 0 012 7.5V6zm10 1a1 1 0 10-2 0v.5a1 1 0 102 0V7zm-1 3a1 1 0 00-1 1v.5a1 1 0 102 0V11a1 1 0 00-1-1zm1 3.5a1 1 0 10-2 0v.5a1 1 0 102 0v-.5z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+export function DocumentIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path
+        fillRule="evenodd"
+        d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 export function AppIcon({
   icon,
   className,
 }: {
-  icon: "home" | "credit-card" | "shield" | "settings" | "admin" | "piggy-bank" | "tasks";
+  icon: "home" | "credit-card" | "shield" | "settings" | "admin" | "piggy-bank" | "tasks" | "ticket" | "document";
   className?: string;
 }) {
   switch (icon) {
@@ -104,5 +128,7 @@ export function AppIcon({
     case "admin":       return <AdminIcon className={className} />;
     case "piggy-bank":  return <PiggyBankIcon className={className} />;
     case "tasks":       return <TasksIcon className={className} />;
+    case "ticket":      return <TicketIcon className={className} />;
+    case "document":    return <DocumentIcon className={className} />;
   }
 }

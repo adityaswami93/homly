@@ -5,9 +5,10 @@ of the household's engagement mode — so an unrecognized photo (a family
 picture, a meme, a screenshot) triggered an unsolicited bot reply even in
 `mentioned` mode, where the whole point is "only speak when spoken to".
 classify_node now runs images through the same services.bot_profile.should_engage()
-gate text does, and an unrecognized photo ("other_image") gets its own honest
-fixed reply instead of being silently handed to the chat orchestrator, which
-has no way to see the photo — only whatever caption text (if any) came with it.
+gate text does. An engaged unrecognized photo ("other_image") is read first
+(read_image_node, see tests/test_photo_memory.py) rather than handed to the chat
+orchestrator, which has no way to see the photo — only whatever caption text
+(if any) came with it. If it can't be read, it gets an honest fixed reply.
 """
 import json
 from dataclasses import replace
@@ -118,10 +119,10 @@ def test_fridge_scan_caption_always_engages_even_unaddressed_mentioned_mode(monk
     assert result["engage"] is True
 
 
-# ── route_by_type: other_image routes to its own honest-reply node ─────────
+# ── route_by_type: other_image keeps its own type (graph maps it to read_image) ─
 
 
-def test_route_by_type_sends_engaged_other_image_to_unsupported_image_node():
+def test_route_by_type_sends_engaged_other_image_to_read_image_node():
     state = {"message_type": "other_image", "engage": True}
     assert hg.route_by_type(state) == "other_image"
 
@@ -137,10 +138,12 @@ def test_unsupported_image_node_answers_honestly_without_agent_results():
     assert result["response"]
 
 
-# ── graph wiring: other_image reaches unsupported_image_node end-to-end ────
+# ── graph wiring: an unreadable other_image ends in the honest reply ───────
 
 
-def test_graph_routes_other_image_to_unsupported_image_reply(monkeypatch):
+def test_graph_falls_back_to_honest_reply_when_photo_is_unreadable(monkeypatch):
+    # The same mocked vision reply ({"type": "other_image"}) is all the reader
+    # gets back too — no summary, no text — which is a failed read.
     import services.llm_client as llm_client
     monkeypatch.setattr(llm_client, "get_vision_completion", lambda *a, **k: _vision_json("other_image"))
 

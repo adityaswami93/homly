@@ -36,11 +36,14 @@ _READONLY_INTENTS: dict[str, set[str] | None] = {
     "query_grocery":     None,
     "query_insurance":   None,
     "query_savings":     None,
-    "query_reminders":   None,
+    # Not None any more: create_reminder (042) writes.
+    "query_reminders":   {"list_reminders", "next_reminder"},
     "query_pantry":      {"list_items", "check_item"},
     "query_budgets":     {"budget_status"},
     "query_tasks":       {"list_today_tasks"},
     "query_preferences": {"list"},
+    "query_vouchers":    {"list_vouchers", "find_vouchers", "expiring_soon"},
+    "query_documents":   {"search", "recent", "get"},
 }
 
 _NOTIFY_COOLDOWN_HOURS = 24
@@ -125,10 +128,13 @@ _TOOLS = _readonly_tools() + [_NOTIFY_TOOL, _NO_ACTION_TOOL]
 _BASE_PROMPT = (
     "You are checking in unprompted on a schedule — "
     "nobody has asked you anything this run. Check the household's budgets, pantry, insurance, "
-    "savings, reminders, tasks, and remembered preferences (query_preferences) using the read-only "
+    "savings, reminders, tasks, vouchers, recently read letters/bills (query_documents recent), and "
+    "remembered preferences (query_preferences) using the read-only "
     "tools available, and decide if anything is worth surfacing right now: a budget over or close "
     "to its limit, a frequently-used pantry item critically low, an insurance policy renewing soon, "
-    "an unusual price spike, an overdue reminder or task. Weigh what you find against any "
+    "an unusual price spike, an overdue reminder or task, a voucher expiring in the next few days "
+    "(query_vouchers expiring_soon — use finding_key voucher_expiring:<voucher id>), or a deadline in "
+    "a recently read letter or bill that's coming up and has no reminder set. Weigh what you find against any "
     "preferences listed below.\n\n"
     "Call notify_household once per distinct finding, with a stable finding_key so the same issue "
     "isn't repeated every run. Write the message like you're a household member who happens to "

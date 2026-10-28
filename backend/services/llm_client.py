@@ -78,3 +78,31 @@ def get_vision_completion(prompt: str, image_bytes: bytes, mime_type: str = "ima
     )
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
+
+
+def parse_json_object(raw: str) -> dict:
+    """The JSON object in a model reply that was asked for "ONLY a JSON object".
+
+    Models still wrap it in ```json fences, or add a sentence before it, often
+    enough that every caller had grown its own copy of the unwrapping. Raises
+    ValueError (json.JSONDecodeError) when there's no object to be had.
+    """
+    import json
+
+    clean = (raw or "").strip()
+    if clean.startswith("```"):
+        parts = clean.split("```")
+        clean = parts[1] if len(parts) > 1 else clean
+        if clean.startswith("json"):
+            clean = clean[4:]
+        clean = clean.strip()
+    try:
+        parsed = json.loads(clean)
+    except json.JSONDecodeError:
+        start, end = clean.find("{"), clean.rfind("}")
+        if start == -1 or end <= start:
+            raise
+        parsed = json.loads(clean[start:end + 1])
+    if not isinstance(parsed, dict):
+        raise ValueError("expected a JSON object")
+    return parsed

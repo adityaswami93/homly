@@ -29,7 +29,7 @@ HOUSEHOLD_SCOPED_TABLES = {
     "reimbursements", "pantry_items", "pantry_pending_confirmations",
     "price_history", "household_preferences", "proactive_notification_log",
     "api_keys", "shopping_list", "budgets", "savings_accounts", "reminders",
-    "conversation_messages",
+    "conversation_messages", "household_documents", "vouchers",
 }
 
 # file -> set of line numbers (of the `.table(...)` call) that are known,
@@ -40,6 +40,17 @@ ALLOWED_UNSCOPED: dict[str, set[int]] = {
     # > Internal); the admin routers intentionally query cross-household
     # for super-admin views. Populate exact (file, lineno) pairs here only
     # after confirming the call is genuinely meant to be unscoped.
+    #
+    # 042: inserts whose row dict (built in an earlier statement) carries
+    # household_id — the heuristic only sees the .insert(row) statement.
+    "services/vouchers.py": {310},
+    "services/documents.py": {
+        150,
+        # purge_expired(): the retention rule itself, deliberately across all
+        # households, and it only deletes rows whose own expires_at has passed.
+        186,
+    },
+    "agents/query/reminders_agent.py": {147},
 }
 
 

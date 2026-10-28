@@ -22,6 +22,7 @@ from api.routers import (
     expenses, setup, internal, settings, messages, households,
     reimbursements, analytics, insights, insurance, webhook, budgets, query, recipe, pantry, waitlist,
     reminders, commands, savings, mcp_data, mcp_keys, tasks, wa_auth,
+    vouchers, documents,
 )
 from api.routers import admin as admin_router
 from mcp_server.remote import remote_mcp
@@ -95,6 +96,8 @@ app.include_router(mcp_data.router)
 app.include_router(mcp_keys.router)
 app.include_router(tasks.router)
 app.include_router(wa_auth.router)
+app.include_router(vouchers.router)
+app.include_router(documents.router)
 
 # Remote MCP server (Streamable HTTP) — the connector URL a household enters
 # in Claude is https://<this backend>/mcp/server/<their key>; see
